@@ -12,3 +12,14 @@ model User {
   email     String   @unique
   createdAt DateTime @default(now())
 }
+
+model Merchant {
+  id        String   @id @default(cuid())
+  name      String
+  ownerId   String?
+  email     String   @unique
+  status    String   @default("pending")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
