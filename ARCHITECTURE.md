@@ -18,3 +18,8 @@
 
 ## Design Goal
 Any engineer can leave the project without blocking operations.
+
+<!--
+These architecture rules are mandatory.
+All generated code must comply with this document.
+-->
