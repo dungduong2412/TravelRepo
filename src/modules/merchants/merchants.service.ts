@@ -23,14 +23,18 @@
  */
 
 
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { CreateMerchantDto, UpdateMerchantDto } from './merchants.dto';
 import { MerchantStatus } from '@prisma/client';
+import { MerchantsPolicy } from './merchants.policy';
 
 @Injectable()
 export class MerchantsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly policy: MerchantsPolicy,
+  ) {}
 
   async create(ownerUserId: string | undefined, payload: CreateMerchantDto) {
     return this.prisma.merchant.create({
@@ -54,21 +58,20 @@ export class MerchantsService {
   }
 
   async findOne(id: string) {
-    return this.prisma.merchant.findUnique({
-      where: { id },
-    });
+    const merchant = await this.prisma.merchant.findUnique({ where: { id } });
+    if (!merchant) throw new NotFoundException('Merchant not found');
+    return merchant;
   }
 
   async update(id: string, payload: UpdateMerchantDto) {
-    return this.prisma.merchant.update({
-      where: { id },
-      data: payload,
-    });
+    const merchant = await this.prisma.merchant.findUnique({ where: { id } });
+    if (!merchant) throw new NotFoundException('Merchant not found');
+    return this.prisma.merchant.update({ where: { id }, data: payload });
   }
 
   async delete(id: string) {
-    return this.prisma.merchant.delete({
-      where: { id },
-    });
+    const merchant = await this.prisma.merchant.findUnique({ where: { id } });
+    if (!merchant) throw new NotFoundException('Merchant not found');
+    return this.prisma.merchant.delete({ where: { id } });
   }
 }
