@@ -25,46 +25,35 @@
  * Implement a CollaboratorsPolicy class enforcing the above rules.
  */
 
-import { Injectable } from '@nestjs/common';
-
-/**
- * Lightweight policy for collaborator management.
- * Replace with real ownership/role checks as needed.
- */
-import { Injectable, ForbiddenException, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  ForbiddenException,
+} from '@nestjs/common';
 
 @Injectable()
 export class CollaboratorsPolicy {
   canCreate(actor: any): void {
     if (!actor) {
-      throw new UnauthorizedException('Authentication required to create collaborator');
+      throw new UnauthorizedException('Authentication required');
     }
   }
 
   canRead(actor: any, collaborator: any): void {
-    if (!actor) {
-      throw new UnauthorizedException();
-    }
-    if (actor.id !== collaborator.ownerUserId) {
-      throw new ForbiddenException('You do not own this collaborator profile');
+    if (!actor || actor.id !== collaborator.ownerUserId) {
+      throw new ForbiddenException('Access denied');
     }
   }
 
   canUpdate(actor: any, collaborator: any): void {
-    if (!actor) {
-      throw new UnauthorizedException();
-    }
-    if (actor.id !== collaborator.ownerUserId) {
-      throw new ForbiddenException('You do not own this collaborator profile');
+    if (!actor || actor.id !== collaborator.ownerUserId) {
+      throw new ForbiddenException('Access denied');
     }
   }
 
   canDelete(actor: any, collaborator: any): void {
-    if (!actor) {
-      throw new UnauthorizedException();
-    }
-    if (actor.id !== collaborator.ownerUserId) {
-      throw new ForbiddenException('You do not own this collaborator profile');
+    if (!actor || actor.id !== collaborator.ownerUserId) {
+      throw new ForbiddenException('Access denied');
     }
   }
 }
