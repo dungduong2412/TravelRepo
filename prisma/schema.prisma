@@ -32,4 +32,24 @@ model Merchant {
   @@index([ownerUserId])
 }
 
+enum CollaboratorStatus {
+  DRAFT
+  ACTIVE
+}
+
+model Collaborator {
+  id                 String             @id @default(uuid())
+  ownerUserId        String
+  fullName           String
+  phone              String
+  email              String
+  bankName           String
+  bankAccountNumber  String
+  status             CollaboratorStatus @default(DRAFT)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@index([ownerUserId])
+}
+
 
