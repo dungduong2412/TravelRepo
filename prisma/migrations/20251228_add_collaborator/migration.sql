@@ -12,8 +12,8 @@ CREATE TABLE "Collaborator" (
     "bankAccountNumber"  VARCHAR(255) NOT NULL,
     "status"             "CollaboratorStatus" NOT NULL DEFAULT 'DRAFT',
     "createdAt"          TIMESTAMP NOT NULL DEFAULT NOW(),
-    "updatedAt"          TIMESTAMP NOT NULL DEFAULT NOW(),
-    CONSTRAINT "Collaborator_ownerUserId_idx" INDEX ("ownerUserId")
+    "updatedAt"          TIMESTAMP NOT NULL DEFAULT NOW()
+
 );
 
 CREATE INDEX "Collaborator_ownerUserId_idx" ON "Collaborator" ("ownerUserId");
