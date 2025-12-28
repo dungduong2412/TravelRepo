@@ -1,3 +1,10 @@
+enum CollaboratorTier {
+  PLACEHOLDER
+}
+
+enum CollaboratorStatus {
+  PLACEHOLDER
+}
 generator client {
   provider = "prisma-client-js"
 }
@@ -32,11 +39,6 @@ model Merchant {
   @@index([ownerUserId])
 }
 
-enum CollaboratorStatus {
-  DRAFT
-  ACTIVE
-}
-
 model Collaborator {
   id                String             @id @default(uuid())
   ownerUserId       String
@@ -45,9 +47,32 @@ model Collaborator {
   email             String
   bankName          String
   bankAccountNumber String
+
+  tier              CollaboratorTier   @default(SILVER)
+  qrToken           String             @unique
+
   status            CollaboratorStatus @default(DRAFT)
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
 
   @@index([ownerUserId])
+  @@index([qrToken])
 }
+enum AttributionStatus {
+  ACTIVE
+  DISABLED
+}
+
+model Attribution {
+  id             String             @id @default(uuid())
+  merchantId     String
+  collaboratorId String
+  qrToken        String             @unique
+  status         AttributionStatus  @default(ACTIVE)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@index([merchantId])
+  @@index([collaboratorId])
+}
+
