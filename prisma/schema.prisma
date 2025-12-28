@@ -1,9 +1,13 @@
 enum CollaboratorTier {
-  PLACEHOLDER
+  SILVER
+  GOLD
+  PLATINUM
 }
 
 enum CollaboratorStatus {
-  PLACEHOLDER
+  DRAFT
+  ACTIVE
+  SUSPENDED
 }
 generator client {
   provider = "prisma-client-js"
