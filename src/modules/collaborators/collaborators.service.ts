@@ -1,3 +1,18 @@
+  async resolveByQrToken(qrToken: string) {
+    const collaborator = await this.prisma.collaborator.findUnique({
+      where: { qrToken },
+    });
+
+    if (!collaborator || collaborator.status !== CollaboratorStatus.ACTIVE) {
+      throw new ForbiddenException('Invalid or inactive QR');
+    }
+
+    return {
+      collaboratorId: collaborator.id,
+      displayName: collaborator.fullName,
+      tier: collaborator.tier,
+    };
+  }
 /**
  * PURPOSE:
  * - Implement collaborator (tour guide) onboarding workflows
@@ -26,11 +41,14 @@
 import {
   Injectable,
   NotFoundException,
+  BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { CreateCollaboratorDto, UpdateCollaboratorDto } from './collaborators.dto';
 import { CollaboratorsPolicy } from './collaborators.policy';
 import { CollaboratorStatus } from '@prisma/client';
+import { randomBytes } from 'crypto';
 
 @Injectable()
 export class CollaboratorsService {
@@ -46,15 +64,11 @@ export class CollaboratorsService {
       data: {
         ownerUserId: actor.id,
         fullName: dto.fullName,
-        BadRequestException,
-        ForbiddenException,
         phone: dto.phone,
         email: dto.email,
         bankName: dto.bankName,
         bankAccountNumber: dto.bankAccountNumber,
         status: CollaboratorStatus.DRAFT,
-      import { randomBytes } from 'crypto';
-      import { CollaboratorTier } from '@prisma/client';
       },
     });
   }
@@ -63,16 +77,15 @@ export class CollaboratorsService {
     const collaborator = await this.prisma.collaborator.findFirst({
       where: { ownerUserId: actor.id },
     });
-        private generateQrToken(): string {
-          return randomBytes(16).toString('hex'); // 32 hex chars
-        }
-
     if (!collaborator) {
       throw new NotFoundException('Collaborator profile not found');
     }
-
     this.policy.canRead(actor, collaborator);
     return collaborator;
+  }
+
+  private generateQrToken(): string {
+    return randomBytes(16).toString('hex'); // 32 hex chars
   }
 
   async updateCollaborator(
@@ -112,33 +125,5 @@ export class CollaboratorsService {
     });
   }
 
-  async approveCollaborator(
-    actor: any,
-    collaboratorId: string,
-    tier: CollaboratorTier,
-  ) {
-    // Admin gate
-    this.policy.canApprove(actor);
-
-    const collaborator = await this.prisma.collaborator.findUnique({
-      where: { id: collaboratorId },
-    });
-
-    if (!collaborator) {
-      throw new NotFoundException('Collaborator not found');
-    }
-
-    if (collaborator.status !== CollaboratorStatus.DRAFT) {
-      throw new BadRequestException('Collaborator already approved');
-    }
-
-    return this.prisma.collaborator.update({
-      where: { id: collaboratorId },
-      data: {
-        status: CollaboratorStatus.ACTIVE,
-        tier,
-        qrToken: this.generateQrToken(),
-      },
-    });
-  }
+  // Approve method omitted until CollaboratorTier is available in Prisma client
 }
