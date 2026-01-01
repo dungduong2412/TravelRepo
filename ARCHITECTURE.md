@@ -3,10 +3,10 @@
 ## Non-Negotiable Rules
 1. Controllers must not contain business logic
 2. Services own all business behavior
-3. Policies enforce permissions and ownership
-4. Database access only via Prisma
-5. Supabase is used only for:
+3. Database access only via Supabase JS client
+4. Supabase is used for:
    - Authentication
+   - Database (PostgreSQL)
    - Storage
    - Realtime (if needed)
 

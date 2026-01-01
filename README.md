@@ -1,5 +1,6 @@
 # TravelRepo
 Repo for VB number one
+
 # Backend Platform API
 
 ## Purpose
@@ -15,23 +16,22 @@ Frontend clients must never access the database directly.
 ## Tech Stack
 - Node.js + TypeScript
 - NestJS
-- Prisma
+- Supabase JS Client
 - PostgreSQL (Supabase)
 - Supabase Auth (JWT)
-- Swagger (OpenAPI)
+- Zod (validation)
 
 ## Core Principles
 - Controllers define contracts only
 - Services contain business logic
-- Policies enforce authorization
-- Database access is centralized
+- Database access via Supabase client
 - No hidden logic in database triggers or RPCs
 
 ## Local Development
 1. Copy `.env.example` to `.env`
-2. Install dependencies
-3. Run migrations
-4. Start the API
+2. Configure Supabase credentials
+3. Install dependencies in `backend/` directory
+4. Start the API on port 3000
 
 ## Ownership
 All logic in this repository must be understandable by any senior engineer within 1 hour.
