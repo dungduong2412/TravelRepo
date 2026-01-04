@@ -9,6 +9,7 @@ interface Merchant {
   merchant_email?: string;
   merchant_phone?: string;
   merchant_verified: boolean;
+  merchants_status?: string;
   merchant_description?: string;
   owner_email: string;
   new_address_city?: string;
@@ -195,10 +196,21 @@ export default function MerchantsManagementPage() {
                 <td style={styles.td}>
                   <span style={{
                     ...styles.statusBadge,
-                    backgroundColor: merchant.merchant_verified ? '#d1fae5' : '#fef3c7',
-                    color: merchant.merchant_verified ? '#065f46' : '#92400e',
+                    backgroundColor: 
+                      merchant.merchants_status === 'active' ? '#d1fae5' : 
+                      merchant.merchants_status === 'pending' ? '#fef3c7' :
+                      merchant.merchants_status === 'inactive' ? '#e5e7eb' :
+                      merchant.merchants_status === 'blocked' ? '#fee2e2' : '#e5e7eb',
+                    color: 
+                      merchant.merchants_status === 'active' ? '#065f46' : 
+                      merchant.merchants_status === 'pending' ? '#92400e' :
+                      merchant.merchants_status === 'inactive' ? '#374151' :
+                      merchant.merchants_status === 'blocked' ? '#991b1b' : '#374151',
                   }}>
-                    {merchant.merchant_verified ? 'Active' : 'Pending'}
+                    {merchant.merchants_status ? 
+                      merchant.merchants_status.charAt(0).toUpperCase() + merchant.merchants_status.slice(1) : 
+                      (merchant.merchant_verified ? 'Active' : 'Pending')
+                    }
                   </span>
                 </td>
                 <td style={styles.td}>

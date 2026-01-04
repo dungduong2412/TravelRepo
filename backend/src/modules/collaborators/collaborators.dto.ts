@@ -10,6 +10,7 @@ export const CollaboratorSchema = z.object({
   collaborators_qr_code: z.string().optional(),
   collaborators_password: z.string().optional(),
   collaborators_verified: z.boolean(),
+  collaborators_status: z.string().optional(),
   collaborators_avatar_url: z.string().optional(),
   created_at: z.string(),
   updated_at: z.string(),
@@ -37,6 +38,7 @@ export const UpdateCollaboratorSchema = z.object({
   collaborators_bank_acc_number: z.string().optional(),
   collaborators_avatar_url: z.string().url().optional(),
   collaborators_verified: z.boolean().optional(),
+  collaborators_status: z.string().optional(),
 });
 
 export type UpdateCollaboratorDto = z.infer<typeof UpdateCollaboratorSchema>;

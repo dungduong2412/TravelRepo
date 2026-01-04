@@ -232,7 +232,7 @@ export default function MerchantOnboardPage() {
               const fieldErrors = issuesText.match(/"path":\["(.*?)"\],"message":"(.*?)"/g);
               
               if (fieldErrors) {
-                fieldErrors.forEach(error => {
+                fieldErrors.forEach((error: string) => {
                   const pathMatch = error.match(/"path":\["(.*?)"\]/);
                   const messageMatch = error.match(/"message":"(.*?)"/);
                   

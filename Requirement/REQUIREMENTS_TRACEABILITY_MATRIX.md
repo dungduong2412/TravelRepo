@@ -99,7 +99,7 @@
 ---
 
 ### REQ-002: Admin User Management
-**Description**: Admin page to view and manage all user profiles. 
+**Description**: Admin page to view and manage all user profiles. Once 
 
 **Priority**: High
 
@@ -172,15 +172,20 @@
 - Categories page has bilingual support (English/Vietnamese) 
 
 ### REQ-004: Admin approval flow
-**Description**: There are 2 seperated section in the 
+**Description**: Admin will review and approve each Collaborators/ Merchants before they can log in to the systems.
+- After signed up successfully, the collaborators_verified = FALSE, merchant_verified= False
+- Admin will see the list of of pending approval collaborators/ merchants, click on each to see the details to approve/ reject, or admin can approve on the list view. 
+- The list is accessed through the dashboard by clicking the pending (we had it already for both) or a quick filter for pending from Manage collaborators and manage merchants.
 
-**Priority**: [High/Medium/Low]
+**Priority**: High
 
 **Acceptance Criteria**:
-- [ ] [Criterion 1]
-- [ ] [Criterion 2]
-- [ ] [Criterion 3]
-
+- [ ] Access to the pending approval list both mer/ coll
+- [ ] List the correct data from database
+- [ ] After approve/ reject update the database correctly, verified turn to true,returns active if approved, blocked if reject.
+- [ ] For approved case, create an account in User management section and update the db accordingly in user_profiles table. Password is chosen from user, username is the email (email of owner for merchants)
+- [ ] 
+ 
 **Implementation Status**: ⏳ Pending
 - Files: 
 - Endpoint: 

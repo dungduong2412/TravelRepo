@@ -89,6 +89,7 @@ export class MerchantsService {
         merchant_discount_type: dto.merchant_discount_type,
         merchant_discount_value: dto.merchant_discount_value,
         merchant_verified: false, // Default to false
+        merchants_status: 'pending', // Default to pending
       })
       .select()
       .single();

@@ -102,6 +102,7 @@ export class CollaboratorsService {
         collaborators_avatar_url: dto.collaborators_avatar_url,
         collaborators_qr_code: qrCode,
         collaborators_verified: false, // Default to false
+        collaborators_status: 'pending', // Default to pending
       })
       .select()
       .single();

@@ -8,6 +8,7 @@ interface UserProfile {
   role: 'admin' | 'merchant' | 'collaborator';
   merchant_id?: string | null;
   collaborator_id?: string | null;
+  user_profiles_status?: string;
   status: 'active' | 'inactive';
   last_login_at?: string | null;
   login_count?: number;
@@ -37,10 +38,10 @@ export default function UserManagementPage() {
 
       const data = await response.json();
       
-      // Determine status based on role and verification
+      // Determine status based on user_profiles_status column or fallback
       const processedUsers = data.map((user: any) => ({
         ...user,
-        status: 'active', // You can enhance this logic based on verification flags
+        status: user.user_profiles_status || 'active',
       }));
       
       setUsers(processedUsers);
@@ -149,8 +150,14 @@ export default function UserManagementPage() {
                 <td style={styles.td}>
                   <span style={{
                     ...styles.statusBadge,
-                    backgroundColor: user.status === 'active' ? '#d1fae5' : '#fee2e2',
-                    color: user.status === 'active' ? '#065f46' : '#991b1b',
+                    backgroundColor: 
+                      user.status === 'active' ? '#d1fae5' :
+                      user.status === 'inactive' ? '#e5e7eb' :
+                      user.status === 'suspended' ? '#fee2e2' : '#e5e7eb',
+                    color: 
+                      user.status === 'active' ? '#065f46' :
+                      user.status === 'inactive' ? '#374151' :
+                      user.status === 'suspended' ? '#991b1b' : '#374151',
                   }}>
                     {user.status.charAt(0).toUpperCase() + user.status.slice(1)}
                   </span>

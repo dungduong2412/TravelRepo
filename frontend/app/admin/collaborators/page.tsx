@@ -9,6 +9,7 @@ interface Collaborator {
   collaborators_email: string;
   collaborators_phone: string;
   collaborators_verified: boolean;
+  collaborators_status?: string;
   collaborators_bank_name?: string;
   collaborators_bank_acc_number?: string;
   collaborators_qr_code?: string;
@@ -184,10 +185,21 @@ export default function CollaboratorsManagementPage() {
                 <td style={styles.td}>
                   <span style={{
                     ...styles.statusBadge,
-                    backgroundColor: collaborator.collaborators_verified ? '#d1fae5' : '#fef3c7',
-                    color: collaborator.collaborators_verified ? '#065f46' : '#92400e',
+                    backgroundColor: 
+                      collaborator.collaborators_status === 'active' ? '#d1fae5' : 
+                      collaborator.collaborators_status === 'pending' ? '#fef3c7' :
+                      collaborator.collaborators_status === 'inactive' ? '#e5e7eb' :
+                      collaborator.collaborators_status === 'blocked' ? '#fee2e2' : '#e5e7eb',
+                    color: 
+                      collaborator.collaborators_status === 'active' ? '#065f46' : 
+                      collaborator.collaborators_status === 'pending' ? '#92400e' :
+                      collaborator.collaborators_status === 'inactive' ? '#374151' :
+                      collaborator.collaborators_status === 'blocked' ? '#991b1b' : '#374151',
                   }}>
-                    {collaborator.collaborators_verified ? 'Active' : 'Pending'}
+                    {collaborator.collaborators_status ? 
+                      collaborator.collaborators_status.charAt(0).toUpperCase() + collaborator.collaborators_status.slice(1) : 
+                      (collaborator.collaborators_verified ? 'Active' : 'Pending')
+                    }
                   </span>
                 </td>
                 <td style={styles.td}>

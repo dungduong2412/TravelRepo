@@ -46,6 +46,7 @@ export const UpdateMerchantSchema = z.object({
   commission_rate: z.number().min(0).max(100).optional(),
   customer_discount_rate: z.number().min(0).max(100).optional(),
   merchant_verified: z.boolean().optional(),
+  merchants_status: z.string().optional(),
 });
 
 export type UpdateMerchantDto = z.infer<typeof UpdateMerchantSchema>;

@@ -107,6 +107,7 @@ export class UserProfilesService {
           merchant_id: dto.merchant_id,
           collaborator_id: dto.collaborator_id,
           login_count: 0,
+          user_profiles_status: 'active', // Default to active
         })
         .select()
         .single();
