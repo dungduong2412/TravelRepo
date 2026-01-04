@@ -16,7 +16,7 @@ export class MerchantsService {
     const { data, error } = await this.supabase.getClient()
       .from('merchant_details')
       .select('*')
-      .order('created_at', { ascending: false });
+      .order('merchant_registered_date', { ascending: false });
 
     if (error) {
       throw new Error(`Failed to fetch merchants: ${error.message}`);
@@ -58,7 +58,7 @@ export class MerchantsService {
       .from('merchant_details')
       .select('*')
       .eq('merchant_verified', true)
-      .order('created_at', { ascending: false });
+      .order('merchant_registered_date', { ascending: false });
 
     if (error) {
       throw new Error(`Failed to fetch verified merchants: ${error.message}`);
