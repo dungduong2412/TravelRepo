@@ -161,7 +161,7 @@
   - `PUT /categories/:id` - Update category ✅
   - `DELETE /categories/:id` - Delete category ✅
 
-**Review Status**: ⏳ Pending
+**Review Status**: Pass
 - Needs testing: Navigate to http://localhost:3001/admin/dashboard to test all pages
 
 **Notes**: 
@@ -170,6 +170,7 @@
 - Modal popups for detailed views
 - Approve/Deactivate actions functional
 - Categories page has bilingual support (English/Vietnamese) 
+
 ### REQ-004: Admin approval flow
 **Description**: There are 2 seperated section in the 
 
