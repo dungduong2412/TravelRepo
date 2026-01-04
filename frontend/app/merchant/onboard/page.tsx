@@ -16,7 +16,7 @@ export default function MerchantOnboardPage() {
     merchant_email: '',
     merchant_phone: '',
     merchant_description: '',
-    merchant_category: '',
+    merchant_categories: [] as string[], // Changed to array
     merchant_contact_phone: '',
     new_address_city: '',
     new_address_ward: '',
@@ -55,6 +55,45 @@ export default function MerchantOnboardPage() {
   ) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleCategorySelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const categoryId = e.target.value;
+    if (!categoryId) return;
+
+    setFormData(prev => {
+      const currentCategories = prev.merchant_categories;
+      
+      // Check if already selected
+      if (currentCategories.includes(categoryId)) {
+        setError('Danh mục này đã được chọn');
+        e.target.value = ''; // Reset dropdown
+        return prev;
+      }
+      
+      // Check limit
+      if (currentCategories.length >= 5) {
+        setError('Bạn chỉ có thể chọn tối đa 5 danh mục');
+        e.target.value = ''; // Reset dropdown
+        return prev;
+      }
+      
+      // Add category
+      setError(null);
+      e.target.value = ''; // Reset dropdown after adding
+      return {
+        ...prev,
+        merchant_categories: [...currentCategories, categoryId]
+      };
+    });
+  };
+
+  const handleRemoveCategory = (categoryId: string) => {
+    setFormData(prev => ({
+      ...prev,
+      merchant_categories: prev.merchant_categories.filter(id => id !== categoryId)
+    }));
+    setError(null);
   };
 
   const handlePictureUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -109,25 +148,60 @@ export default function MerchantOnboardPage() {
 
     // Validate passwords match
     if (formData.owner_password !== repeatPassword) {
-      setError('Mật khẩu không khớp');
+      setError('❌ Mật khẩu không khớp\n\nVui lòng nhập lại mật khẩu cho đúng.');
+      setIsSubmitting(false);
+      return;
+    }
+
+    // Client-side validation
+    const validationErrors: string[] = [];
+    
+    if (!formData.owner_email || !formData.owner_email.includes('@')) {
+      validationErrors.push('• Email chủ sở hữu không hợp lệ');
+    }
+    
+    if (!formData.owner_password || formData.owner_password.length < 6) {
+      validationErrors.push('• Mật khẩu phải có ít nhất 6 ký tự');
+    }
+    
+    if (!formData.merchant_name || formData.merchant_name.trim().length === 0) {
+      validationErrors.push('• Tên doanh nghiệp không được để trống');
+    }
+    
+    if (!formData.owner_phone || formData.owner_phone.length < 10) {
+      validationErrors.push('• Số điện thoại chủ sở hữu phải có ít nhất 10 số');
+    }
+    
+    if (validationErrors.length > 0) {
+      setError('❌ Vui lòng kiểm tra các trường sau:\n\n' + validationErrors.join('\n'));
       setIsSubmitting(false);
       return;
     }
 
     try {
+      // Send data matching database column names exactly
       const payload = {
-        ...formData,
+        owner_email: formData.owner_email,
+        owner_password: formData.owner_password,
+        merchant_name: formData.merchant_name,
+        merchant_description: formData.merchant_description || undefined,
+        merchant_phone: formData.merchant_phone || undefined,
+        merchant_email: formData.merchant_email || undefined,
+        merchant_contact_phone: formData.merchant_contact_phone || undefined,
+        new_address_city: formData.new_address_city || undefined,
+        new_address_ward: formData.new_address_ward || undefined,
+        new_address_line: formData.new_address_line || undefined,
+        merchant_commission_type: formData.merchant_commission_type,
         merchant_commission_value: formData.merchant_commission_value 
           ? Number(formData.merchant_commission_value) 
           : undefined,
+        merchant_discount_type: formData.merchant_discount_type,
         merchant_discount_value: formData.merchant_discount_value 
           ? Number(formData.merchant_discount_value) 
           : undefined,
-        merchant_pictures: pictures.map((p, i) => ({
-          url: p.base64,
-          is_featured: i === featuredPictureIndex,
-        })),
       };
+
+      console.log('Sending payload:', payload); // Debug log
 
       await publicApiFetch('/merchants', {
         method: 'POST',
@@ -137,7 +211,71 @@ export default function MerchantOnboardPage() {
       // Redirect to success page
       router.push('/success?type=merchant');
     } catch (err: any) {
-      setError(err.message || 'Không thể tạo nhà cung cấp');
+      console.error('Submission error:', err); // Debug log
+      
+      // Try to parse validation errors
+      let errorMessage = 'Không thể tạo nhà cung cấp';
+      
+      if (err.message) {
+        // Check if it's a Zod validation error from backend
+        if (err.message.includes('Validation failed')) {
+          try {
+            // Try to extract the cause/details
+            const errorText = err.message;
+            const issuesMatch = errorText.match(/issues":\[(.*?)\]/);
+            
+            if (issuesMatch) {
+              errorMessage = '❌ Lỗi xác thực - Vui lòng kiểm tra các trường sau:\n\n';
+              
+              // Parse individual issues
+              const issuesText = issuesMatch[1];
+              const fieldErrors = issuesText.match(/"path":\["(.*?)"\],"message":"(.*?)"/g);
+              
+              if (fieldErrors) {
+                fieldErrors.forEach(error => {
+                  const pathMatch = error.match(/"path":\["(.*?)"\]/);
+                  const messageMatch = error.match(/"message":"(.*?)"/);
+                  
+                  if (pathMatch && messageMatch) {
+                    const field = pathMatch[1];
+                    const message = messageMatch[1];
+                    
+                    // Map backend field names to Vietnamese
+                    const fieldMap: { [key: string]: string } = {
+                      'owner_email': 'Email chủ sở hữu',
+                      'owner_password': 'Mật khẩu',
+                      'business_name': 'Tên doanh nghiệp',
+                      'business_phone': 'Số điện thoại doanh nghiệp',
+                      'business_email': 'Email doanh nghiệp',
+                      'commission_rate': 'Tỷ lệ hoa hồng',
+                      'customer_discount_rate': 'Tỷ lệ chiết khấu',
+                    };
+                    
+                    const fieldName = fieldMap[field] || field;
+                    errorMessage += `• ${fieldName}: ${message}\n`;
+                  }
+                });
+              }
+            } else {
+              errorMessage = '❌ Lỗi xác thực:\n' + err.message;
+            }
+          } catch (parseError) {
+            errorMessage = '❌ Lỗi xác thực:\n' + err.message;
+          }
+        } else {
+          // Other errors
+          errorMessage = '❌ ' + err.message;
+        }
+      }
+      
+      // Add helpful hints
+      errorMessage += '\n\n💡 Kiểm tra lại:\n';
+      errorMessage += '• Email chủ sở hữu phải hợp lệ\n';
+      errorMessage += '• Mật khẩu tối thiểu 6 ký tự\n';
+      errorMessage += '• Tên doanh nghiệp không được để trống\n';
+      errorMessage += '• Số điện thoại: 10-20 ký tự\n';
+      
+      setError(errorMessage);
       setIsSubmitting(false);
     }
   };
@@ -263,21 +401,53 @@ export default function MerchantOnboardPage() {
             </div>
 
             <div style={styles.formGroup}>
-              <label style={styles.label}>Danh Mục *</label>
+              <label style={styles.label}>
+                Danh Mục (Chọn tối đa 5)
+              </label>
+              <small style={styles.hint}>
+                {formData.merchant_categories.length}/5 danh mục đã chọn. Không bắt buộc.
+              </small>
+              
               <select
-                name="merchant_category"
-                required
-                value={formData.merchant_category}
-                onChange={handleChange}
+                onChange={handleCategorySelect}
                 style={styles.input}
+                disabled={formData.merchant_categories.length >= 5}
               >
-                <option value="">-- Chọn danh mục --</option>
-                {categories.map(cat => (
-                  <option key={cat.id} value={cat.id}>
-                    {cat.category_name_vi}
-                  </option>
-                ))}
+                <option value="">-- Chọn danh mục để thêm --</option>
+                {categories
+                  .filter(cat => !formData.merchant_categories.includes(cat.id))
+                  .map(cat => (
+                    <option key={cat.id} value={cat.id}>
+                      {cat.category_name_vi}
+                    </option>
+                  ))}
               </select>
+
+              {formData.merchant_categories.length > 0 && (
+                <div style={styles.selectedCategories}>
+                  <strong style={{ fontSize: '14px', color: '#374151', marginBottom: '8px', display: 'block' }}>
+                    Đã chọn:
+                  </strong>
+                  <div style={styles.categoryTags}>
+                    {formData.merchant_categories.map((catId, index) => {
+                      const category = categories.find(c => c.id === catId);
+                      return (
+                        <span key={catId} style={styles.categoryTag}>
+                          {category?.category_name_vi}
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveCategory(catId)}
+                            style={styles.removeTagButton}
+                            title="Xóa"
+                          >
+                            ×
+                          </button>
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div style={styles.formGroup}>
@@ -554,7 +724,9 @@ export default function MerchantOnboardPage() {
 
           {error && (
             <div style={styles.errorBox}>
-              {error}
+              <pre style={{ whiteSpace: 'pre-wrap', margin: 0, fontFamily: 'inherit' }}>
+                {error}
+              </pre>
             </div>
           )}
 
@@ -685,6 +857,47 @@ const styles: Record<string, React.CSSProperties> = {
     marginTop: '4px',
     display: 'block',
   },
+  selectedCategories: {
+    marginTop: '12px',
+    padding: '12px',
+    backgroundColor: '#f9fafb',
+    borderRadius: '8px',
+    border: '1px solid #e5e7eb',
+  },
+  categoryTags: {
+    display: 'flex',
+    flexWrap: 'wrap' as const,
+    gap: '8px',
+  },
+  categoryTag: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '6px 12px',
+    backgroundColor: '#2563eb',
+    color: 'white',
+    borderRadius: '6px',
+    fontSize: '14px',
+    fontWeight: 500,
+  },
+  removeTagButton: {
+    background: 'none',
+    border: 'none',
+    color: 'white',
+    fontSize: '20px',
+    fontWeight: 'bold',
+    cursor: 'pointer',
+    padding: '0',
+    marginLeft: '4px',
+    lineHeight: '1',
+    width: '20px',
+    height: '20px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: '50%',
+    transition: 'background-color 0.2s',
+  },
   uploadButton: {
     display: 'inline-block',
     padding: '12px 24px',
@@ -740,12 +953,16 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
   },
   errorBox: {
-    padding: '12px',
+    padding: '16px',
     backgroundColor: '#fee2e2',
-    border: '1px solid #fecaca',
-    color: '#dc2626',
+    border: '2px solid #ef4444',
+    color: '#991b1b',
     borderRadius: '8px',
     fontSize: '14px',
+    marginTop: '20px',
+    marginBottom: '20px',
+    fontWeight: 500,
+    lineHeight: '1.6',
   },
   buttonGroup: {
     display: 'flex',

@@ -1,10 +1,16 @@
 import { Injectable } from '@nestjs/common';
+import { randomBytes } from 'crypto';
 import { SupabaseService } from '../../infrastructure/supabase/supabase.service';
 import { CreateMerchantDto, UpdateMerchantDto } from './merchants.dto';
 
 @Injectable()
 export class MerchantsService {
   constructor(private readonly supabase: SupabaseService) {}
+
+  private generateMerchantCode(): string {
+    // Generate 8-character uppercase alphanumeric code (e.g., "MCH12AB3")
+    return 'MCH' + randomBytes(4).toString('hex').toUpperCase().slice(0, 5);
+  }
 
   async findAll() {
     const { data, error } = await this.supabase.getClient()
@@ -62,18 +68,26 @@ export class MerchantsService {
   }
 
   async create(dto: CreateMerchantDto) {
+    const merchantCode = this.generateMerchantCode();
+    
     const { data, error } = await this.supabase.getClient()
       .from('merchant_details')
       .insert({
+        merchant_code: merchantCode,
         owner_email: dto.owner_email,
         owner_password: dto.owner_password,
-        business_name: dto.business_name,
-        business_address: dto.business_address,
-        business_phone: dto.business_phone,
-        business_email: dto.business_email,
-        business_description: dto.business_description,
-        commission_rate: dto.commission_rate,
-        customer_discount_rate: dto.customer_discount_rate,
+        merchant_name: dto.merchant_name,
+        merchant_description: dto.merchant_description,
+        merchant_phone: dto.merchant_phone,
+        merchant_email: dto.merchant_email,
+        merchant_contact_phone: dto.merchant_contact_phone,
+        new_address_city: dto.new_address_city,
+        new_address_ward: dto.new_address_ward,
+        new_address_line: dto.new_address_line,
+        merchant_commission_type: dto.merchant_commission_type,
+        merchant_commission_value: dto.merchant_commission_value,
+        merchant_discount_type: dto.merchant_discount_type,
+        merchant_discount_value: dto.merchant_discount_value,
         merchant_verified: false, // Default to false
       })
       .select()

@@ -11,6 +11,11 @@ export class CollaboratorsService {
     return randomBytes(16).toString('hex'); // 32 character hex string
   }
 
+  private generateCollaboratorCode(): string {
+    // Generate code like "COL-" + 13 uppercase hex characters (similar to existing format)
+    return 'COL-' + randomBytes(7).toString('hex').toUpperCase();
+  }
+
   async findAll() {
     const { data, error } = await this.supabase.getClient()
       .from('collaborators')
@@ -82,18 +87,20 @@ export class CollaboratorsService {
 
   async create(dto: CreateCollaboratorDto) {
     const qrCode = this.generateQrToken();
+    const collaboratorCode = this.generateCollaboratorCode();
 
     const { data, error } = await this.supabase.getClient()
       .from('collaborators')
       .insert({
-        full_name: dto.full_name,
-        phone: dto.phone,
-        email: dto.email,
-        bank_name: dto.bank_name,
-        bank_account_number: dto.bank_account_number,
+        collaborators_code: collaboratorCode,
+        collaborators_name: dto.collaborators_name,
+        collaborators_phone: dto.collaborators_phone,
+        collaborators_email: dto.collaborators_email,
+        collaborators_bank_name: dto.collaborators_bank_name,
+        collaborators_bank_acc_number: dto.collaborators_bank_acc_number,
         collaborators_password: dto.collaborators_password,
-        avatar_url: dto.avatar_url,
-        qr_code: qrCode,
+        collaborators_avatar_url: dto.collaborators_avatar_url,
+        collaborators_qr_code: qrCode,
         collaborators_verified: false, // Default to false
       })
       .select()

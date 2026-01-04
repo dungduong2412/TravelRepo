@@ -9,11 +9,14 @@ export default function CollaboratorOnboardPage() {
     fullName: '',
     phone: '',
     email: '',
+    password: '',
+    confirmPassword: '',
     bankName: '',
     bankAccountNumber: '',
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -24,17 +27,61 @@ export default function CollaboratorOnboardPage() {
     e.preventDefault();
     setIsSubmitting(true);
     setError(null);
+    setValidationErrors({});
+
+    // Client-side validation
+    const errors: Record<string, string> = {};
+
+    if (!formData.fullName.trim()) {
+      errors.fullName = 'Họ và tên là bắt buộc';
+    }
+
+    if (!formData.phone.trim()) {
+      errors.phone = 'Số điện thoại là bắt buộc';
+    } else if (!/^[0-9]{10,11}$/.test(formData.phone.replace(/\s/g, ''))) {
+      errors.phone = 'Số điện thoại phải có 10-11 chữ số';
+    }
+
+    if (!formData.email.trim()) {
+      errors.email = 'Email là bắt buộc';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+      errors.email = 'Email không hợp lệ';
+    }
+
+    if (!formData.password) {
+      errors.password = 'Mật khẩu là bắt buộc';
+    } else if (formData.password.length < 6) {
+      errors.password = 'Mật khẩu phải có ít nhất 6 ký tự';
+    }
+
+    if (formData.password !== formData.confirmPassword) {
+      errors.confirmPassword = 'Mật khẩu xác nhận không khớp';
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setValidationErrors(errors);
+      setIsSubmitting(false);
+      return;
+    }
 
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+      
+      const payload = {
+        collaborators_name: formData.fullName,
+        collaborators_phone: formData.phone,
+        collaborators_email: formData.email,
+        collaborators_password: formData.password,
+        collaborators_bank_name: formData.bankName || undefined,
+        collaborators_bank_acc_number: formData.bankAccountNumber || undefined,
+      };
+
       const response = await fetch(`${apiUrl}/collaborators`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          // TODO: Add authentication token when implemented
-          // 'Authorization': `Bearer ${token}`,
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
@@ -45,7 +92,7 @@ export default function CollaboratorOnboardPage() {
       // Redirect to success page
       router.push('/success?type=collaborator');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      setError(err instanceof Error ? err.message : 'Đã xảy ra lỗi khi gửi đơn đăng ký');
       setIsSubmitting(false);
     }
   };
@@ -71,6 +118,9 @@ export default function CollaboratorOnboardPage() {
               style={styles.input}
               placeholder="Nhập họ và tên đầy đủ"
             />
+            {validationErrors.fullName && (
+              <span style={styles.errorText}>{validationErrors.fullName}</span>
+            )}
           </div>
 
           <div style={styles.formGroup}>
@@ -87,6 +137,9 @@ export default function CollaboratorOnboardPage() {
               style={styles.input}
               placeholder="+84 XXX XXX XXX"
             />
+            {validationErrors.phone && (
+              <span style={styles.errorText}>{validationErrors.phone}</span>
+            )}
           </div>
 
           <div style={styles.formGroup}>
@@ -103,17 +156,57 @@ export default function CollaboratorOnboardPage() {
               style={styles.input}
               placeholder="email.cua.ban@example.com"
             />
+            {validationErrors.email && (
+              <span style={styles.errorText}>{validationErrors.email}</span>
+            )}
+          </div>
+
+          <div style={styles.formGroup}>
+            <label htmlFor="password" style={styles.label}>
+              Mật Khẩu *
+            </label>
+            <input
+              id="password"
+              name="password"
+              type="password"
+              required
+              value={formData.password}
+              onChange={handleChange}
+              style={styles.input}
+              placeholder="Ít nhất 6 ký tự"
+            />
+            {validationErrors.password && (
+              <span style={styles.errorText}>{validationErrors.password}</span>
+            )}
+          </div>
+
+          <div style={styles.formGroup}>
+            <label htmlFor="confirmPassword" style={styles.label}>
+              Xác Nhận Mật Khẩu *
+            </label>
+            <input
+              id="confirmPassword"
+              name="confirmPassword"
+              type="password"
+              required
+              value={formData.confirmPassword}
+              onChange={handleChange}
+              style={styles.input}
+              placeholder="Nhập lại mật khẩu"
+            />
+            {validationErrors.confirmPassword && (
+              <span style={styles.errorText}>{validationErrors.confirmPassword}</span>
+            )}
           </div>
 
           <div style={styles.formGroup}>
             <label htmlFor="bankName" style={styles.label}>
-              Tên Ngân Hàng *
+              Tên Ngân Hàng
             </label>
             <input
               id="bankName"
               name="bankName"
               type="text"
-              required
               value={formData.bankName}
               onChange={handleChange}
               style={styles.input}
@@ -123,13 +216,12 @@ export default function CollaboratorOnboardPage() {
 
           <div style={styles.formGroup}>
             <label htmlFor="bankAccountNumber" style={styles.label}>
-              Số Tài Khoản Ngân Hàng *
+              Số Tài Khoản Ngân Hàng
             </label>
             <input
               id="bankAccountNumber"
               name="bankAccountNumber"
               type="text"
-              required
               value={formData.bankAccountNumber}
               onChange={handleChange}
               style={styles.input}
@@ -226,6 +318,11 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#991b1b',
     borderRadius: '6px',
     fontSize: '14px',
+  },
+  errorText: {
+    fontSize: '12px',
+    color: '#dc2626',
+    marginTop: '4px',
   },
   buttonGroup: {
     display: 'flex',
