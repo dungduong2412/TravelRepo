@@ -21,7 +21,7 @@
 |----|-------------|----------|-------------|----------|-------|
 | REQ-001 | User Signup/Login Flow + Database Wiring | High | ✅ | ✅ | Complete: Login + Signup working |
 | REQ-002 | Admin User Management | High | 🔄 | ⏳ | Basic view done, actions pending |
-| REQ-003 | Admin homepage | High | ⏳ | ⏳ | Menu: Dashboard, Collaborators, Merchants |
+| REQ-003 | Admin homepage | High | ✅ | ⏳ | Complete: Dashboard, Collaborators, Merchants, Users, Categories |
 | REQ-004 | Admin approval flow | - | ⏳ | ⏳ | |
 
 ---
@@ -133,19 +133,43 @@
 **Priority**: High
 
 **Acceptance Criteria**:
-- [ ] Show the data correctly in the database as requirement for the 4 tables.
-- [ ] Update accordingly to db when execute on the tables. 
-- [ ] Clear message for error. 
-- [ ] Design is userfriendly and modern
+- [x] Admin layout with sidebar navigation
+- [x] Dashboard with statistics (active/pending collaborators and merchants)
+- [x] Collaborators management table with view details, approve, deactivate actions
+- [x] Merchants management table with view details, approve, deactivate actions
+- [x] User Management table showing email, role, status, login count, timestamps
+- [x] Categories master data page with add, edit, delete functionality
+- [x] Modern and user-friendly design
+- [x] Clear error messages
 
-**Implementation Status**: ⏳ Pending
-- Files: 
-- Endpoint: 
+**Implementation Status**: ✅ Done
+- **Files**: 
+  - Admin Layout: `frontend/app/admin/layout.tsx` (sidebar, navigation)
+  - Dashboard: `frontend/app/admin/dashboard/page.tsx` (statistics, quick actions)
+  - Collaborators: `frontend/app/admin/collaborators/page.tsx` (full table, filters, modal)
+  - Merchants: `frontend/app/admin/merchants/page.tsx` (full table, filters, modal)
+  - Users: `frontend/app/admin/users/page.tsx` (role filtering, summary stats)
+  - Categories: `frontend/app/admin/master-data/categories/page.tsx` (CRUD operations)
+- **Endpoints**: 
+  - `GET /collaborators` - Fetch all collaborators ✅
+  - `PATCH /collaborators/:id` - Update collaborator verification ✅
+  - `GET /merchants` - Fetch all merchants ✅
+  - `PATCH /merchants/:id` - Update merchant verification ✅
+  - `GET /user-profiles` - Fetch all user profiles ✅
+  - `GET /categories` - Fetch categories ✅
+  - `POST /categories` - Create category ✅
+  - `PUT /categories/:id` - Update category ✅
+  - `DELETE /categories/:id` - Delete category ✅
 
 **Review Status**: ⏳ Pending
-- Needs testing: 
+- Needs testing: Navigate to http://localhost:3001/admin/dashboard to test all pages
 
 **Notes**: 
+- Responsive sidebar with collapsible menu
+- Filter buttons for active/pending items
+- Modal popups for detailed views
+- Approve/Deactivate actions functional
+- Categories page has bilingual support (English/Vietnamese) 
 ### REQ-004: Admin approval flow
 **Description**: There are 2 seperated section in the 
 

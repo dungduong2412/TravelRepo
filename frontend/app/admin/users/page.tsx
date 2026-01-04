@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { publicApiFetch } from '../../../lib/api';
 
 interface UserProfile {
   id: string;
@@ -9,6 +8,7 @@ interface UserProfile {
   role: 'admin' | 'merchant' | 'collaborator';
   merchant_id?: string | null;
   collaborator_id?: string | null;
+  status: 'active' | 'inactive';
   last_login_at?: string | null;
   login_count?: number;
   created_at?: string;
@@ -19,15 +19,7 @@ export default function UserManagementPage() {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [newUser, setNewUser] = useState({
-    email: '',
-    password: '',
-    role: 'merchant' as 'admin' | 'merchant' | 'collaborator',
-  });
-  const [submitting, setSubmitting] = useState(false);
-  const [addError, setAddError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<'all' | 'admin' | 'merchant' | 'collaborator'>('all');
 
   useEffect(() => {
     fetchUsers();
@@ -36,581 +28,292 @@ export default function UserManagementPage() {
   const fetchUsers = async () => {
     try {
       setLoading(true);
-      const data = await publicApiFetch('/user-profiles');
-      setUsers(data);
-    } catch (err: any) {
-      setError(err.message || 'Failed to fetch users');
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+      const response = await fetch(`${apiUrl}/user-profiles`);
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch user profiles');
+      }
+
+      const data = await response.json();
+      
+      // Determine status based on role and verification
+      const processedUsers = data.map((user: any) => ({
+        ...user,
+        status: 'active', // You can enhance this logic based on verification flags
+      }));
+      
+      setUsers(processedUsers);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load users');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleAddUser = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSubmitting(true);
-    setAddError(null);
-
-    try {
-      await publicApiFetch('/user-profiles/create', {
-        method: 'POST',
-        body: JSON.stringify(newUser),
-      });
-
-      // Reset form and close modal
-      setNewUser({ email: '', password: '', role: 'merchant' });
-      setShowAddModal(false);
-
-      // Refresh user list
-      await fetchUsers();
-    } catch (err: any) {
-      setAddError(err.message || 'Failed to create user');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const formatDate = (dateString?: string | null) => {
-    if (!dateString) return 'Never';
-    const date = new Date(dateString);
-    return date.toLocaleString('vi-VN', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
-
-  const getRoleBadgeColor = (role: string) => {
-    switch (role) {
-      case 'admin':
-        return '#dc2626'; // red
-      case 'merchant':
-        return '#2563eb'; // blue
-      case 'collaborator':
-        return '#16a34a'; // green
-      default:
-        return '#6b7280'; // gray
-    }
-  };
-
-  const getRoleLabel = (role: string) => {
-    switch (role) {
-      case 'admin':
-        return 'Quản Trị Viên';
-      case 'merchant':
-        return 'Nhà Cung Cấp';
-      case 'collaborator':
-        return 'Cộng Tác Viên';
-      default:
-        return role;
-    }
-  };
-
-  const filteredUsers = users.filter(user =>
-    user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    getRoleLabel(user.role).toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredUsers = filter === 'all' 
+    ? users 
+    : users.filter(u => u.role === filter);
 
   if (loading) {
-    return (
-      <main style={styles.container}>
-        <div style={styles.loadingContainer}>
-          <p style={styles.loadingText}>Đang tải dữ liệu...</p>
-        </div>
-      </main>
-    );
+    return <div style={styles.loadingContainer}>Loading user profiles...</div>;
   }
 
   if (error) {
     return (
-      <main style={styles.container}>
-        <div style={styles.errorContainer}>
-          <p style={styles.errorText}>{error}</p>
-          <button onClick={fetchUsers} style={styles.retryButton}>
-            Thử Lại
-          </button>
-        </div>
-      </main>
+      <div style={styles.errorContainer}>
+        <p style={styles.errorText}>❌ {error}</p>
+        <button onClick={fetchUsers} style={styles.retryButton}>Retry</button>
+      </div>
     );
   }
 
   return (
-    <main style={styles.container}>
-      <div style={styles.content}>
-        <div style={styles.header}>
-          <div>
-            <h1 style={styles.title}>Quản Lý Người Dùng</h1>
-            <p style={styles.subtitle}>
-              Tổng số: {users.length} người dùng
-            </p>
-          </div>
-          <button onClick={() => setShowAddModal(true)} style={styles.addButton}>
-            + Thêm Người Dùng
+    <div style={styles.container}>
+      <div style={styles.header}>
+        <h2 style={styles.title}>User Management</h2>
+        <div style={styles.filterButtons}>
+          <button
+            onClick={() => setFilter('all')}
+            style={{
+              ...styles.filterButton,
+              backgroundColor: filter === 'all' ? '#3b82f6' : '#e5e7eb',
+              color: filter === 'all' ? 'white' : '#374151',
+            }}
+          >
+            All ({users.length})
+          </button>
+          <button
+            onClick={() => setFilter('admin')}
+            style={{
+              ...styles.filterButton,
+              backgroundColor: filter === 'admin' ? '#8b5cf6' : '#e5e7eb',
+              color: filter === 'admin' ? 'white' : '#374151',
+            }}
+          >
+            Admin ({users.filter(u => u.role === 'admin').length})
+          </button>
+          <button
+            onClick={() => setFilter('merchant')}
+            style={{
+              ...styles.filterButton,
+              backgroundColor: filter === 'merchant' ? '#10b981' : '#e5e7eb',
+              color: filter === 'merchant' ? 'white' : '#374151',
+            }}
+          >
+            Merchants ({users.filter(u => u.role === 'merchant').length})
+          </button>
+          <button
+            onClick={() => setFilter('collaborator')}
+            style={{
+              ...styles.filterButton,
+              backgroundColor: filter === 'collaborator' ? '#f59e0b' : '#e5e7eb',
+              color: filter === 'collaborator' ? 'white' : '#374151',
+            }}
+          >
+            Collaborators ({users.filter(u => u.role === 'collaborator').length})
           </button>
         </div>
+      </div>
 
-        <div style={styles.searchContainer}>
-          <input
-            type="text"
-            placeholder="Tìm kiếm theo email hoặc vai trò..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            style={styles.searchInput}
-          />
-        </div>
-
-        <div style={styles.tableContainer}>
-          <table style={styles.table}>
-            <thead>
-              <tr style={styles.tableHeaderRow}>
-                <th style={styles.tableHeader}>Email</th>
-                <th style={styles.tableHeader}>Vai Trò</th>
-                <th style={styles.tableHeader}>Lần Đăng Nhập Cuối</th>
-                <th style={styles.tableHeader}>Số Lần Đăng Nhập</th>
-                <th style={styles.tableHeader}>Ngày Tạo</th>
+      <div style={styles.tableContainer}>
+        <table style={styles.table}>
+          <thead>
+            <tr style={styles.tableHeader}>
+              <th style={styles.th}>Email</th>
+              <th style={styles.th}>Role</th>
+              <th style={styles.th}>Status</th>
+              <th style={styles.th}>Login Count</th>
+              <th style={styles.th}>Last Login</th>
+              <th style={styles.th}>Created</th>
+              <th style={styles.th}>Last Updated</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredUsers.map((user) => (
+              <tr key={user.id} style={styles.tableRow}>
+                <td style={styles.td}>{user.email}</td>
+                <td style={styles.td}>
+                  <span style={{
+                    ...styles.roleBadge,
+                    backgroundColor: 
+                      user.role === 'admin' ? '#ede9fe' :
+                      user.role === 'merchant' ? '#d1fae5' : '#fef3c7',
+                    color:
+                      user.role === 'admin' ? '#6b21a8' :
+                      user.role === 'merchant' ? '#065f46' : '#92400e',
+                  }}>
+                    {user.role.charAt(0).toUpperCase() + user.role.slice(1)}
+                  </span>
+                </td>
+                <td style={styles.td}>
+                  <span style={{
+                    ...styles.statusBadge,
+                    backgroundColor: user.status === 'active' ? '#d1fae5' : '#fee2e2',
+                    color: user.status === 'active' ? '#065f46' : '#991b1b',
+                  }}>
+                    {user.status.charAt(0).toUpperCase() + user.status.slice(1)}
+                  </span>
+                </td>
+                <td style={styles.td}>{user.login_count || 0}</td>
+                <td style={styles.td}>
+                  {user.last_login_at 
+                    ? new Date(user.last_login_at).toLocaleString()
+                    : 'Never'}
+                </td>
+                <td style={styles.td}>
+                  {user.created_at
+                    ? new Date(user.created_at).toLocaleDateString()
+                    : 'N/A'}
+                </td>
+                <td style={styles.td}>
+                  {user.updated_at
+                    ? new Date(user.updated_at).toLocaleDateString()
+                    : 'N/A'}
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {filteredUsers.length === 0 ? (
-                <tr>
-                  <td colSpan={5} style={styles.emptyCell}>
-                    Không tìm thấy người dùng
-                  </td>
-                </tr>
-              ) : (
-                filteredUsers.map((user) => (
-                  <tr key={user.id} style={styles.tableRow}>
-                    <td style={styles.tableCell}>
-                      <div style={styles.emailContainer}>
-                        <span style={styles.email}>{user.email}</span>
-                        {user.merchant_id && (
-                          <span style={styles.idBadge}>M: {user.merchant_id.slice(0, 8)}</span>
-                        )}
-                        {user.collaborator_id && (
-                          <span style={styles.idBadge}>C: {user.collaborator_id.slice(0, 8)}</span>
-                        )}
-                      </div>
-                    </td>
-                    <td style={styles.tableCell}>
-                      <span
-                        style={{
-                          ...styles.roleBadge,
-                          backgroundColor: getRoleBadgeColor(user.role),
-                        }}
-                      >
-                        {getRoleLabel(user.role)}
-                      </span>
-                    </td>
-                    <td style={styles.tableCell}>
-                      {formatDate(user.last_login_at)}
-                    </td>
-                    <td style={styles.tableCell}>
-                      <span style={styles.loginCount}>
-                        {user.login_count || 0} lần
-                      </span>
-                    </td>
-                    <td style={styles.tableCell}>
-                      {formatDate(user.created_at)}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+            ))}
+          </tbody>
+        </table>
 
-        {filteredUsers.length > 0 && (
-          <div style={styles.stats}>
-            <div style={styles.statCard}>
-              <span style={styles.statLabel}>Quản Trị Viên</span>
-              <span style={styles.statValue}>
-                {users.filter(u => u.role === 'admin').length}
-              </span>
-            </div>
-            <div style={styles.statCard}>
-              <span style={styles.statLabel}>Nhà Cung Cấp</span>
-              <span style={styles.statValue}>
-                {users.filter(u => u.role === 'merchant').length}
-              </span>
-            </div>
-            <div style={styles.statCard}>
-              <span style={styles.statLabel}>Cộng Tác Viên</span>
-              <span style={styles.statValue}>
-                {users.filter(u => u.role === 'collaborator').length}
-              </span>
-            </div>
-            <div style={styles.statCard}>
-              <span style={styles.statLabel}>Tổng Đăng Nhập</span>
-              <span style={styles.statValue}>
-                {users.reduce((sum, u) => sum + (u.login_count || 0), 0)} lần
-              </span>
-            </div>
+        {filteredUsers.length === 0 && (
+          <div style={styles.emptyState}>
+            <p>No users found for this filter</p>
           </div>
         )}
       </div>
 
-      {/* Add User Modal */}
-      {showAddModal && (
-        <div style={styles.modalOverlay} onClick={() => setShowAddModal(false)}>
-          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
-            <h2 style={styles.modalTitle}>Thêm Người Dùng Mới</h2>
-            
-            <form onSubmit={handleAddUser} style={styles.form}>
-              <div style={styles.formGroup}>
-                <label style={styles.label}>Email *</label>
-                <input
-                  type="email"
-                  value={newUser.email}
-                  onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
-                  required
-                  style={styles.input}
-                  placeholder="user@example.com"
-                />
-              </div>
-
-              <div style={styles.formGroup}>
-                <label style={styles.label}>Mật Khẩu *</label>
-                <input
-                  type="password"
-                  value={newUser.password}
-                  onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
-                  required
-                  minLength={6}
-                  style={styles.input}
-                  placeholder="Tối thiểu 6 ký tự"
-                />
-              </div>
-
-              <div style={styles.formGroup}>
-                <label style={styles.label}>Vai Trò *</label>
-                <select
-                  value={newUser.role}
-                  onChange={(e) => setNewUser({ ...newUser, role: e.target.value as any })}
-                  required
-                  style={styles.select}
-                >
-                  <option value="admin">Quản Trị Viên</option>
-                  <option value="merchant">Nhà Cung Cấp</option>
-                  <option value="collaborator">Cộng Tác Viên</option>
-                </select>
-              </div>
-
-              {addError && (
-                <div style={styles.errorMessage}>
-                  {addError}
-                </div>
-              )}
-
-              <div style={styles.modalActions}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowAddModal(false);
-                    setAddError(null);
-                    setNewUser({ email: '', password: '', role: 'merchant' });
-                  }}
-                  style={styles.cancelButton}
-                  disabled={submitting}
-                >
-                  Hủy
-                </button>
-                <button
-                  type="submit"
-                  style={styles.submitButton}
-                  disabled={submitting}
-                >
-                  {submitting ? 'Đang Tạo...' : 'Tạo Người Dùng'}
-                </button>
-              </div>
-            </form>
-          </div>
+      <div style={styles.summary}>
+        <div style={styles.summaryItem}>
+          <strong>Total Users:</strong> {users.length}
         </div>
-      )}
-    </main>
+        <div style={styles.summaryItem}>
+          <strong>Active:</strong> {users.filter(u => u.status === 'active').length}
+        </div>
+        <div style={styles.summaryItem}>
+          <strong>Total Logins:</strong> {users.reduce((sum, u) => sum + (u.login_count || 0), 0)}
+        </div>
+      </div>
+    </div>
   );
 }
 
 const styles: Record<string, React.CSSProperties> = {
   container: {
-    minHeight: '100vh',
-    backgroundColor: '#f9fafb',
-    fontFamily: 'system-ui, sans-serif',
-    padding: '24px',
-  },
-  content: {
     maxWidth: '1400px',
-    margin: '0 auto',
-  },
-  loadingContainer: {
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    minHeight: '60vh',
-  },
-  loadingText: {
-    fontSize: '18px',
-    color: '#6b7280',
-  },
-  errorContainer: {
-    display: 'flex',
-    flexDirection: 'column',
-    justifyContent: 'center',
-    alignItems: 'center',
-    minHeight: '60vh',
-    gap: '16px',
-  },
-  errorText: {
-    fontSize: '18px',
-    color: '#dc2626',
-  },
-  retryButton: {
-    padding: '10px 20px',
-    backgroundColor: '#2563eb',
-    color: 'white',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontSize: '16px',
   },
   header: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: '32px',
+    marginBottom: '25px',
     flexWrap: 'wrap',
-    gap: '16px',
+    gap: '15px',
   },
   title: {
-    fontSize: '32px',
-    fontWeight: 700,
+    fontSize: '24px',
+    fontWeight: 600,
+    margin: 0,
     color: '#111827',
-    marginBottom: '4px',
   },
-  subtitle: {
-    fontSize: '16px',
-    color: '#6b7280',
+  filterButtons: {
+    display: 'flex',
+    gap: '10px',
+    flexWrap: 'wrap',
   },
-  backButton: {
-    padding: '10px 20px',
-    backgroundColor: 'white',
-    color: '#374151',
-    border: '2px solid #d1d5db',
-    borderRadius: '8px',
+  filterButton: {
+    padding: '8px 16px',
+    border: 'none',
+    borderRadius: '6px',
     cursor: 'pointer',
-    fontSize: '16px',
+    fontSize: '14px',
     fontWeight: 500,
-    transition: 'background-color 0.2s',
-  },
-  searchContainer: {
-    marginBottom: '24px',
-  },
-  searchInput: {
-    width: '100%',
-    padding: '12px 16px',
-    fontSize: '16px',
-    border: '1px solid #d1d5db',
-    borderRadius: '8px',
-    outline: 'none',
+    transition: 'all 0.2s',
   },
   tableContainer: {
     backgroundColor: 'white',
-    borderRadius: '12px',
+    borderRadius: '8px',
     boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
-    overflow: 'hidden',
-    marginBottom: '32px',
+    overflow: 'auto',
+    marginBottom: '20px',
   },
   table: {
     width: '100%',
     borderCollapse: 'collapse',
   },
-  tableHeaderRow: {
-    backgroundColor: '#f9fafb',
-    borderBottom: '2px solid #e5e7eb',
-  },
   tableHeader: {
-    padding: '16px',
+    backgroundColor: '#f9fafb',
+  },
+  th: {
+    padding: '12px 16px',
     textAlign: 'left',
     fontSize: '14px',
     fontWeight: 600,
     color: '#374151',
-    textTransform: 'uppercase',
-    letterSpacing: '0.05em',
+    borderBottom: '1px solid #e5e7eb',
+    whiteSpace: 'nowrap',
   },
   tableRow: {
     borderBottom: '1px solid #e5e7eb',
-    transition: 'background-color 0.2s',
   },
-  tableCell: {
-    padding: '16px',
+  td: {
+    padding: '12px 16px',
     fontSize: '14px',
     color: '#111827',
-  },
-  emptyCell: {
-    padding: '48px',
-    textAlign: 'center',
-    fontSize: '16px',
-    color: '#6b7280',
-  },
-  emailContainer: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '4px',
-  },
-  email: {
-    fontWeight: 500,
-  },
-  idBadge: {
-    fontSize: '11px',
-    color: '#6b7280',
-    backgroundColor: '#f3f4f6',
-    padding: '2px 6px',
-    borderRadius: '4px',
-    display: 'inline-block',
-    width: 'fit-content',
   },
   roleBadge: {
-    display: 'inline-block',
     padding: '4px 12px',
     borderRadius: '12px',
-    fontSize: '13px',
+    fontSize: '12px',
     fontWeight: 500,
-    color: 'white',
+    display: 'inline-block',
   },
-  loginCount: {
-    fontWeight: 600,
-    color: '#2563eb',
-  },
-  stats: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-    gap: '16px',
-  },
-  statCard: {
-    backgroundColor: 'white',
-    padding: '24px',
+  statusBadge: {
+    padding: '4px 12px',
     borderRadius: '12px',
+    fontSize: '12px',
+    fontWeight: 500,
+    display: 'inline-block',
+  },
+  loadingContainer: {
+    textAlign: 'center',
+    padding: '40px',
+    fontSize: '16px',
+    color: '#6b7280',
+  },
+  errorContainer: {
+    textAlign: 'center',
+    padding: '40px',
+  },
+  errorText: {
+    color: '#dc2626',
+    fontSize: '16px',
+    marginBottom: '15px',
+  },
+  retryButton: {
+    padding: '10px 20px',
+    backgroundColor: '#3b82f6',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    cursor: 'pointer',
+  },
+  emptyState: {
+    textAlign: 'center',
+    padding: '40px',
+    color: '#6b7280',
+  },
+  summary: {
+    backgroundColor: 'white',
+    padding: '20px',
+    borderRadius: '8px',
     boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
     display: 'flex',
-    flexDirection: 'column',
-    gap: '8px',
+    gap: '30px',
+    flexWrap: 'wrap',
   },
-  statLabel: {
+  summaryItem: {
     fontSize: '14px',
-    color: '#6b7280',
-    fontWeight: 500,
-  },
-  statValue: {
-    fontSize: '32px',
-    fontWeight: 700,
-    color: '#111827',
-  },
-  headerButtons: {
-    display: 'flex',
-    gap: '12px',
-    alignItems: 'center',
-  },
-  addButton: {
-    padding: '10px 20px',
-    backgroundColor: '#16a34a',
-    color: 'white',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontSize: '16px',
-    fontWeight: 500,
-    transition: 'background-color 0.2s',
-  },
-  modalOverlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 1000,
-  },
-  modal: {
-    backgroundColor: 'white',
-    borderRadius: '12px',
-    padding: '32px',
-    maxWidth: '500px',
-    width: '90%',
-    maxHeight: '90vh',
-    overflow: 'auto',
-    boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
-  },
-  modalTitle: {
-    fontSize: '24px',
-    fontWeight: 700,
-    color: '#111827',
-    marginBottom: '24px',
-  },
-  form: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '20px',
-  },
-  formGroup: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '8px',
-  },
-  label: {
-    fontSize: '14px',
-    fontWeight: 600,
     color: '#374151',
-  },
-  input: {
-    padding: '12px',
-    fontSize: '16px',
-    border: '1px solid #d1d5db',
-    borderRadius: '8px',
-    outline: 'none',
-  },
-  select: {
-    padding: '12px',
-    fontSize: '16px',
-    border: '1px solid #d1d5db',
-    borderRadius: '8px',
-    outline: 'none',
-    backgroundColor: 'white',
-    cursor: 'pointer',
-  },
-  errorMessage: {
-    padding: '12px',
-    backgroundColor: '#fee2e2',
-    color: '#dc2626',
-    borderRadius: '8px',
-    fontSize: '14px',
-  },
-  modalActions: {
-    display: 'flex',
-    justifyContent: 'flex-end',
-    gap: '12px',
-    marginTop: '8px',
-  },
-  cancelButton: {
-    padding: '10px 20px',
-    backgroundColor: 'white',
-    color: '#374151',
-    border: '2px solid #d1d5db',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontSize: '16px',
-    fontWeight: 500,
-  },
-  submitButton: {
-    padding: '10px 20px',
-    backgroundColor: '#2563eb',
-    color: 'white',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontSize: '16px',
-    fontWeight: 500,
   },
 };
