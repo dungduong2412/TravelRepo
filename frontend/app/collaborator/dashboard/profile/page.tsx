@@ -12,7 +12,7 @@ export default function CollaboratorProfilePage() {
   const [success, setSuccess] = useState(false);
   
   const [collaborator, setCollaborator] = useState<any>(null);
-  const [qrCode, setQrCode] = useState<string>('');
+  const [avatarPreview, setAvatarPreview] = useState<string>('');
   
   const [formData, setFormData] = useState({
     collaborators_name: '',
@@ -54,15 +54,10 @@ export default function CollaboratorProfilePage() {
         collaborators_bank_acc_number: data.collaborators_bank_acc_number || '',
         collaborators_avatar_url: data.collaborators_avatar_url || '',
       });
-
-      // Fetch QR code if verified
-      if (data.collaborators_verified) {
-        try {
-          const qrData = await apiFetch(`/collaborators/${id}/qr-code`);
-          setQrCode(qrData.qr_code_image);
-        } catch (qrErr) {
-          console.error('Failed to load QR code:', qrErr);
-        }
+      
+      // Set avatar preview if exists
+      if (data.collaborators_avatar_url) {
+        setAvatarPreview(data.collaborators_avatar_url);
       }
     } catch (err: any) {
       setError(err.message || 'Không thể tải thông tin');
@@ -74,6 +69,32 @@ export default function CollaboratorProfilePage() {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Check file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      setError('Ảnh quá lớn. Vui lòng chọn ảnh nhỏ hơn 10MB');
+      return;
+    }
+
+    // Check file type
+    if (!file.type.startsWith('image/')) {
+      setError('Vui lòng chọn file ảnh');
+      return;
+    }
+
+    // Convert to base64
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64String = reader.result as string;
+      setAvatarPreview(base64String);
+      setFormData(prev => ({ ...prev, collaborators_avatar_url: base64String }));
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -114,56 +135,11 @@ export default function CollaboratorProfilePage() {
       <h1 style={styles.title}>Hồ Sơ Cá Nhân</h1>
       <p style={styles.subtitle}>Quản lý thông tin cá nhân của bạn</p>
 
-      {/* QR Code Section - MOST IMPORTANT */}
-      {collaborator?.collaborators_verified && qrCode && (
-        <div style={styles.qrCard}>
-          <h2 style={styles.qrTitle}>💰 Mã QR Kiếm Tiền Của Bạn</h2>
-          <p style={styles.qrDescription}>
-            Chia sẻ mã này với khách hàng để nhận hoa hồng từ mỗi đơn hàng
-          </p>
-          <div style={styles.qrContainer}>
-            <div style={styles.qrImageWrapper}>
-              <img src={qrCode} alt="QR Code" style={styles.qrImage} />
-            </div>
-            <div style={styles.qrInfo}>
-              <div style={styles.qrInfoItem}>
-                <span style={styles.qrIcon}>✅</span>
-                <div>
-                  <p style={styles.qrInfoTitle}>Mã: {collaborator.collaborators_code}</p>
-                  <p style={styles.qrInfoSubtitle}>Mã cộng tác viên của bạn</p>
-                </div>
-              </div>
-              <div style={styles.qrInfoItem}>
-                <span style={styles.qrIcon}>💵</span>
-                <div>
-                  <p style={styles.qrInfoTitle}>Nhận hoa hồng tự động</p>
-                  <p style={styles.qrInfoSubtitle}>Từ mỗi đơn hàng qua mã QR này</p>
-                </div>
-              </div>
-              <div style={styles.qrInfoItem}>
-                <span style={styles.qrIcon}>⭐</span>
-                <div>
-                  <p style={styles.qrInfoTitle}>Đánh giá: {collaborator.collaborators_rating || 'Chưa có'}</p>
-                  <p style={styles.qrInfoSubtitle}>Xếp hạng hiện tại</p>
-                </div>
-              </div>
-              <a
-                href={qrCode}
-                download={`QR_${collaborator.collaborators_code}.png`}
-                style={styles.downloadButton}
-              >
-                📥 Tải Mã QR
-              </a>
-            </div>
-          </div>
-        </div>
-      )}
-
       {collaborator && !collaborator.collaborators_verified && (
         <div style={styles.pendingCard}>
           <span style={{ fontSize: '32px', marginBottom: '12px' }}>⏳</span>
           <p style={styles.pendingText}>
-            Tài khoản của bạn đang chờ admin phê duyệt. Sau khi được phê duyệt, bạn sẽ nhận được mã QR để kiếm tiền.
+            Tài khoản của bạn đang chờ admin phê duyệt.
           </p>
         </div>
       )}
@@ -196,6 +172,35 @@ export default function CollaboratorProfilePage() {
 
         <div style={styles.card}>
           <h2 style={styles.cardTitle}>Thông Tin Cá Nhân</h2>
+          
+          {/* Avatar Upload Section */}
+          <div style={styles.avatarSection}>
+            <label style={styles.label}>Ảnh Đại Diện</label>
+            <div style={styles.avatarContainer}>
+              <div style={styles.avatarCircle}>
+                {avatarPreview ? (
+                  <img src={avatarPreview} alt="Avatar" style={styles.avatarImage} />
+                ) : (
+                  <div style={styles.avatarPlaceholder}>
+                    <span style={{ fontSize: '48px' }}>👤</span>
+                  </div>
+                )}
+              </div>
+              <div style={styles.avatarUpload}>
+                <label htmlFor="avatar-upload" style={styles.uploadButton}>
+                  📷 Chọn Ảnh
+                </label>
+                <input
+                  id="avatar-upload"
+                  type="file"
+                  accept="image/*"
+                  onChange={handleAvatarChange}
+                  style={styles.fileInput}
+                />
+                <p style={styles.uploadHint}>Kích thước tối đa: 10MB</p>
+              </div>
+            </div>
+          </div>
           
           <div style={styles.formGroup}>
             <label style={styles.label}>Họ và Tên</label>
@@ -317,79 +322,6 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#111827',
     fontFamily: 'monospace',
   },
-  qrCard: {
-    backgroundColor: 'white',
-    background: 'linear-gradient(135deg, #fff5f5 0%, #fffbea 100%)',
-    borderRadius: '16px',
-    padding: '32px',
-    marginBottom: '32px',
-    boxShadow: '0 4px 6px rgba(255, 56, 92, 0.15)',
-    border: '2px solid #FF385C',
-  },
-  qrTitle: {
-    fontSize: '24px',
-    fontWeight: 700,
-    color: '#FF385C',
-    marginBottom: '8px',
-  },
-  qrDescription: {
-    fontSize: '16px',
-    color: '#6b7280',
-    marginBottom: '24px',
-  },
-  qrContainer: {
-    display: 'flex',
-    flexDirection: 'row',
-    gap: '32px',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-  },
-  qrImageWrapper: {
-    backgroundColor: 'white',
-    padding: '20px',
-    borderRadius: '12px',
-    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
-  },
-  qrImage: {
-    width: '240px',
-    height: '240px',
-    display: 'block',
-  },
-  qrInfo: {
-    flex: 1,
-    minWidth: '300px',
-  },
-  qrInfoItem: {
-    display: 'flex',
-    alignItems: 'flex-start',
-    gap: '12px',
-    marginBottom: '20px',
-  },
-  qrIcon: {
-    fontSize: '28px',
-  },
-  qrInfoTitle: {
-    fontSize: '16px',
-    fontWeight: 600,
-    color: '#111827',
-    marginBottom: '4px',
-  },
-  qrInfoSubtitle: {
-    fontSize: '14px',
-    color: '#6b7280',
-  },
-  downloadButton: {
-    display: 'inline-block',
-    padding: '12px 24px',
-    backgroundColor: '#FF385C',
-    color: 'white',
-    borderRadius: '8px',
-    fontSize: '16px',
-    fontWeight: 600,
-    textDecoration: 'none',
-    cursor: 'pointer',
-    marginTop: '8px',
-  },
   pendingCard: {
     backgroundColor: '#fffbea',
     border: '2px solid #fcd34d',
@@ -417,6 +349,61 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 600,
     color: '#111827',
     marginBottom: '20px',
+  },
+  avatarSection: {
+    marginBottom: '24px',
+  },
+  avatarContainer: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '24px',
+    marginTop: '12px',
+  },
+  avatarCircle: {
+    width: '120px',
+    height: '120px',
+    borderRadius: '50%',
+    overflow: 'hidden',
+    border: '3px solid #e5e7eb',
+    backgroundColor: '#f9fafb',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+    objectFit: 'cover',
+  },
+  avatarPlaceholder: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#f3f4f6',
+  },
+  avatarUpload: {
+    flex: 1,
+  },
+  uploadButton: {
+    display: 'inline-block',
+    padding: '10px 20px',
+    backgroundColor: '#4f46e5',
+    color: 'white',
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontWeight: 600,
+    cursor: 'pointer',
+    transition: 'background-color 0.2s',
+  },
+  uploadHint: {
+    fontSize: '12px',
+    color: '#6b7280',
+    marginTop: '8px',
+  },
+  fileInput: {
+    display: 'none',
   },
   formGroup: {
     marginBottom: '16px',

@@ -16,16 +16,23 @@ export default function HomePage() {
       <div style={styles.buttonGroup}>
         <button
           style={styles.primaryButton}
+          onClick={() => router.push('/login')}
+        >
+          Đăng Nhập
+        </button>
+
+        <button
+          style={styles.secondaryButton}
           onClick={() => router.push('/merchant/onboard')}
         >
-          Tôi là Nhà Cung Cấp
+          Đăng Ký Nhà Cung Cấp
         </button>
 
         <button
           style={styles.secondaryButton}
           onClick={() => router.push('/collaborator/onboard')}
         >
-          Tôi là Cộng Tác Viên
+          Đăng Ký Cộng Tác Viên
         </button>
       </div>
     </main>

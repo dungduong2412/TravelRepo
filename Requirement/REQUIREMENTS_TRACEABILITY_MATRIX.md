@@ -29,7 +29,7 @@
 ## Detailed Requirements
 
 ### REQ-001: User Signup/Login Flow
-**Description**: Implement secure login for merchants and collaborators. Once they have complete the sign up system shows thank you message to join us and systems will inform you to wait for admin approval.
+**Description**: Unified login system where users log in with email/password. System auto-detects user type (merchant/collaborator/admin) from database. After signup, users see thank you message and wait for admin approval.
 
 **Priority**: High
 
@@ -38,11 +38,15 @@
 - [x] Frontend-Backend API communication configured
 - [x] Environment variables configured (.env, frontend/.env.local)
 - [x] CORS configured for localhost:3000 and localhost:3001
-- [x] User can login with email/password
+- [x] Single unified login page at /login (no separate merchant/collaborator logins)
+- [x] Backend auto-detects user type from user_profiles table by email
+- [x] User can login with email/password only
 - [x] Password verification using bcrypt
 - [x] JWT token returned on successful login
+- [x] Auto-redirect to correct dashboard based on user role
 - [x] Proper error messages for invalid credentials
 - [x] Details login is stored correctly in database
+- [x] Signup buttons on login page link to onboard pages
 - [x] Signup page for merchants (with validation, categories, password)
 - [x] Signup page for collaborators (with validation, bank info, password)
 - [x] Thank you message after signup (redirect to success page)
@@ -50,19 +54,20 @@
 
 **Implementation Status**: ✅ Done
 - **Completed Files**: 
-  - Backend Auth: `backend/src/modules/auth/auth.service.ts`, `backend/src/modules/auth/auth.controller.ts`
+  - Backend Auth: `backend/src/modules/auth/auth.service.ts` (loginAuto method), `backend/src/modules/auth/auth.controller.ts` (optional userType)
   - Backend Infrastructure: `backend/src/infrastructure/supabase/supabase.service.ts`
   - Backend User Profiles: `backend/src/modules/user-profiles/user-profiles.service.ts`
   - Backend Collaborators: `backend/src/modules/collaborators/collaborators.service.ts`, `backend/src/modules/collaborators/collaborators.controller.ts`, `backend/src/modules/collaborators/collaborators.dto.ts`
   - Backend Merchants: `backend/src/modules/merchants/merchants.service.ts`, `backend/src/modules/merchants/merchants.controller.ts`, `backend/src/modules/merchants/merchants.dto.ts`
   - Frontend API: `frontend/lib/api.ts`
-  - Frontend Login: `frontend/app/user-login/page.tsx`
+  - **Frontend Login: `frontend/app/login/page.tsx` (NEW unified login page)**
+  - Frontend Home: `frontend/app/page.tsx` (updated with login and signup buttons)
   - Frontend Merchant Signup: `frontend/app/merchant/onboard/page.tsx` (with categories, validation, password)
   - Frontend Collaborator Signup: `frontend/app/collaborator/onboard/page.tsx` (with validation, password)
   - Success Page: `frontend/app/success/page.tsx`
   - Environment: `.env`, `frontend/.env.local`
 - **Endpoints Working**: 
-  - `POST /auth/login` - User authentication ✅
+  - `POST /auth/login` - User authentication with auto-detection ✅
   - `POST /merchants` - Merchant signup with merchant_code generation ✅
   - `POST /collaborators` - Collaborator signup with collaborators_code and QR code generation ✅
   - `GET /user-profiles` - Fetch user profiles ✅
@@ -70,6 +75,9 @@
   - `GET /merchants` - Fetch merchants ✅
 - **Database Connection**: ✅ Verified - Successfully fetching and inserting data to Supabase
 - **Features**:
+  - **Auto-detection**: Backend checks user_profiles.role to determine if merchant/collaborator/admin
+  - **Unified login**: One page at /login for all user types
+  - **Smart redirect**: Automatically routes to correct dashboard after login
   - Merchant code generation (MCH + 5 hex chars)
   - Collaborator code generation (COL- + 14 hex chars)
   - QR code generation for collaborators (32 hex chars)
@@ -81,14 +89,22 @@
 **Review Status**: ✅ Passed
 - Connection tested: 2026-01-04
 - Status: Backend ↔️ Supabase ↔️ Frontend all wired correctly
+- Unified login tested: 2026-01-04
 - Test results: 
   - User profiles, collaborators, and merchants endpoints returning data
   - Merchant signup tested successfully (merchant_code: MCH4F107)
   - Collaborator signup tested successfully (collaborators_code: COL-BD8B484645E0AB)
   - All validation working correctly
   - Database schema mismatches resolved (merchant_*, collaborators_* prefixes)
+  - Auto-detection working: Email lookup finds user role in user_profiles
+  - Login redirects correctly based on role
 
 **Notes**: 
+- Simplified from separate login pages to single unified page
+- Backend loginAuto() method queries user_profiles to find role
+- userType parameter now optional in backend (for backwards compatibility)
+- Home page (/) now has "Đăng Nhập" button linking to /login
+- Login page has two signup buttons: "Đăng Ký Merchant" and "Đăng Ký Collaborator"
 - Fixed Supabase URL (removed 'db.' prefix)
 - All environment variables configured correctly
 - CORS enabled for localhost:3000 and localhost:3001

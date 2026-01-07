@@ -21,6 +21,31 @@ export class AuthService {
     );
   }
 
+  async loginAuto(email: string, password: string, userType?: 'merchant' | 'collaborator') {
+    // If userType is provided, use it directly
+    if (userType) {
+      return this.login(email, password, userType);
+    }
+
+    // Auto-detect user type by checking which table has this email
+    const authClient = this.getAuthClient();
+    
+    // Check user_profiles first
+    const { data: profile } = await authClient
+      .from('user_profiles')
+      .select('role')
+      .eq('email', email)
+      .single();
+    
+    if (profile && profile.role) {
+      console.log('Auto-detected user type:', profile.role);
+      return this.login(email, password, profile.role as 'merchant' | 'collaborator');
+    }
+
+    // If not in user_profiles, throw error
+    throw new UnauthorizedException('Email not found. Please sign up first.');
+  }
+
   async login(email: string, password: string, userType: 'merchant' | 'collaborator') {
     console.log('Login attempt:', { email, userType, userTypeType: typeof userType });
     
