@@ -10,6 +10,7 @@ export default function MerchantProfilePage() {
   const [success, setSuccess] = useState(false);
   const [categories, setCategories] = useState<any[]>([]);
   const [merchant, setMerchant] = useState<any>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string>('');
   
   const [formData, setFormData] = useState({
     merchant_name: '',
@@ -28,6 +29,7 @@ export default function MerchantProfilePage() {
     owner_name: '',
     owner_email: '',
     owner_phone: '',
+    merchant_avatar_url: '',
   });
 
   useEffect(() => {
@@ -78,7 +80,13 @@ export default function MerchantProfilePage() {
         owner_name: data.owner_name || '',
         owner_email: data.owner_email || '',
         owner_phone: data.owner_phone || '',
+        merchant_avatar_url: data.merchant_avatar_url || '',
       });
+      
+      // Set avatar preview if exists
+      if (data.merchant_avatar_url) {
+        setAvatarPreview(data.merchant_avatar_url);
+      }
     } catch (err: any) {
       setError(err.message || 'Không thể tải thông tin');
     } finally {
@@ -89,6 +97,32 @@ export default function MerchantProfilePage() {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Check file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      setError('Ảnh quá lớn. Vui lòng chọn ảnh nhỏ hơn 10MB');
+      return;
+    }
+
+    // Check file type
+    if (!file.type.startsWith('image/')) {
+      setError('Vui lòng chọn file ảnh');
+      return;
+    }
+
+    // Convert to base64
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64String = reader.result as string;
+      setAvatarPreview(base64String);
+      setFormData(prev => ({ ...prev, merchant_avatar_url: base64String }));
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -170,6 +204,35 @@ export default function MerchantProfilePage() {
 
         <div style={styles.card}>
           <h2 style={styles.cardTitle}>Thông Tin Chủ Sở Hữu</h2>
+          
+          {/* Avatar Upload Section */}
+          <div style={styles.avatarSection}>
+            <label style={styles.label}>Ảnh Đại Diện</label>
+            <div style={styles.avatarContainer}>
+              <div style={styles.avatarCircle}>
+                {avatarPreview ? (
+                  <img src={avatarPreview} alt="Avatar" style={styles.avatarImage} />
+                ) : (
+                  <div style={styles.avatarPlaceholder}>
+                    <span style={{ fontSize: '48px' }}>🏢</span>
+                  </div>
+                )}
+              </div>
+              <div style={styles.avatarUpload}>
+                <label htmlFor="merchant-avatar-upload" style={styles.uploadButton}>
+                  📷 Chọn Ảnh
+                </label>
+                <input
+                  id="merchant-avatar-upload"
+                  type="file"
+                  accept="image/*"
+                  onChange={handleAvatarChange}
+                  style={styles.fileInput}
+                />
+                <p style={styles.uploadHint}>Kích thước tối đa: 10MB</p>
+              </div>
+            </div>
+          </div>
           
           <div style={styles.formGroup}>
             <label style={styles.label}>Họ và Tên Chủ Sở Hữu</label>
@@ -468,6 +531,61 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 600,
     color: '#111827',
     marginBottom: '20px',
+  },
+  avatarSection: {
+    marginBottom: '24px',
+  },
+  avatarContainer: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '24px',
+    marginTop: '12px',
+  },
+  avatarCircle: {
+    width: '120px',
+    height: '120px',
+    borderRadius: '50%',
+    overflow: 'hidden',
+    border: '3px solid #e5e7eb',
+    backgroundColor: '#f9fafb',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+    objectFit: 'cover',
+  },
+  avatarPlaceholder: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#f3f4f6',
+  },
+  avatarUpload: {
+    flex: 1,
+  },
+  uploadButton: {
+    display: 'inline-block',
+    padding: '10px 20px',
+    backgroundColor: '#4f46e5',
+    color: 'white',
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontWeight: 600,
+    cursor: 'pointer',
+    transition: 'background-color 0.2s',
+  },
+  uploadHint: {
+    fontSize: '12px',
+    color: '#6b7280',
+    marginTop: '8px',
+  },
+  fileInput: {
+    display: 'none',
   },
   formGroup: {
     marginBottom: '16px',
