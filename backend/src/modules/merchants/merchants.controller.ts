@@ -35,6 +35,26 @@ export class MerchantsController {
     return this.service.update(id, dto);
   }
 
+  @Post(':id/approve')
+  async approve(@Param('id') id: string) {
+    try {
+      return await this.service.approve(id);
+    } catch (error) {
+      console.error('Approve merchant error:', error);
+      throw error;
+    }
+  }
+
+  @Post(':id/reject')
+  async reject(@Param('id') id: string) {
+    try {
+      return await this.service.reject(id);
+    } catch (error) {
+      console.error('Reject merchant error:', error);
+      throw error;
+    }
+  }
+
   @Delete(':id')
   async delete(@Param('id') id: string) {
     return this.service.delete(id);

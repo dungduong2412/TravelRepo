@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 
 interface Merchant {
+  id: string;
   merchant_system_id: string;
   merchant_code: string;
   merchant_name: string;
@@ -11,6 +12,7 @@ interface Merchant {
   merchant_verified: boolean;
   merchants_status?: string;
   merchant_description?: string;
+  merchant_pictures?: string;
   owner_email: string;
   new_address_city?: string;
   new_address_ward?: string;
@@ -75,22 +77,40 @@ export default function MerchantsManagementPage() {
   };
 
   const handleApprove = async (id: string) => {
-    if (!confirm('Are you sure you want to approve this merchant?')) return;
+    if (!confirm('Are you sure you want to approve this merchant? This will create a user account for login.')) return;
 
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-      const response = await fetch(`${apiUrl}/merchants/${id}`, {
-        method: 'PATCH',
+      const response = await fetch(`${apiUrl}/merchants/${id}/approve`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ merchant_verified: true }),
       });
 
       if (!response.ok) throw new Error('Failed to approve merchant');
 
-      alert('Merchant approved successfully!');
+      alert('Merchant approved successfully! User account created.');
       fetchMerchants();
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to approve merchant');
+    }
+  };
+
+  const handleReject = async (id: string) => {
+    if (!confirm('Are you sure you want to reject this merchant? This will block their access.')) return;
+
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+      const response = await fetch(`${apiUrl}/merchants/${id}/reject`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      if (!response.ok) throw new Error('Failed to reject merchant');
+
+      alert('Merchant rejected and blocked.');
+      fetchMerchants();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to reject merchant');
     }
   };
 
@@ -102,7 +122,7 @@ export default function MerchantsManagementPage() {
       const response = await fetch(`${apiUrl}/merchants/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ merchant_verified: false }),
+        body: JSON.stringify({ merchant_verified: false, merchants_status: 'inactive' }),
       });
 
       if (!response.ok) throw new Error('Failed to deactivate merchant');
@@ -224,21 +244,29 @@ export default function MerchantsManagementPage() {
                     >
                       View
                     </button>
-                    {!merchant.merchant_verified ? (
+                    {!merchant.merchant_verified && merchant.merchants_status !== 'blocked' ? (
+                      <>
+                        <button
+                          onClick={() => handleApprove(merchant.id)}
+                          style={styles.approveButton}
+                        >
+                          Approve
+                        </button>
+                        <button
+                          onClick={() => handleReject(merchant.id)}
+                          style={styles.rejectButton}
+                        >
+                          Reject
+                        </button>
+                      </>
+                    ) : merchant.merchant_verified ? (
                       <button
-                        onClick={() => handleApprove(merchant.merchant_system_id)}
-                        style={styles.approveButton}
-                      >
-                        Approve
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => handleDeactivate(merchant.merchant_system_id)}
+                        onClick={() => handleDeactivate(merchant.id)}
                         style={styles.deactivateButton}
                       >
                         Deactivate
                       </button>
-                    )}
+                    ) : null}
                   </div>
                 </td>
               </tr>
@@ -261,6 +289,13 @@ export default function MerchantsManagementPage() {
               </div>
               <div style={styles.detailItem}>
                 <strong>Description:</strong> {selectedMerchant.merchant_description || 'N/A'}
+              </div>
+              <div style={styles.detailItem}>
+                <strong>Pictures:</strong> {selectedMerchant.merchant_pictures ? (
+                  <a href={selectedMerchant.merchant_pictures} target="_blank" rel="noopener noreferrer" style={{ color: '#3b82f6', textDecoration: 'underline' }}>
+                    View Images
+                  </a>
+                ) : 'No pictures uploaded'}
               </div>
               <div style={styles.detailItem}>
                 <strong>Owner Email:</strong> {selectedMerchant.owner_email}
@@ -395,6 +430,15 @@ const styles: Record<string, React.CSSProperties> = {
   approveButton: {
     padding: '6px 12px',
     backgroundColor: '#10b981',
+    color: 'white',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '13px',
+  },
+  rejectButton: {
+    padding: '6px 12px',
+    backgroundColor: '#f59e0b',
     color: 'white',
     border: 'none',
     borderRadius: '4px',

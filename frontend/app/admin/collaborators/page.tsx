@@ -70,22 +70,40 @@ export default function CollaboratorsManagementPage() {
   };
 
   const handleApprove = async (id: string) => {
-    if (!confirm('Are you sure you want to approve this collaborator?')) return;
+    if (!confirm('Are you sure you want to approve this collaborator? This will create a user account for login.')) return;
 
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-      const response = await fetch(`${apiUrl}/collaborators/${id}`, {
-        method: 'PATCH',
+      const response = await fetch(`${apiUrl}/collaborators/${id}/approve`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ collaborators_verified: true }),
       });
 
       if (!response.ok) throw new Error('Failed to approve collaborator');
 
-      alert('Collaborator approved successfully!');
+      alert('Collaborator approved successfully! User account created.');
       fetchCollaborators();
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to approve collaborator');
+    }
+  };
+
+  const handleReject = async (id: string) => {
+    if (!confirm('Are you sure you want to reject this collaborator? This will block their access.')) return;
+
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+      const response = await fetch(`${apiUrl}/collaborators/${id}/reject`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      if (!response.ok) throw new Error('Failed to reject collaborator');
+
+      alert('Collaborator rejected and blocked.');
+      fetchCollaborators();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to reject collaborator');
     }
   };
 
@@ -97,7 +115,7 @@ export default function CollaboratorsManagementPage() {
       const response = await fetch(`${apiUrl}/collaborators/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ collaborators_verified: false }),
+        body: JSON.stringify({ collaborators_verified: false, collaborators_status: 'inactive' }),
       });
 
       if (!response.ok) throw new Error('Failed to deactivate collaborator');
@@ -213,21 +231,29 @@ export default function CollaboratorsManagementPage() {
                     >
                       View
                     </button>
-                    {!collaborator.collaborators_verified ? (
-                      <button
-                        onClick={() => handleApprove(collaborator.id)}
-                        style={styles.approveButton}
-                      >
-                        Approve
-                      </button>
-                    ) : (
+                    {!collaborator.collaborators_verified && collaborator.collaborators_status !== 'blocked' ? (
+                      <>
+                        <button
+                          onClick={() => handleApprove(collaborator.id)}
+                          style={styles.approveButton}
+                        >
+                          Approve
+                        </button>
+                        <button
+                          onClick={() => handleReject(collaborator.id)}
+                          style={styles.rejectButton}
+                        >
+                          Reject
+                        </button>
+                      </>
+                    ) : collaborator.collaborators_verified ? (
                       <button
                         onClick={() => handleDeactivate(collaborator.id)}
                         style={styles.deactivateButton}
                       >
                         Deactivate
                       </button>
-                    )}
+                    ) : null}
                   </div>
                 </td>
               </tr>
@@ -366,6 +392,15 @@ const styles: Record<string, React.CSSProperties> = {
   approveButton: {
     padding: '6px 12px',
     backgroundColor: '#10b981',
+    color: 'white',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '13px',
+  },
+  rejectButton: {
+    padding: '6px 12px',
+    backgroundColor: '#f59e0b',
     color: 'white',
     border: 'none',
     borderRadius: '4px',

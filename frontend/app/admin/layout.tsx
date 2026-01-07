@@ -15,6 +15,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     { name: 'User Management', path: '/admin/users', icon: '👤' },
     { name: 'Master Data', path: '/admin/master-data', icon: '📋', 
       subItems: [
+        { name: 'Organization', path: '/admin/master-data/organization' },
         { name: 'Categories', path: '/admin/master-data/categories' }
       ]
     },

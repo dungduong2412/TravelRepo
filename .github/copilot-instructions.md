@@ -1,8 +1,19 @@
 # Copilot Instructions for TravelRepo
 
-## Development Workflow
+## Quick Start
 
-**CRITICAL**: Always check [REQUIREMENTS_TRACEABILITY_MATRIX.md](../Requirement/REQUIREMENTS_TRACEABILITY_MATRIX.md) before starting work.
+**New to this codebase?** Start servers first:
+```bash
+# Terminal 1: Backend (port 3000)
+cd backend && npm install && npm run dev
+
+# Terminal 2: Frontend (port 3001)
+cd frontend && npm install && npm run dev
+```
+
+**CRITICAL**: Always check [REQUIREMENTS_TRACEABILITY_MATRIX.md](../Requirement/REQUIREMENTS_TRACEABILITY_MATRIX.md) before starting work. This project follows a **strict RTM-driven workflow** where all features must be tracked as requirements. Never implement features that aren't documented in the RTM.
+
+## Development Workflow
 
 ### Requirement-Focused Development
 1. **One requirement at a time** - Focus on a single REQ-XXX from the RTM
@@ -18,7 +29,7 @@
 - ❌ Blocked - Cannot proceed
 - 🔍 Needs Clarification - Requirements unclear
 
-**Before coding**: Read requirement acceptance criteria, plan file changes, then implement.
+**Before coding**: Read requirement acceptance criteria, plan file changes, then implement. Never start implementation without an RTM requirement.
 
 ## Architecture Overview
 
@@ -45,9 +56,11 @@ This is a **monorepo** with a single NestJS backend and Next.js frontend, enforc
 
 ### Supabase Tables
 - **user_profiles**: Links Supabase Auth users to roles (merchant/collaborator/admin), includes `merchant_id` or `collaborator_id`
-- **merchant_details**: Merchant business information with `merchant_verified` flag
-- **collaborators**: Collaborator (tour guide) profiles with `qr_code` for attribution, `collaborators_verified` flag
+- **merchant_details**: Merchant business information with `merchant_verified` flag and `merchants_status` (pending/active/inactive/blocked)
+- **collaborators**: Collaborator (tour guide) profiles with `qr_code` for attribution, `collaborators_verified` flag, and `collaborators_status` (pending/active/inactive/blocked)
 - **categories**: Master data for travel categories (bilingual: category_name, category_name_vi)
+
+**Naming convention**: Table columns use prefixes matching table names (e.g., `collaborators_name`, `merchant_verified`)
 
 **Backfill workflow**: See [BACKFILL_AND_PROFILE_GUIDE.md](BACKFILL_AND_PROFILE_GUIDE.md) for migrating legacy approved users to user_profiles table.
 
@@ -71,8 +84,14 @@ npm run dev                   # Start frontend (port 3001)
 ```
 
 ### Environment Variables
-- **Backend**: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`
-- **Frontend**: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- **Backend** (`.env` in root): 
+  - `SUPABASE_URL` - Your Supabase project URL
+  - `SUPABASE_SERVICE_ROLE_KEY` - Service role key (full admin access)
+- **Frontend** (`frontend/.env.local`): 
+  - `NEXT_PUBLIC_SUPABASE_URL` - Same Supabase project URL
+  - `NEXT_PUBLIC_SUPABASE_ANON_KEY` - Anonymous public key (limited access)
+
+**Setup tip**: Backend uses service role key for full database access; frontend uses anon key for client-side operations (though frontend should primarily call backend APIs, not Supabase directly).
 
 ### Adding a New Module
 **Always use the [user-profiles module](backend/src/modules/user-profiles/) or [merchants module](backend/src/modules/merchants/) as a template.**
@@ -116,6 +135,21 @@ npm run dev                   # Start frontend (port 3001)
 - **Current state**: `JwtGuard` is implemented but mocked for development (returns mock user)
 - Auth flow: Service validates credentials → Updates Supabase auth user password if needed → Creates session
 - User types validated at login: 'merchant' or 'collaborator' via `userType` parameter
+
+### Approval Workflow (REQ-004)
+- **Signup**: New merchants/collaborators sign up with `verified=false`, `status='pending'`
+- **Admin Review**: Admin views pending items in dashboard or filtered views
+- **Approve Action**: 
+  - POST `/collaborators/:id/approve` or `/merchants/:id/approve`
+  - Sets `verified=true`, `status='active'`
+  - Creates `user_profile` entry with role and credentials from signup
+  - Enables login access
+- **Reject Action**: 
+  - POST `/collaborators/:id/reject` or `/merchants/:id/reject`
+  - Sets `verified=false`, `status='blocked'`
+  - Prevents login access
+- **Pattern**: Service method uses `forwardRef` to inject `UserProfilesService` for user creation to avoid circular dependencies
+- **Frontend**: Shows Approve/Reject buttons only for pending items, hides buttons for blocked
 
 ### Validation
 All endpoints use Zod validation:
@@ -214,6 +248,7 @@ async create(dto: CreateCollaboratorDto) {
       ...dto,
       qr_code: qrCode,
       collaborators_verified: false,
+      collaborators_status: 'pending', // Always set status on creation
     })
     .select()
     .single();
@@ -221,6 +256,13 @@ async create(dto: CreateCollaboratorDto) {
   if (error) throw new Error(error.message);
   return data;
 }
+
+// Handling circular dependencies with forwardRef
+constructor(
+  private readonly supabase: SupabaseService,
+  @Inject(forwardRef(() => UserProfilesService))
+  private readonly userProfilesService: UserProfilesService,
+) {}
 ```
 
 ## Testing & Scripts
@@ -250,6 +292,7 @@ npm run lint
 - Frontend API calls: Ensure backend is running on port 3000, frontend on 3001
 - CORS issues: Backend CORS configured for localhost:3000 and localhost:3001
 - Auth failures: Check [backend/scripts/test-login.js](backend/scripts/test-login.js) output for detailed error messages
+- Circular dependencies: Use `forwardRef()` when modules need each other (see collaborators/merchants services)
 
 ## Additional Context
 - **QR Flow**: Short URLs at `/c/:qrToken` resolve to collaborators via 32-char hex token

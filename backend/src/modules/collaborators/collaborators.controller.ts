@@ -40,6 +40,16 @@ export class CollaboratorsController {
     return this.service.update(id, dto);
   }
 
+  @Post(':id/approve')
+  async approve(@Param('id') id: string) {
+    return this.service.approve(id);
+  }
+
+  @Post(':id/reject')
+  async reject(@Param('id') id: string) {
+    return this.service.reject(id);
+  }
+
   @Delete(':id')
   async delete(@Param('id') id: string) {
     return this.service.delete(id);

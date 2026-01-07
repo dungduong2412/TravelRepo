@@ -1,11 +1,16 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject, forwardRef } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { SupabaseService } from '../../infrastructure/supabase/supabase.service';
 import { CreateMerchantDto, UpdateMerchantDto } from './merchants.dto';
+import { UserProfilesService } from '../user-profiles/user-profiles.service';
 
 @Injectable()
 export class MerchantsService {
-  constructor(private readonly supabase: SupabaseService) {}
+  constructor(
+    private readonly supabase: SupabaseService,
+    @Inject(forwardRef(() => UserProfilesService))
+    private readonly userProfilesService: UserProfilesService,
+  ) {}
 
   private generateMerchantCode(): string {
     // Generate 8-character uppercase alphanumeric code (e.g., "MCH12AB3")
@@ -127,5 +132,87 @@ export class MerchantsService {
     }
 
     return { success: true };
+  }
+
+  async approve(id: string) {
+    console.log(`[MerchantsService] Approving merchant ${id}`);
+    
+    // Get merchant details
+    const merchant = await this.findById(id);
+    
+    if (!merchant) {
+      console.error(`[MerchantsService] Merchant not found: ${id}`);
+      throw new Error('Merchant not found');
+    }
+
+    console.log(`[MerchantsService] Merchant data:`, {
+      id: merchant.id,
+      merchant_name: merchant.merchant_name,
+      owner_email: merchant.owner_email,
+      has_password: !!merchant.owner_password
+    });
+
+    // Validate required fields for user profile creation
+    if (!merchant.owner_email) {
+      console.error(`[MerchantsService] Missing owner_email for merchant ${id}`);
+      throw new Error('Cannot approve merchant: owner_email is required');
+    }
+    if (!merchant.owner_password) {
+      console.error(`[MerchantsService] Missing owner_password for merchant ${id}`);
+      throw new Error('Cannot approve merchant: owner_password is required');
+    }
+
+    console.log(`[MerchantsService] Updating merchant status to active`);
+    // Update merchant status
+    const { data, error } = await this.supabase.getClient()
+      .from('merchant_details')
+      .update({
+        merchant_verified: true,
+        merchants_status: 'active',
+      })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error(`[MerchantsService] Failed to update merchant:`, error);
+      throw new Error(`Failed to approve merchant: ${error.message}`);
+    }
+
+    console.log(`[MerchantsService] Merchant approved, creating user profile`);
+    // Create user profile for login access (use owner_email as username)
+    try {
+      const userProfile = await this.userProfilesService.createOrUpdate({
+        email: merchant.owner_email,
+        role: 'merchant',
+        merchant_id: id,
+        collaborator_id: null,
+        password: merchant.owner_password, // Use password from signup
+      });
+      console.log(`[MerchantsService] User profile created successfully`);
+      return data;
+    } catch (profileError) {
+      // Log error but don't fail the approval
+      console.error('[MerchantsService] Failed to create user profile:', profileError);
+      throw new Error(`Merchant approved but failed to create user profile: ${profileError.message}`);
+    }
+  }
+
+  async reject(id: string) {
+    const { data, error } = await this.supabase.getClient()
+      .from('merchant_details')
+      .update({
+        merchant_verified: false,
+        merchants_status: 'blocked',
+      })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to reject merchant: ${error.message}`);
+    }
+
+    return data;
   }
 }

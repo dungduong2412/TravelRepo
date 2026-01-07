@@ -7,6 +7,7 @@ import { CategoriesModule } from './modules/categories/categories.module';
 import { MerchantsModule } from './modules/merchants/merchants.module';
 import { CollaboratorsModule } from './modules/collaborators/collaborators.module';
 import { QrModule } from './modules/qr/qr.module';
+import { OrganizationProfileModule } from './modules/organization-profile/organization-profile.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { QrModule } from './modules/qr/qr.module';
     MerchantsModule,
     CollaboratorsModule,
     QrModule,
+    OrganizationProfileModule,
   ],
 })
 export class AppModule {}

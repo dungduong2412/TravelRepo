@@ -1,11 +1,16 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject, forwardRef } from '@nestjs/common';
 import { SupabaseService } from '../../infrastructure/supabase/supabase.service';
 import { CreateCollaboratorDto, UpdateCollaboratorDto } from './collaborators.dto';
 import { randomBytes } from 'crypto';
+import { UserProfilesService } from '../user-profiles/user-profiles.service';
 
 @Injectable()
 export class CollaboratorsService {
-  constructor(private readonly supabase: SupabaseService) {}
+  constructor(
+    private readonly supabase: SupabaseService,
+    @Inject(forwardRef(() => UserProfilesService))
+    private readonly userProfilesService: UserProfilesService,
+  ) {}
 
   private generateQrToken(): string {
     return randomBytes(16).toString('hex'); // 32 character hex string
@@ -140,6 +145,64 @@ export class CollaboratorsService {
     }
 
     return { success: true };
+  }
+
+  async approve(id: string) {
+    // Get collaborator details
+    const collaborator = await this.findById(id);
+    
+    if (!collaborator) {
+      throw new Error('Collaborator not found');
+    }
+
+    // Update collaborator status
+    const { data, error } = await this.supabase.getClient()
+      .from('collaborators')
+      .update({
+        collaborators_verified: true,
+        collaborators_status: 'active',
+      })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to approve collaborator: ${error.message}`);
+    }
+
+    // Create user profile for login access
+    try {
+      await this.userProfilesService.createOrUpdate({
+        email: collaborator.collaborators_email,
+        role: 'collaborator',
+        collaborator_id: id,
+        merchant_id: null,
+        password: collaborator.collaborators_password, // Use password from signup
+      });
+    } catch (profileError) {
+      // Log error but don't fail the approval
+      console.error('Failed to create user profile:', profileError);
+    }
+
+    return data;
+  }
+
+  async reject(id: string) {
+    const { data, error } = await this.supabase.getClient()
+      .from('collaborators')
+      .update({
+        collaborators_verified: false,
+        collaborators_status: 'blocked',
+      })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to reject collaborator: ${error.message}`);
+    }
+
+    return data;
   }
 
   async resolveByQrToken(qrToken: string) {
