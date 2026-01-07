@@ -3,6 +3,7 @@ import { SupabaseService } from '../../infrastructure/supabase/supabase.service'
 import { CreateCollaboratorDto, UpdateCollaboratorDto } from './collaborators.dto';
 import { randomBytes } from 'crypto';
 import { UserProfilesService } from '../user-profiles/user-profiles.service';
+import * as QRCode from 'qrcode';
 
 @Injectable()
 export class CollaboratorsService {
@@ -218,4 +219,49 @@ export class CollaboratorsService {
       email: collaborator.email,
     };
   }
+
+  async generateQRCodeImage(id: string) {
+    // Get collaborator details
+    const collaborator = await this.findById(id);
+    
+    if (!collaborator) {
+      throw new Error('Collaborator not found');
+    }
+
+    // Get organization details
+    const { data: organization } = await this.supabase.getClient()
+      .from('organization_profile')
+      .select('org_name')
+      .single();
+
+    // Prepare QR data - what the QR code will contain
+    const qrData = {
+      collaborator_code: collaborator.collaborators_code,
+      collaborator_name: collaborator.collaborators_name,
+      collaborator_phone: collaborator.collaborators_phone,
+      organization_name: organization?.org_name || 'TravelRepo',
+      qr_token: collaborator.collaborators_qr_code,
+    };
+
+    // Generate QR code as base64 data URL
+    const qrCodeDataUrl = await QRCode.toDataURL(JSON.stringify(qrData), {
+      width: 400,
+      margin: 2,
+      color: {
+        dark: '#000000',
+        light: '#FFFFFF'
+      }
+    });
+
+    return {
+      collaborator_code: collaborator.collaborators_code,
+      collaborator_name: collaborator.collaborators_name,
+      collaborator_phone: collaborator.collaborators_phone,
+      organization_name: organization?.org_name || 'TravelRepo',
+      verified: collaborator.collaborators_verified,
+      qr_code_image: qrCodeDataUrl,
+      qr_data: qrData,
+    };
+  }
 }
+

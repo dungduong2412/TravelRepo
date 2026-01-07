@@ -23,7 +23,7 @@
 | REQ-002 | Admin User Management | High | 🔄 | ⏳ | Basic view done, actions pending |
 | REQ-003 | Admin homepage | High | ✅ | ⏳ | Complete: Dashboard, Collaborators, Merchants, Users, Categories |
 | REQ-004 | Admin approval flow | High | ✅ | 🔄 | Complete: Approve/Reject with user account creation |
-| REQ-005 | QR CODE FOR COLLABORATOR | High | ⏳ | ⏳ | Pending implementation |
+| REQ-005 | QR CODE FOR COLLABORATOR | High | ✅ | 🔄 | Complete: QR generation + download + display |
 | REQ-006 | Master DATA - Organization profile | Medium | ✅ | ✅ | Complete: CRUD + Frontend + 10MB avatar support
 
 ## Detailed Requirements
@@ -226,23 +226,50 @@
 
 ---
 
-### REQ-005: QR CODE FOR COLLABORATOR
-**Description**: After approved by the admin, collaborators now is able to log in to the system. They are now can edit their profile, and have their QR CODE. The QR CODE will contain their collaborators_code, collaborators_name_collabortors_phone, and company name which is in the masterdata. WE do not have the scanner feature yet.
+### REQ-005: QR CODE generation FOR COLLABORATOR
+**Description**: After approved by the admin, collaborators now is able to log in to the system. They are now can edit their profile, and have their QR CODE. The QR CODE will contain their collaborators_code, collaborators_name_collabortors_phone, and Organization name which is in the masterdata. WE do not have the scanner feature yet.
 
 **Priority**: High
 **Acceptance Criteria**:
-- [ ] QR CODE is created automaticallly after admin approve
-- [ ] There is a save or download QR
-- [ ] It is a seperate Menu for QR, show clearly what the QR contains
+- [x] QR CODE is created automaticallly after admin approve
+- [x] There is a save or download QR in the QR details section. It should placed under profile of Collaborators navigation menu on the left. 
+- [x] It is a seperate Menu for QR, show clearly what the QR contains; save the QR easily on user device
 
-**Implementation Status**: ⏳ Pending
-- Files: 
-- Endpoint: 
+**Implementation Status**: ✅ Done
+- **Backend Files**:
+  - Service: `backend/src/modules/collaborators/collaborators.service.ts` (added generateQRCodeImage method)
+  - Controller: `backend/src/modules/collaborators/collaborators.controller.ts` (added GET /:id/qr-code endpoint)
+- **Frontend Files**:
+  - Page: `frontend/app/collaborator/dashboard/qr-code/page.tsx` (QR display and download)
+  - Layout: `frontend/app/collaborator/dashboard/layout.tsx` (added QR menu item)
+- **Dependencies**:
+  - Installed qrcode package for QR code generation
+- **Endpoints**:
+  - `GET /collaborators/:id/qr-code` - Generate QR code with collaborator and organization data
+- **Features**:
+  - QR code generated automatically (already created during signup)
+  - QR code image generated as base64 PNG (400x400px)
+  - QR data includes: collaborator_code, collaborator_name, collaborator_phone, organization_name, qr_token
+  - Download button to save QR code to device
+  - Separate "Mã QR" menu in collaborator dashboard navigation
+  - Displays all QR information clearly: code, name, phone, organization
+  - Vietnamese language UI
+  - Verified badge for approved collaborators
+  - Usage instructions included
 
-**Review Status**: ⏳ Pending
+**Review Status**: 🔄 Ready for Review
 - Needs testing: 
+  1. Login as a collaborator
+  2. Navigate to "Mã QR" menu item in dashboard
+  3. Verify QR code displays with collaborator information
+  4. Test download functionality
+  5. Verify organization name appears correctly
 
 **Notes**: 
+- QR code contains JSON data with collaborator details and organization name
+- QR token is already generated during collaborator signup
+- Scanner feature not implemented yet (future requirement)
+- QR code is 400x400px PNG image encoded as base64 
 
 ---
 ### REQ-006: Master DATA - Organization profile
@@ -304,6 +331,25 @@ Please provide database-migrations for this features as well
 - Backend body parser limit set to 15MB for base64 encoded images
 
 --- 
+### REQ-XXX000: XXXXXXXXX
+**Description**: After approved by the admin, collaborators now is able to log in to the system. They are now can edit their profile, and have their QR CODE. The QR CODE will contain their collaborators_code, collaborators_name_collabortors_phone, and company name which is a predefined and only be scanned by our scanner. WE do not have the scanner feature yet.
+
+**Priority**: High
+**Acceptance Criteria**:
+- [ ] QR CODE is created automaticallly after admin approve
+- [ ] There is a save or download QR
+- [ ] It is a seperate Menu for QR, show clearly what the QR contains
+
+**Implementation Status**: ⏳ Pending
+- Files: 
+- Endpoint: 
+
+**Review Status**: ⏳ Pending
+- Needs testing: 
+
+**Notes**: 
+
+---
 ## Template for New Requirements
 
 ```markdown

@@ -22,6 +22,11 @@ export class CollaboratorsController {
     return this.service.findById(id);
   }
 
+  @Get(':id/qr-code')
+  async getQRCode(@Param('id') id: string) {
+    return this.service.generateQRCodeImage(id);
+  }
+
   @Get('qr/:qrCode')
   async findByQrCode(@Param('qrCode') qrCode: string) {
     return this.service.findByQrCode(qrCode);

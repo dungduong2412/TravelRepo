@@ -32,6 +32,7 @@ export default function CollaboratorDashboardLayout({
 
   const menuItems = [
     { label: 'Hồ Sơ', path: '/collaborator/dashboard/profile', icon: '👤' },
+    { label: 'Mã QR', path: '/collaborator/dashboard/qr-code', icon: '📱' },
     { label: 'Người Theo Dõi', path: '/collaborator/dashboard/members', icon: '👥' },
   ];
 
