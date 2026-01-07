@@ -234,19 +234,15 @@ export class CollaboratorsService {
       .select('org_name')
       .single();
 
-    // Prepare QR data - what the QR code will contain
-    const qrData = {
-      collaborator_code: collaborator.collaborators_code,
-      collaborator_name: collaborator.collaborators_name,
-      collaborator_phone: collaborator.collaborators_phone,
-      organization_name: organization?.org_name || 'TravelRepo',
-      qr_token: collaborator.collaborators_qr_code,
-    };
+    // Prepare QR data - MINIMAL data to fit in QR code
+    // Just store the QR token - scanner can look up full details
+    const qrData = collaborator.collaborators_qr_code;
 
     // Generate QR code as base64 data URL
-    const qrCodeDataUrl = await QRCode.toDataURL(JSON.stringify(qrData), {
+    const qrCodeDataUrl = await QRCode.toDataURL(qrData, {
       width: 400,
       margin: 2,
+      errorCorrectionLevel: 'M',
       color: {
         dark: '#000000',
         light: '#FFFFFF'
@@ -260,7 +256,7 @@ export class CollaboratorsService {
       organization_name: organization?.org_name || 'TravelRepo',
       verified: collaborator.collaborators_verified,
       qr_code_image: qrCodeDataUrl,
-      qr_data: qrData,
+      qr_token: collaborator.collaborators_qr_code,
     };
   }
 }

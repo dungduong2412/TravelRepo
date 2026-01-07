@@ -17,6 +17,13 @@ export class CollaboratorsController {
     return this.service.findVerified();
   }
 
+  @Get('me')
+  async getMyProfile() {
+    // Get collaborator ID from localStorage on frontend
+    // This is a simplified version - in production, use JWT auth
+    throw new Error('Use GET /collaborators/:id instead with your ID from localStorage');
+  }
+
   @Get(':id')
   async findById(@Param('id') id: string) {
     return this.service.findById(id);

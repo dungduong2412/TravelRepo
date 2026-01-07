@@ -31,7 +31,19 @@ export default function CollaboratorProfilePage() {
   const fetchProfile = async () => {
     try {
       setLoading(true);
-      const data = await apiFetch('/collaborators/me');
+      
+      // Get collaborator ID from localStorage
+      const collaboratorData = localStorage.getItem('collaborator');
+      if (!collaboratorData) {
+        setError('Không tìm thấy thông tin đăng nhập. Vui lòng đăng nhập lại.');
+        setLoading(false);
+        return;
+      }
+      
+      const { id } = JSON.parse(collaboratorData);
+      
+      // Fetch collaborator profile
+      const data = await apiFetch(`/collaborators/${id}`);
       setCollaborator(data);
       setFormData({
         collaborators_name: data.collaborators_name || '',
@@ -46,8 +58,8 @@ export default function CollaboratorProfilePage() {
       // Fetch QR code if verified
       if (data.collaborators_verified) {
         try {
-          const qrData = await apiFetch('/collaborators/me/qr-code');
-          setQrCode(qrData.qr_code);
+          const qrData = await apiFetch(`/collaborators/${id}/qr-code`);
+          setQrCode(qrData.qr_code_image);
         } catch (qrErr) {
           console.error('Failed to load QR code:', qrErr);
         }
@@ -71,8 +83,17 @@ export default function CollaboratorProfilePage() {
     setSuccess(false);
 
     try {
-      await apiFetch('/collaborators/me', {
-        method: 'PUT',
+      const collaboratorData = localStorage.getItem('collaborator');
+      if (!collaboratorData) {
+        setError('Không tìm thấy thông tin đăng nhập');
+        setSaving(false);
+        return;
+      }
+      
+      const { id } = JSON.parse(collaboratorData);
+      
+      await apiFetch(`/collaborators/${id}`, {
+        method: 'PATCH',
         body: JSON.stringify(formData),
       });
       setSuccess(true);

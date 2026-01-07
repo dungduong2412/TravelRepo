@@ -47,7 +47,19 @@ export default function MerchantProfilePage() {
   const fetchProfile = async () => {
     try {
       setLoading(true);
-      const data = await apiFetch('/merchants/me');
+      
+      // Get merchant ID from localStorage
+      const merchantData = localStorage.getItem('merchant');
+      if (!merchantData) {
+        setError('Không tìm thấy thông tin đăng nhập. Vui lòng đăng nhập lại.');
+        setLoading(false);
+        return;
+      }
+      
+      const { id } = JSON.parse(merchantData);
+      
+      // Fetch merchant profile
+      const data = await apiFetch(`/merchants/${id}`);
       setMerchant(data);
       setFormData({
         merchant_name: data.merchant_name || '',
@@ -86,6 +98,15 @@ export default function MerchantProfilePage() {
     setSuccess(false);
 
     try {
+      const merchantData = localStorage.getItem('merchant');
+      if (!merchantData) {
+        setError('Không tìm thấy thông tin đăng nhập');
+        setSaving(false);
+        return;
+      }
+      
+      const { id } = JSON.parse(merchantData);
+      
       const payload = {
         ...formData,
         merchant_commission_value: formData.merchant_commission_value 
@@ -96,8 +117,8 @@ export default function MerchantProfilePage() {
           : undefined,
       };
       
-      await apiFetch('/merchants/me', {
-        method: 'PUT',
+      await apiFetch(`/merchants/${id}`, {
+        method: 'PATCH',
         body: JSON.stringify(payload),
       });
       setSuccess(true);
