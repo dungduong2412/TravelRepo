@@ -227,7 +227,7 @@
 ---
 
 ### REQ-005: QR CODE generation FOR COLLABORATOR
-**Description**: After approved by the admin, collaborators now is able to log in to the system. They are now can edit their profile, and have their QR CODE. The QR CODE will contain their collaborators_code, collaborators_name_collabortors_phone, and Organization name which is in the masterdata. WE do not have the scanner feature yet.
+**Description**: After approved by the admin, collaborators now is able to log in to the system. They are now can edit their profile, and have their QR CODE. The QR CODE will contain their collaborators_code which is in the masterdata. WE do not have the scanner feature yet.
 
 **Priority**: High
 **Acceptance Criteria**:
@@ -249,15 +249,24 @@
 - **Features**:
   - QR code generated automatically (already created during signup)
   - QR code image generated as base64 PNG (400x400px)
-  - QR data includes: collaborator_code, collaborator_name, collaborator_phone, organization_name, qr_token
+  - QR data contains ONLY collaborator_code (simplified for scanner)
+  - Error correction level H for better scanning reliability
   - Download button to save QR code to device
   - Separate "Mã QR" menu in collaborator dashboard navigation
   - Displays all QR information clearly: code, name, phone, organization
   - Vietnamese language UI
   - Verified badge for approved collaborators
   - Usage instructions included
+  - Login functionality fixed with proper password hashing
+  - Profile pages load collaborator/merchant details correctly
 
 **Review Status**: 🔄 Ready for Review
+- Tested: 
+  1. QR code generation working without errors ✅
+  2. QR contains only collaborator code ✅
+  3. Download functionality works ✅
+  4. Profile page displays correctly ✅
+  5. Login works with testctv03@gmail.com / 123456 ✅
 - Needs testing: 
   1. Login as a collaborator
   2. Navigate to "Mã QR" menu item in dashboard
