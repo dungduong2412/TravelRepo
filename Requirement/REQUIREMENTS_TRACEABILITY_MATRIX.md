@@ -24,7 +24,7 @@
 | REQ-003 | Admin homepage | High | ✅ | ⏳ | Complete: Dashboard, Collaborators, Merchants, Users, Categories |
 | REQ-004 | Admin approval flow | High | ✅ | 🔄 | Complete: Approve/Reject with user account creation |
 | REQ-005 | QR CODE FOR COLLABORATOR | High | ⏳ | ⏳ | Pending implementation |
-| REQ-006 | Master DATA - Organization profile | Medium | ✅ | 🔄 | Complete: CRUD + Frontend
+| REQ-006 | Master DATA - Organization profile | Medium | ✅ | ✅ | Complete: CRUD + Frontend + 10MB avatar support
 
 ## Detailed Requirements
 
@@ -281,25 +281,27 @@ Please provide database-migrations for this features as well
   - Form validation with Zod schemas
   - View/Edit mode toggle
   - Circular avatar display (150px diameter)
-  - File upload from device (converts to base64, max 2MB)
+  - File upload from device (converts to base64, max 10MB)
   - Avatar stored as base64 string in database
   - Save/Cancel buttons only (no separate Create function)
   - Automatic timestamp tracking (created_at, updated_at)
+  - Backend configured to handle 15MB JSON for large base64 images
 
-**Review Status**: 🔄 Ready for Review
-- Needs testing: 
-  1. Apply database migration in Supabase SQL editor
-  2. Restart backend server to load new module
-  3. Navigate to http://localhost:3001/admin/master-data/organization
-  4. Test creating organization profile
-  5. Test editing organization profile
-  6. Test avatar URL preview
+**Review Status**: ✅ Passed
+- Tested: 
+  1. Database migration applied in Supabase SQL editor ✅
+  2. Backend server loaded with organization-profile module ✅
+  3. Organization page accessible at http://localhost:3001/admin/master-data/organization ✅
+  4. Organization profile creation/editing working ✅
+  5. Avatar upload with 10MB support verified ✅
+  6. Upsert functionality working correctly ✅
 
 **Notes**: 
-- Database migration must be applied manually before using
+- Database migration applied successfully
 - Only one organization profile should exist (enforced by service logic)
-- Avatar is stored as URL (not uploaded file)
+- Avatar stored as base64 string (up to 10MB images supported)
 - Organization menu appears at top of Master Data submenu
+- Backend body parser limit set to 15MB for base64 encoded images
 
 --- 
 ## Template for New Requirements
