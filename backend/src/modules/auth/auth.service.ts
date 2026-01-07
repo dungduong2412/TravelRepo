@@ -22,6 +22,8 @@ export class AuthService {
   }
 
   async login(email: string, password: string, userType: 'merchant' | 'collaborator') {
+    console.log('Login attempt:', { email, userType, userTypeType: typeof userType });
+    
     if (userType === 'collaborator') {
       return this.loginCollaborator(email, password);
     } else if (userType === 'merchant') {
