@@ -46,13 +46,15 @@ export class AuthService {
     throw new UnauthorizedException('Email not found. Please sign up first.');
   }
 
-  async login(email: string, password: string, userType: 'merchant' | 'collaborator') {
+  async login(email: string, password: string, userType: 'merchant' | 'collaborator' | 'admin') {
     console.log('Login attempt:', { email, userType, userTypeType: typeof userType });
     
     if (userType === 'collaborator') {
       return this.loginCollaborator(email, password);
     } else if (userType === 'merchant') {
       return this.loginMerchant(email, password);
+    } else if (userType === 'admin') {
+      return this.loginAdmin(email, password);
     }
     throw new UnauthorizedException('Invalid user type');
   }
@@ -245,6 +247,58 @@ export class AuthService {
       },
       access_token: session.data.session?.access_token,
       refresh_token: session.data.session?.refresh_token,
+    };
+  }
+
+  private async loginAdmin(email: string, password: string) {
+    // Admin uses Supabase Auth directly (no separate password table)
+    const authClient = this.getAuthClient();
+    
+    // STEP 1: Find admin user_profile
+    const { data: profile, error: profileError } = await authClient
+      .from('user_profiles')
+      .select('*')
+      .eq('email', email)
+      .eq('role', 'admin')
+      .single();
+    
+    if (profileError || !profile) {
+      throw new UnauthorizedException('Invalid email or password');
+    }
+    
+    // STEP 2: Check if active
+    if (profile.user_profiles_status !== 'active') {
+      throw new UnauthorizedException('Admin account is not active');
+    }
+    
+    // STEP 3: Authenticate with Supabase Auth
+    const { data: session, error: authError } = await authClient.auth.signInWithPassword({
+      email: email,
+      password: password,
+    });
+    
+    if (authError || !session.session) {
+      throw new UnauthorizedException('Invalid email or password');
+    }
+    
+    // STEP 4: Update login tracking
+    await authClient
+      .from('user_profiles')
+      .update({
+        login_count: (profile.login_count || 0) + 1,
+        last_login_at: new Date().toISOString(),
+      })
+      .eq('id', profile.id);
+    
+    return {
+      user: {
+        id: profile.user_id,
+        email: profile.email,
+        role: 'admin',
+        name: profile.full_name || 'Admin',
+      },
+      access_token: session.session.access_token,
+      refresh_token: session.session.refresh_token,
     };
   }
 }
