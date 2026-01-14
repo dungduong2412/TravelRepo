@@ -125,7 +125,7 @@ export default function CollaboratorQRPage() {
             <ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
               <li>Show this QR code to merchants when checking in</li>
               <li>Merchants will scan it to verify your identity</li>
-              <li>Keep this QR code secure and don&apos;t share it publicly</li>
+              <li>Keep this QR code secure and don't share it publicly</li>
               <li>Download a copy for offline access</li>
             </ul>
           </div>

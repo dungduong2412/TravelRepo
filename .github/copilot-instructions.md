@@ -11,6 +11,8 @@ cd backend && npm install && npm run dev
 cd frontend && npm install && npm run dev
 ```
 
+**First-time setup**: Copy `.env.example` to `.env` (root for backend) and configure Supabase credentials. Frontend needs `frontend/.env.local` with `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
+
 **CRITICAL**: Always check [REQUIREMENTS_TRACEABILITY_MATRIX.md](../Requirement/REQUIREMENTS_TRACEABILITY_MATRIX.md) before starting work. This project follows a **strict RTM-driven workflow** where all features must be tracked as requirements. Never implement features that aren't documented in the RTM.
 
 ## Development Workflow
@@ -44,9 +46,22 @@ This is a **monorepo** with a single NestJS backend and Next.js frontend, enforc
 - **Port**: Backend runs on port 3000
 
 ### Frontend (`frontend/`)
-- **Next.js 14** (App Router) on port 3001
-- Pages: merchant/collaborator onboarding, admin dashboards, user profiles, QR success
+- **Next.js 14** (App Router) on port 3001, using client-side rendering ("use client") for interactive pages
+- **Routes**:
+  - `/` - Homepage with Airbnb-style marketplace, category filtering, and role-based views
+  - `/login` - Unified login for all user types (auto-detects role)
+  - `/merchant/onboard` - Merchant signup with category selection
+  - `/collaborator/onboard` - Collaborator signup with bank info
+  - `/admin/*` - Admin dashboard (sidebar layout with dashboard, collaborators, merchants, users, master-data)
+  - `/merchant/dashboard/*` - Merchant dashboard
+  - `/collaborator/dashboard/*` - Collaborator dashboard (includes QR code page)
+  - `/success` - Post-signup thank you page
 - Frontend NEVER accesses database directly - all via backend API
+- **Frontend utilities**: `frontend/lib/api.ts` provides `apiFetch()` and `publicApiFetch()` wrappers
+- **Design system**: Airbnb-inspired with Tailwind CSS gradients, borderless cards, minimal aesthetic
+  - Homepage uses gradient themes: red-pink for primary CTAs, emerald-teal for collaborator features
+  - Interactive elements: heart/favorite buttons, hover zoom on images, smooth transitions
+  - Icons from `lucide-react` package (Search, Heart, Star, MapPin, Tag, Globe, User, Menu, etc.)
 
 **Non-negotiable**: No business logic in controllers, no raw SQL, no DB triggers. See [ARCHITECTURE.md](ARCHITECTURE.md).
 
@@ -56,11 +71,29 @@ This is a **monorepo** with a single NestJS backend and Next.js frontend, enforc
 
 ### Supabase Tables
 - **user_profiles**: Links Supabase Auth users to roles (merchant/collaborator/admin), includes `merchant_id` or `collaborator_id`
+  - Tracks `last_login_at` and `login_count` for auditing
+  - Single source of truth for user authentication
 - **merchant_details**: Merchant business information with `merchant_verified` flag and `merchants_status` (pending/active/inactive/blocked)
+  - Uses `owner_email` for login, `owner_password` for bcrypt hash
+  - Generated `merchant_code` format: MCH + 5 hex chars (e.g., MCH4F107)
 - **collaborators**: Collaborator (tour guide) profiles with `qr_code` for attribution, `collaborators_verified` flag, and `collaborators_status` (pending/active/inactive/blocked)
+  - Uses `collaborators_email` for login, `collaborators_password` for bcrypt hash
+  - Generated `collaborators_code` format: COL- + 14 hex chars (e.g., COL-BD8B484645E0AB)
+  - QR token: 32-char hex for unique identification
 - **categories**: Master data for travel categories (bilingual: category_name, category_name_vi)
+- **organization_profile**: Single organization record with metadata (name, address, contact info, base64 avatar up to 10MB)
+  - Singleton table - only one record allowed
+  - Supports upsert pattern for updates
 
 **Naming convention**: Table columns use prefixes matching table names (e.g., `collaborators_name`, `merchant_verified`)
+
+**Image Storage**: Avatars and QR codes stored as base64 strings directly in database. Backend configured with 15MB body parser limit for base64-encoded images (~10MB original).
+
+**Status Values**: All user entities use consistent status enum:
+- `pending` - New signup awaiting admin approval
+- `active` - Approved and can login
+- `inactive` - Temporarily disabled
+- `blocked` - Rejected or banned
 
 **Backfill workflow**: See [BACKFILL_AND_PROFILE_GUIDE.md](BACKFILL_AND_PROFILE_GUIDE.md) for migrating legacy approved users to user_profiles table.
 
@@ -135,6 +168,9 @@ npm run dev                   # Start frontend (port 3001)
 - **Current state**: `JwtGuard` is implemented but mocked for development (returns mock user)
 - Auth flow: Service validates credentials → Updates Supabase auth user password if needed → Creates session
 - User types validated at login: 'merchant' or 'collaborator' via `userType` parameter
+- **Auto-detection**: `loginAuto()` method queries `user_profiles.role` to detect user type if not provided
+- **Fresh client pattern**: Auth operations create isolated Supabase client with `autoRefreshToken: false` to avoid cached state
+- Password hashing: Minimum 6 characters, bcrypt with 10 salt rounds
 
 ### Approval Workflow (REQ-004)
 - **Signup**: New merchants/collaborators sign up with `verified=false`, `status='pending'`
@@ -180,6 +216,8 @@ create(
   }
   return data || [];
   ```
+- Always return `data || []` for queries to avoid null returns
+- Use `.single()` for queries expecting one result, `.maybeSingle()` if result is optional
 
 ### Frontend-Backend Communication
 - Frontend uses `apiFetch()` utility from [frontend/lib/api.ts](frontend/lib/api.ts)
@@ -187,12 +225,31 @@ create(
 - Auth token passed via `Authorization: Bearer ${token}` header
 - Public endpoints use `publicApiFetch()` (no auth header)
 - CORS configured in [main.ts](backend/src/main.ts) for localhost:3000 and localhost:3001
+- **State management**: React useState/useEffect for client state, no global state library
+- **Data fetching pattern**: useEffect hooks call backend APIs on component mount, store in local state
+  ```typescript
+  const [data, setData] = useState([]);
+  useEffect(() => {
+    publicApiFetch('/endpoint').then(setData);
+  }, []);
+  ```
 
 ### Database Migrations
 - SQL migrations stored in [database-migrations/](database-migrations/) directory
 - Apply manually via Supabase SQL editor or CLI
 - Recent migrations: login tracking, merchant onboarding fields, QR codes, categories table
 - **Pattern**: Add migration SQL file → Apply to Supabase → Update DTOs → Update service logic
+
+### Testing Workflows
+- **E2E Testing**: See [E2E_TESTING_GUIDE.md](E2E_TESTING_GUIDE.md) for complete user flow testing
+- **Testing pattern**: Signup → Admin Approval → Login → Dashboard access
+- **Backend scripts**: Test utilities in `backend/scripts/` for isolated testing:
+  - `test-login.js` - Test authentication flow with real credentials
+  - `test-query.js` - Test raw Supabase queries
+  - `cleanup-orphaned-profiles.js` - Remove orphaned user_profiles
+  - `create-admin.js` - Create admin users programmatically
+  - `hash-passwords.js` - Utility for password hashing
+- **Run scripts**: `cd backend && node scripts/<script-name>.js` (ensure .env is configured)
 
 ## Common Tasks
 
@@ -224,6 +281,8 @@ create(
 ### Utility Scripts
 - [backend/scripts/cleanup-orphaned-profiles.js](backend/scripts/cleanup-orphaned-profiles.js): Remove profiles without linked entities
 - [backend/scripts/test-query.js](backend/scripts/test-query.js): Test raw Supabase queries
+- [backend/scripts/create-admin.js](backend/scripts/create-admin.js): Create admin users programmatically
+- [backend/scripts/hash-passwords.js](backend/scripts/hash-passwords.js): Generate bcrypt password hashes
 - Run with: `cd backend && node scripts/<script-name>.js`
 
 ## Modules Structure
@@ -234,6 +293,7 @@ create(
 - **categories**: Travel category master data (bilingual)
 - **merchants**: Merchant business profiles and verification
 - **collaborators**: Tour guide profiles with QR code generation
+- **organization-profile**: Single organization profile with base64 avatar support (upsert pattern)
 - **qr**: Public QR code resolution endpoint (`/c/:qrToken`)
 
 ### Module Example: Collaborators
@@ -295,8 +355,18 @@ npm run lint
 - Circular dependencies: Use `forwardRef()` when modules need each other (see collaborators/merchants services)
 
 ## Additional Context
-- **QR Flow**: Short URLs at `/c/:qrToken` resolve to collaborators via 32-char hex token
+- **QR Flow**: 
+  - Collaborators get a 32-char hex `qr_code` token on creation
+  - QR code images generated as 400x400px PNG (base64) via `GET /collaborators/:id/qr-code`
+  - QR data contains collaborator_code for scanner apps
+  - Public resolution endpoint: `/c/:qrToken` (not yet implemented scanner feature)
 - **Verification flags**: `merchant_verified` and `collaborators_verified` control access
 - **Backfill**: POST `/user-profiles/backfill` creates auth users for approved merchants/collaborators
 - **Manual user creation**: POST `/user-profiles/create` for admin-created accounts
 - **Bilingual data**: Categories table uses `category_name` (English) and `category_name_vi` (Vietnamese) pattern
+- **Image handling**: Base64 encoding for avatars/QR codes, stored directly in PostgreSQL. Backend limit: 15MB (supports ~10MB images)
+- **Design patterns**: 
+  - No prices displayed on homepage listings (only discount labels like "25% OFF" or "Save 250k")
+  - Commission badges visible only to logged-in collaborators
+  - Gradient themes: red-pink (#ef4444 to #ec4899) for primary actions, emerald-teal (#10b981 to #14b8a6) for collaborator features
+  - Interactive cards with borderless design, hover zoom effects, and heart/favorite buttons

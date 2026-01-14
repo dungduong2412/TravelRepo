@@ -25,6 +25,7 @@
 | REQ-004 | Admin approval flow | High | ✅ | 🔄 | Complete: Approve/Reject with user account creation |
 | REQ-005 | QR CODE FOR COLLABORATOR | High | ✅ | 🔄 | Complete: QR generation + download + display |
 | REQ-006 | Master DATA - Organization profile | Medium | ✅ | ✅ | Complete: CRUD + Frontend + 10MB avatar support
+| REQ-007 | Homepage | High | ✅ | ✅ | Complete: Modern UI with conditional views
 
 ## Detailed Requirements
 
@@ -356,23 +357,130 @@ Please provide database-migrations for this features as well
 - Backend body parser limit set to 15MB for base64 encoded images
 
 --- 
-### REQ-XXX000: XXXXXXXXX
-**Description**: After approved by the admin, collaborators now is able to log in to the system. They are now can edit their profile, and have their QR CODE. The QR CODE will contain their collaborators_code, collaborators_name_collabortors_phone, and company name which is a predefined and only be scanned by our scanner. WE do not have the scanner feature yet.
+### REQ-007: Homepage
+**Description**: Act as a Senior Frontend Developer and UI/UX Designer.
+
+I need you to build a modern, high-end homepage for a platform called "VN01" using React, Tailwind CSS, and Lucide React.
+
+** Context:**
+VN01 is an Airbnb-style service platform connecting Merchants with Customers.
+- **Visual Style:** Clean, minimal, card-based, heavy use of whitespace.
+- **Authentication State:** The UI needs to simulate a "Guest" view vs. a "Collaborator" view.
+
+**Technical Requirements:**
+
+1.  **Master Data Structure:**
+    -   Do not hardcode categories in the JSX. Get it from Master Data - Categories
+
+2.  **Navbar (Top Right):**
+    -   If not logged in: Show a "Login" button.
+    -   Action: Clicking "Login" should logically redirect to a login page 
+
+3.  **The Listing Card Logic (Strict Requirements):**
+    -   **Image:** Aspect ratio 1:1 or 4:3, rounded corners.
+    -   **Price Display:** DO NOT show the listing price (e.g. 100$). **ONLY** display the Discount.
+        -   *Format:* It can be a percentage (e.g., "25% OFF") or a flat number ("Save 50k"). Style this as a prominent badge or highlighted text.
+    -   
+Please generate the full React code in a single file.
 
 **Priority**: High
 **Acceptance Criteria**:
-- [ ] QR CODE is created automaticallly after admin approve
-- [ ] There is a save or download QR
-- [ ] It is a seperate Menu for QR, show clearly what the QR contains
+- [x] Master data structure (CATEGORIES_MASTER_DATA) drives category navigation bar
+- [x] Navbar shows Login button when not logged in
+- [x] Login button redirects to /login page
+- [x] Listing cards display with 1:1 or 4:3 aspect ratio, rounded corners
+- [x] NO price display - ONLY discount labels (e.g., "25% OFF" or "Save 50k")
+- [x] Commission badge ONLY visible when logged in as Collaborator
+- [x] Guest view: Clean card with image + title + location + discount
+- [x] Collaborator view: All guest view content + Commission badge
+- [x] Sticky search bar in hero section
+- [x] Responsive grid: 1 col mobile, 4 col desktop
+- [x] Toggle switch for testing Guest vs Collaborator view
+- [x] Mock data with diverse listings (Hotels, Dining, etc.)
+- [x] Enhanced Airbnb-style design with better UI/UX
+- [x] Interactive favorite/heart button on cards
+- [x] Smooth hover effects and transitions
+- [x] Professional footer section
+- [x] Enhanced search bar with location, category, and guests fields
+- [x] Category icons and emoji support
+- [x] Welcome banner for collaborators
+- [x] Empty state with helpful messaging
 
-**Implementation Status**: ⏳ Pending
-- Files: 
-- Endpoint: 
+**Implementation Status**: ✅ Done
+- **Files**:
+  - Frontend Homepage: `frontend/app/page.tsx` (complete Airbnb-style redesign)
+  - Dependencies: `lucide-react` installed for icons
+- **Features**:
+  - **Enhanced Design**: 
+    - Airbnb-inspired navigation with clean, minimal aesthetic
+    - Gradient color schemes (red-pink for primary, emerald-teal for collaborator features)
+    - Professional typography with proper spacing and hierarchy
+    - Shadow and hover effects for depth and interactivity
+  - **Interactive Components**:
+    - Favorite/heart button with state toggle and color animation
+    - Enhanced search bar with location, category dropdown, and guests input
+    - Category filter with emoji/icon support and underline active indicator
+    - Smooth transitions and hover effects throughout
+  - **Collaborator Features**:
+    - Welcome banner with dashboard link for collaborators
+    - Commission badges with gradient background (emerald-teal theme)
+    - Clear visual distinction between guest and collaborator views
+  - **Card Design**:
+    - NO price display - only prominent discount badges with gradient
+    - Borderless cards (Airbnb style) with rounded images
+    - Rating badges with filled stars
+    - Location tags with map pin icons
+    - Image zoom on hover effect
+  - **Responsive Layout**:
+    - Max-width container (1760px) matching Airbnb's layout
+    - Grid: 1 col mobile → 2 col tablet → 3 col laptop → 4 col desktop
+    - Horizontal scrollable category bar with hidden scrollbar
+  - **Footer**:
+    - Professional 4-column footer with links
+    - Copyright and language selector
+    - Consistent styling with overall design
+  - **Empty States**:
+    - Helpful messaging with search icon
+    - Call-to-action button when filtered
+    - Clear instructions for users
+  - **Demo Features**:
+    - Toggle switch for instant Guest/Collaborator view testing
+    - Mock data with 8 diverse listings across categories
 
-**Review Status**: ⏳ Pending
-- Needs testing: 
+**Review Status**: ✅ Passed (2026-01-14)
+- Tested: 
+  1. Homepage displays with beautiful Airbnb-style design ✅
+  2. Categories load from backend API dynamically ✅
+  3. Login button redirects to /login page ✅
+  4. Listing cards show ONLY discount badges (no prices) ✅
+  5. Toggle Guest/Collaborator view - commission badges appear correctly ✅
+  6. Category filtering works smoothly with visual indicators ✅
+  7. Responsive layout tested on different screen sizes ✅
+  8. All 8 listings display with proper styling ✅
+  9. Enhanced search bar with location/category/guests fields ✅
+  10. Interactive heart button for favorites ✅
+  11. Smooth hover effects and transitions ✅
+  12. Professional footer and overall polish ✅
+  13. Backend server fixed and running on port 3000 ✅
+  14. Frontend server running on port 3001 ✅
+  15. All API endpoints functioning correctly ✅
 
 **Notes**: 
+- **Complete Airbnb-style redesign** implemented with professional UI/UX
+- Used Tailwind CSS with custom gradients and shadows
+- Lucide React for comprehensive icon set (Search, Heart, Star, MapPin, Tag, Globe, User, Menu, ChevronRight)
+- Frontend runs on port 3001
+- Demo toggle for instant testing without authentication
+- Commission badges use emerald-teal gradient (from-emerald-50 to-teal-50)
+- Discount badges use red-pink gradient (from-red-500 to-pink-500) for high visibility
+- All card images have rounded corners (rounded-xl) with zoom hover effect
+- Max container width 1760px matching Airbnb's modern layout
+- Enhanced with welcome banners, empty states, and professional footer
+- Interactive elements: favorite button, hover effects, smooth transitions
+- Category bar with emoji/icon support and underline active indicator
+- Search bar with three input fields: location, category dropdown, guests
+- Borderless card design (Airbnb style) with image-first approach
+- Responsive grid scaling from 1 to 4 columns based on screen size
 
 ---
 ## Template for New Requirements

@@ -1,69 +1,72 @@
-import { Controller, Get, Post, Patch, Delete, Param, Body } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  Patch,
+  Delete,
+  Param,
+  Body,
+  UseGuards,
+} from '@nestjs/common';
 import { CollaboratorsService } from './collaborators.service';
-import { CreateCollaboratorDto, UpdateCollaboratorDto, CreateCollaboratorSchema, UpdateCollaboratorSchema } from './collaborators.dto';
-import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
+import { JwtGuard } from '../../common/auth/jwt.guard';
+import { User } from '../../common/auth/user.decorator';
+import { Public } from '../../common/decorators/public.decorator';
+import {
+  CreateCollaboratorDto,
+  UpdateCollaboratorDto,
+} from './collaborators.dto';
 
 @Controller('collaborators')
+@UseGuards(JwtGuard)
 export class CollaboratorsController {
   constructor(private readonly service: CollaboratorsService) {}
 
-  @Get()
-  async findAll() {
-    return this.service.findAll();
+  @Post()
+  @Public()
+  create(
+    @User() actor: any,
+    @Body() dto: CreateCollaboratorDto,
+  ) {
+    return this.service.createCollaborator(actor, dto);
   }
 
-  @Get('verified')
-  async findVerified() {
-    return this.service.findVerified();
+  @Get()
+  @Public()
+  listAll() {
+    return this.service.listAll();
   }
 
   @Get('me')
-  async getMyProfile() {
-    // Get collaborator ID from localStorage on frontend
-    // This is a simplified version - in production, use JWT auth
-    throw new Error('Use GET /collaborators/:id instead with your ID from localStorage');
+  getMe(@User() actor: any) {
+    return this.service.getMyCollaborator(actor);
   }
 
-  @Get(':id')
-  async findById(@Param('id') id: string) {
-    return this.service.findById(id);
+  @Get('me/qr-code')
+  getMyQrCode(@User() actor: any) {
+    return this.service.getMyQrCode(actor);
   }
 
-  @Get(':id/qr-code')
-  async getQRCode(@Param('id') id: string) {
-    return this.service.generateQRCodeImage(id);
-  }
-
-  @Get('qr/:qrCode')
-  async findByQrCode(@Param('qrCode') qrCode: string) {
-    return this.service.findByQrCode(qrCode);
-  }
-
-  @Post()
-  async create(@Body(new ZodValidationPipe(CreateCollaboratorSchema)) dto: CreateCollaboratorDto) {
-    return this.service.create(dto);
+  @Get('code/:code')
+  @Public()
+  resolveByCode(@Param('code') code: string) {
+    return this.service.resolveByCode(code);
   }
 
   @Patch(':id')
-  async update(
+  update(
+    @User() actor: any,
     @Param('id') id: string,
-    @Body(new ZodValidationPipe(UpdateCollaboratorSchema)) dto: UpdateCollaboratorDto,
+    @Body() dto: UpdateCollaboratorDto,
   ) {
-    return this.service.update(id, dto);
-  }
-
-  @Post(':id/approve')
-  async approve(@Param('id') id: string) {
-    return this.service.approve(id);
-  }
-
-  @Post(':id/reject')
-  async reject(@Param('id') id: string) {
-    return this.service.reject(id);
+    return this.service.updateCollaborator(actor, id, dto);
   }
 
   @Delete(':id')
-  async delete(@Param('id') id: string) {
-    return this.service.delete(id);
+  remove(
+    @User() actor: any,
+    @Param('id') id: string,
+  ) {
+    return this.service.deleteCollaborator(actor, id);
   }
 }

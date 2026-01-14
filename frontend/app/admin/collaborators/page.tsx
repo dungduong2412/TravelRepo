@@ -1,6 +1,8 @@
-"use client";
+'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { api } from '../../../lib/api';
+import { CheckCircle, User, Mail, Phone, Calendar, QrCode } from 'lucide-react';
 
 interface Collaborator {
   id: string;
@@ -9,297 +11,180 @@ interface Collaborator {
   collaborators_email: string;
   collaborators_phone: string;
   collaborators_verified: boolean;
-  collaborators_status?: string;
-  collaborators_bank_name?: string;
-  collaborators_bank_acc_number?: string;
+  collaborators_registered_date: string;
   collaborators_qr_code?: string;
-  collaborators_rating?: number;
-  created_at: string;
-  updated_at: string;
 }
 
-export default function CollaboratorsManagementPage() {
-  const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
-  const [filteredCollaborators, setFilteredCollaborators] = useState<Collaborator[]>([]);
+export default function AdminCollaboratorsPage() {
+  const [pendingItems, setPendingItems] = useState<Collaborator[]>([]);
+  const [verifiedItems, setVerifiedItems] = useState<Collaborator[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<'all' | 'active' | 'pending'>('all');
-  const [selectedCollaborator, setSelectedCollaborator] = useState<Collaborator | null>(null);
-  const [showModal, setShowModal] = useState(false);
+  const [selectedQr, setSelectedQr] = useState<string | null>(null);
 
   useEffect(() => {
     fetchCollaborators();
   }, []);
 
-  useEffect(() => {
-    filterCollaborators();
-  }, [filter, collaborators]);
-
-  const fetchCollaborators = async () => {
+  async function fetchCollaborators() {
     try {
-      setLoading(true);
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-      const response = await fetch(`${apiUrl}/collaborators`);
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch collaborators');
-      }
-
-      const data = await response.json();
-      setCollaborators(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load collaborators');
+      const [pending, all] = await Promise.all([
+        api.get('/admin/collaborators/pending').then(r => r.data),
+        api.get('/collaborators').then(r => r.data)
+      ]);
+      
+      setPendingItems(pending || []);
+      setVerifiedItems((all || []).filter((c: Collaborator) => c.collaborators_verified));
+    } catch (e: any) {
+      alert(e.message);
     } finally {
       setLoading(false);
     }
-  };
-
-  const filterCollaborators = () => {
-    if (filter === 'all') {
-      setFilteredCollaborators(collaborators);
-    } else if (filter === 'active') {
-      setFilteredCollaborators(collaborators.filter(c => c.collaborators_verified === true));
-    } else {
-      setFilteredCollaborators(collaborators.filter(c => c.collaborators_verified === false));
-    }
-  };
-
-  const handleViewDetails = (collaborator: Collaborator) => {
-    setSelectedCollaborator(collaborator);
-    setShowModal(true);
-  };
-
-  const handleApprove = async (id: string) => {
-    if (!confirm('Are you sure you want to approve this collaborator? This will create a user account for login.')) return;
-
-    try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-      const response = await fetch(`${apiUrl}/collaborators/${id}/approve`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      });
-
-      if (!response.ok) throw new Error('Failed to approve collaborator');
-
-      alert('Collaborator approved successfully! User account created.');
-      fetchCollaborators();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to approve collaborator');
-    }
-  };
-
-  const handleReject = async (id: string) => {
-    if (!confirm('Are you sure you want to reject this collaborator? This will block their access.')) return;
-
-    try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-      const response = await fetch(`${apiUrl}/collaborators/${id}/reject`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      });
-
-      if (!response.ok) throw new Error('Failed to reject collaborator');
-
-      alert('Collaborator rejected and blocked.');
-      fetchCollaborators();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to reject collaborator');
-    }
-  };
-
-  const handleDeactivate = async (id: string) => {
-    if (!confirm('Are you sure you want to deactivate this collaborator?')) return;
-
-    try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-      const response = await fetch(`${apiUrl}/collaborators/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ collaborators_verified: false, collaborators_status: 'inactive' }),
-      });
-
-      if (!response.ok) throw new Error('Failed to deactivate collaborator');
-
-      alert('Collaborator deactivated successfully!');
-      fetchCollaborators();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to deactivate collaborator');
-    }
-  };
-
-  if (loading) {
-    return <div style={styles.loadingContainer}>Loading collaborators...</div>;
   }
 
-  if (error) {
+  async function handleApprove(id: string) {
+    if (!confirm('Approve this collaborator? A QR code will be generated.')) return;
+    
+    try {
+      await api.post(`/admin/collaborators/${id}/approve`);
+      alert('Collaborator approved and QR code generated!');
+      fetchCollaborators();
+    } catch (e: any) {
+      alert('Failed to approve: ' + e.message);
+    }
+  }
+
+  if (loading) {
     return (
-      <div style={styles.errorContainer}>
-        <p style={styles.errorText}>❌ {error}</p>
-        <button onClick={fetchCollaborators} style={styles.retryButton}>Retry</button>
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading collaborators...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div style={styles.container}>
-      <div style={styles.header}>
-        <h2 style={styles.title}>Collaborators Management</h2>
-        <div style={styles.filterButtons}>
-          <button
-            onClick={() => setFilter('all')}
-            style={{
-              ...styles.filterButton,
-              backgroundColor: filter === 'all' ? '#3b82f6' : '#e5e7eb',
-              color: filter === 'all' ? 'white' : '#374151',
-            }}
-          >
-            All ({collaborators.length})
-          </button>
-          <button
-            onClick={() => setFilter('active')}
-            style={{
-              ...styles.filterButton,
-              backgroundColor: filter === 'active' ? '#10b981' : '#e5e7eb',
-              color: filter === 'active' ? 'white' : '#374151',
-            }}
-          >
-            Active ({collaborators.filter(c => c.collaborators_verified).length})
-          </button>
-          <button
-            onClick={() => setFilter('pending')}
-            style={{
-              ...styles.filterButton,
-              backgroundColor: filter === 'pending' ? '#f59e0b' : '#e5e7eb',
-              color: filter === 'pending' ? 'white' : '#374151',
-            }}
-          >
-            Pending ({collaborators.filter(c => !c.collaborators_verified).length})
-          </button>
+    <div className="min-h-screen bg-gray-50 p-8">
+      <div className="max-w-7xl mx-auto">
+        <h1 className="text-3xl font-bold text-gray-900 mb-8">Collaborator Management</h1>
+
+        {/* Pending Approval Section */}
+        <div className="mb-12">
+          <h2 className="text-2xl font-semibold text-gray-800 mb-4">
+            Pending Approval ({pendingItems.length})
+          </h2>
+          
+          {pendingItems.length === 0 ? (
+            <div className="bg-white rounded-lg shadow p-8 text-center text-gray-500">
+              No pending collaborators for approval
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {pendingItems.map((c) => (
+                <div key={c.id} className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition">
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-center">
+                      <div className="bg-gray-100 rounded-full p-3 mr-3">
+                        <User className="w-6 h-6 text-gray-600" />
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-lg">{c.collaborators_name}</h3>
+                        <p className="text-sm text-gray-500 font-mono">{c.collaborators_code}</p>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-2 mb-4 text-sm">
+                    <div className="flex items-center text-gray-600">
+                      <Mail className="w-4 h-4 mr-2" />
+                      {c.collaborators_email}
+                    </div>
+                    <div className="flex items-center text-gray-600">
+                      <Phone className="w-4 h-4 mr-2" />
+                      {c.collaborators_phone}
+                    </div>
+                    <div className="flex items-center text-gray-600">
+                      <Calendar className="w-4 h-4 mr-2" />
+                      {new Date(c.collaborators_registered_date).toLocaleDateString()}
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => handleApprove(c.id)}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg transition"
+                  >
+                    <CheckCircle className="w-5 h-5" />
+                    Approve & Generate QR
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Verified Collaborators Section */}
+        <div>
+          <h2 className="text-2xl font-semibold text-gray-800 mb-4">
+            Verified Collaborators ({verifiedItems.length})
+          </h2>
+          
+          {verifiedItems.length === 0 ? (
+            <div className="bg-white rounded-lg shadow p-8 text-center text-gray-500">
+              No verified collaborators yet
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {verifiedItems.map((c) => (
+                <div key={c.id} className="bg-white rounded-lg shadow-md p-6">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center">
+                      <CheckCircle className="w-5 h-5 text-green-500 mr-2" />
+                      <span className="text-xs font-semibold text-green-600">VERIFIED</span>
+                    </div>
+                  </div>
+                  
+                  <h3 className="font-bold text-lg mb-1">{c.collaborators_name}</h3>
+                  <p className="text-sm text-gray-500 font-mono mb-3">{c.collaborators_code}</p>
+                  
+                  {c.collaborators_qr_code && (
+                    <button
+                      onClick={() => setSelectedQr(c.collaborators_qr_code!)}
+                      className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded transition"
+                    >
+                      <QrCode className="w-4 h-4" />
+                      View QR Code
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
-      <div style={styles.tableContainer}>
-        <table style={styles.table}>
-          <thead>
-            <tr style={styles.tableHeader}>
-              <th style={styles.th}>Code</th>
-              <th style={styles.th}>Name</th>
-              <th style={styles.th}>Email</th>
-              <th style={styles.th}>Phone</th>
-              <th style={styles.th}>Bank</th>
-              <th style={styles.th}>Status</th>
-              <th style={styles.th}>Created</th>
-              <th style={styles.th}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredCollaborators.map((collaborator) => (
-              <tr key={collaborator.id} style={styles.tableRow}>
-                <td style={styles.td}>{collaborator.collaborators_code}</td>
-                <td style={styles.td}>{collaborator.collaborators_name}</td>
-                <td style={styles.td}>{collaborator.collaborators_email}</td>
-                <td style={styles.td}>{collaborator.collaborators_phone}</td>
-                <td style={styles.td}>{collaborator.collaborators_bank_name || 'N/A'}</td>
-                <td style={styles.td}>
-                  <span style={{
-                    ...styles.statusBadge,
-                    backgroundColor: 
-                      collaborator.collaborators_status === 'active' ? '#d1fae5' : 
-                      collaborator.collaborators_status === 'pending' ? '#fef3c7' :
-                      collaborator.collaborators_status === 'inactive' ? '#e5e7eb' :
-                      collaborator.collaborators_status === 'blocked' ? '#fee2e2' : '#e5e7eb',
-                    color: 
-                      collaborator.collaborators_status === 'active' ? '#065f46' : 
-                      collaborator.collaborators_status === 'pending' ? '#92400e' :
-                      collaborator.collaborators_status === 'inactive' ? '#374151' :
-                      collaborator.collaborators_status === 'blocked' ? '#991b1b' : '#374151',
-                  }}>
-                    {collaborator.collaborators_status ? 
-                      collaborator.collaborators_status.charAt(0).toUpperCase() + collaborator.collaborators_status.slice(1) : 
-                      (collaborator.collaborators_verified ? 'Active' : 'Pending')
-                    }
-                  </span>
-                </td>
-                <td style={styles.td}>
-                  {new Date(collaborator.created_at).toLocaleDateString()}
-                </td>
-                <td style={styles.td}>
-                  <div style={styles.actionButtons}>
-                    <button
-                      onClick={() => handleViewDetails(collaborator)}
-                      style={styles.viewButton}
-                    >
-                      View
-                    </button>
-                    {!collaborator.collaborators_verified && collaborator.collaborators_status !== 'blocked' ? (
-                      <>
-                        <button
-                          onClick={() => handleApprove(collaborator.id)}
-                          style={styles.approveButton}
-                        >
-                          Approve
-                        </button>
-                        <button
-                          onClick={() => handleReject(collaborator.id)}
-                          style={styles.rejectButton}
-                        >
-                          Reject
-                        </button>
-                      </>
-                    ) : collaborator.collaborators_verified ? (
-                      <button
-                        onClick={() => handleDeactivate(collaborator.id)}
-                        style={styles.deactivateButton}
-                      >
-                        Deactivate
-                      </button>
-                    ) : null}
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Details Modal */}
-      {showModal && selectedCollaborator && (
-        <div style={styles.modalOverlay} onClick={() => setShowModal(false)}>
-          <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
-            <h3 style={styles.modalTitle}>Collaborator Details</h3>
-            <div style={styles.detailsGrid}>
-              <div style={styles.detailItem}>
-                <strong>Code:</strong> {selectedCollaborator.collaborators_code}
-              </div>
-              <div style={styles.detailItem}>
-                <strong>Name:</strong> {selectedCollaborator.collaborators_name}
-              </div>
-              <div style={styles.detailItem}>
-                <strong>Email:</strong> {selectedCollaborator.collaborators_email}
-              </div>
-              <div style={styles.detailItem}>
-                <strong>Phone:</strong> {selectedCollaborator.collaborators_phone}
-              </div>
-              <div style={styles.detailItem}>
-                <strong>Bank Name:</strong> {selectedCollaborator.collaborators_bank_name || 'N/A'}
-              </div>
-              <div style={styles.detailItem}>
-                <strong>Bank Account:</strong> {selectedCollaborator.collaborators_bank_acc_number || 'N/A'}
-              </div>
-              <div style={styles.detailItem}>
-                <strong>QR Code:</strong> {selectedCollaborator.collaborators_qr_code || 'N/A'}
-              </div>
-              <div style={styles.detailItem}>
-                <strong>Status:</strong> {selectedCollaborator.collaborators_verified ? 'Active' : 'Pending'}
-              </div>
-              <div style={styles.detailItem}>
-                <strong>Created:</strong> {new Date(selectedCollaborator.created_at).toLocaleString()}
-              </div>
-              <div style={styles.detailItem}>
-                <strong>Updated:</strong> {new Date(selectedCollaborator.updated_at).toLocaleString()}
-              </div>
+      {/* QR Code Modal */}
+      {selectedQr && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+          onClick={() => setSelectedQr(null)}
+        >
+          <div 
+            className="bg-white rounded-lg p-8 max-w-md w-full"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-xl font-bold mb-4 text-center">Collaborator QR Code</h3>
+            <div className="flex justify-center mb-4">
+              <img 
+                src={selectedQr} 
+                alt="QR Code" 
+                className="w-64 h-64 border-4 border-gray-200 rounded-lg"
+              />
             </div>
-            <button onClick={() => setShowModal(false)} style={styles.closeButton}>
+            <button
+              onClick={() => setSelectedQr(null)}
+              className="w-full px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white font-semibold rounded-lg transition"
+            >
               Close
             </button>
           </div>
@@ -308,183 +193,3 @@ export default function CollaboratorsManagementPage() {
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    maxWidth: '1400px',
-  },
-  header: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '25px',
-    flexWrap: 'wrap',
-    gap: '15px',
-  },
-  title: {
-    fontSize: '24px',
-    fontWeight: 600,
-    margin: 0,
-    color: '#111827',
-  },
-  filterButtons: {
-    display: 'flex',
-    gap: '10px',
-  },
-  filterButton: {
-    padding: '8px 16px',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontSize: '14px',
-    fontWeight: 500,
-    transition: 'all 0.2s',
-  },
-  tableContainer: {
-    backgroundColor: 'white',
-    borderRadius: '8px',
-    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
-    overflow: 'auto',
-  },
-  table: {
-    width: '100%',
-    borderCollapse: 'collapse',
-  },
-  tableHeader: {
-    backgroundColor: '#f9fafb',
-  },
-  th: {
-    padding: '12px 16px',
-    textAlign: 'left',
-    fontSize: '14px',
-    fontWeight: 600,
-    color: '#374151',
-    borderBottom: '1px solid #e5e7eb',
-  },
-  tableRow: {
-    borderBottom: '1px solid #e5e7eb',
-  },
-  td: {
-    padding: '12px 16px',
-    fontSize: '14px',
-    color: '#111827',
-  },
-  statusBadge: {
-    padding: '4px 12px',
-    borderRadius: '12px',
-    fontSize: '12px',
-    fontWeight: 500,
-    display: 'inline-block',
-  },
-  actionButtons: {
-    display: 'flex',
-    gap: '8px',
-  },
-  viewButton: {
-    padding: '6px 12px',
-    backgroundColor: '#3b82f6',
-    color: 'white',
-    border: 'none',
-    borderRadius: '4px',
-    cursor: 'pointer',
-    fontSize: '13px',
-  },
-  approveButton: {
-    padding: '6px 12px',
-    backgroundColor: '#10b981',
-    color: 'white',
-    border: 'none',
-    borderRadius: '4px',
-    cursor: 'pointer',
-    fontSize: '13px',
-  },
-  rejectButton: {
-    padding: '6px 12px',
-    backgroundColor: '#f59e0b',
-    color: 'white',
-    border: 'none',
-    borderRadius: '4px',
-    cursor: 'pointer',
-    fontSize: '13px',
-  },
-  deactivateButton: {
-    padding: '6px 12px',
-    backgroundColor: '#ef4444',
-    color: 'white',
-    border: 'none',
-    borderRadius: '4px',
-    cursor: 'pointer',
-    fontSize: '13px',
-  },
-  loadingContainer: {
-    textAlign: 'center',
-    padding: '40px',
-    fontSize: '16px',
-    color: '#6b7280',
-  },
-  errorContainer: {
-    textAlign: 'center',
-    padding: '40px',
-  },
-  errorText: {
-    color: '#dc2626',
-    fontSize: '16px',
-    marginBottom: '15px',
-  },
-  retryButton: {
-    padding: '10px 20px',
-    backgroundColor: '#3b82f6',
-    color: 'white',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-  },
-  modalOverlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 1000,
-  },
-  modalContent: {
-    backgroundColor: 'white',
-    padding: '30px',
-    borderRadius: '8px',
-    maxWidth: '600px',
-    width: '90%',
-    maxHeight: '80vh',
-    overflow: 'auto',
-  },
-  modalTitle: {
-    fontSize: '20px',
-    fontWeight: 600,
-    marginBottom: '20px',
-    color: '#111827',
-  },
-  detailsGrid: {
-    display: 'grid',
-    gridTemplateColumns: '1fr',
-    gap: '12px',
-    marginBottom: '20px',
-  },
-  detailItem: {
-    padding: '10px',
-    backgroundColor: '#f9fafb',
-    borderRadius: '4px',
-    fontSize: '14px',
-  },
-  closeButton: {
-    padding: '10px 20px',
-    backgroundColor: '#6b7280',
-    color: 'white',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    width: '100%',
-  },
-};
