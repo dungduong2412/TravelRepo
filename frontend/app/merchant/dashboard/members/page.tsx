@@ -93,8 +93,8 @@ export default function MerchantMembersPage() {
       return;
     }
     
-    if (formData.collaborators_password.length < 6) {
-      setError('Mật khẩu phải có ít nhất 6 ký tự');
+    if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{12,}$/.test(formData.collaborators_password)) {
+      setError('Mật khẩu phải có ít nhất 12 ký tự, gồm chữ hoa, chữ thường, số và ký tự đặc biệt');
       return;
     }
     

@@ -31,7 +31,7 @@ Frontend clients must never access the database directly.
 1. Copy `.env.example` to `.env`
 2. Configure Supabase credentials
 3. Install dependencies in `backend/` directory
-4. Start the API on port 3000
+4. Start the API on port 3100
 
 ## Ownership
 All logic in this repository must be understandable by any senior engineer within 1 hour.

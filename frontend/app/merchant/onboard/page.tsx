@@ -3,11 +3,14 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { apiFetch } from '../../../lib/api';
+import { publicApiFetch } from '../../../lib/api';
 
 export default function MerchantOnboardPage() {
   const router = useRouter();
   const [formData, setFormData] = useState({
+    ownerEmail: '',
+    password: '',
+    confirmPassword: '',
     name: '',
     description: '',
     commissionRate: '',
@@ -28,13 +31,30 @@ export default function MerchantOnboardPage() {
     setIsSubmitting(true);
     setError(null);
 
+    if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{12,}$/.test(formData.password)) {
+      setError('Mật khẩu phải có ít nhất 12 ký tự, gồm chữ hoa, chữ thường, số và ký tự đặc biệt');
+      setIsSubmitting(false);
+      return;
+    }
+    if (formData.password !== formData.confirmPassword) {
+      setError('Hai mật khẩu không khớp');
+      setIsSubmitting(false);
+      return;
+    }
+
     try {
-      await apiFetch('/merchants', {
+      await publicApiFetch('/merchants', {
         method: 'POST',
         body: JSON.stringify({
-          ...formData,
-          commissionRate: Number(formData.commissionRate),
-          customerDiscountRate: Number(formData.customerDiscountRate),
+          owner_email: formData.ownerEmail,
+          owner_password: formData.password,
+          merchant_name: formData.name,
+          merchant_description: formData.description || undefined,
+          merchant_email: formData.ownerEmail,
+          merchant_commission_type: 'percentage',
+          merchant_commission_value: Number(formData.commissionRate),
+          merchant_discount_type: 'percentage',
+          merchant_discount_value: Number(formData.customerDiscountRate),
         }),
       });
       router.push('/success?role=merchant');
@@ -54,6 +74,49 @@ export default function MerchantOnboardPage() {
         </p>
 
         <form onSubmit={handleSubmit} style={styles.form}>
+          <div style={styles.formGroup}>
+            <label htmlFor="ownerEmail" style={styles.label}>Email chủ tài khoản *</label>
+            <input
+              id="ownerEmail"
+              name="ownerEmail"
+              type="email"
+              autoComplete="email"
+              required
+              value={formData.ownerEmail}
+              onChange={handleChange}
+              style={styles.input}
+            />
+          </div>
+
+          <div style={styles.formGroup}>
+            <label htmlFor="password" style={styles.label}>Mật khẩu *</label>
+            <input
+              id="password"
+              name="password"
+              type="password"
+              autoComplete="new-password"
+              required
+              value={formData.password}
+              onChange={handleChange}
+              style={styles.input}
+            />
+            <small style={styles.hint}>Ít nhất 12 ký tự, gồm chữ hoa, chữ thường, số và ký tự đặc biệt.</small>
+          </div>
+
+          <div style={styles.formGroup}>
+            <label htmlFor="confirmPassword" style={styles.label}>Xác nhận mật khẩu *</label>
+            <input
+              id="confirmPassword"
+              name="confirmPassword"
+              type="password"
+              autoComplete="new-password"
+              required
+              value={formData.confirmPassword}
+              onChange={handleChange}
+              style={styles.input}
+            />
+          </div>
+
           <div style={styles.formGroup}>
             <label htmlFor="name" style={styles.label}>
               Tên Doanh Nghiệp *

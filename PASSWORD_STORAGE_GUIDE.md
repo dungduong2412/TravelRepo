@@ -1,89 +1,29 @@
-# Password Storage & Authentication Guide
+# Password storage and authentication
 
-## How Passwords Are Stored
+V2 uses Supabase Auth as the only password verifier and password store for Admin, Merchant, and Collaborator accounts.
 
-The system uses **different password storage** for each user type:
+## Rules
 
-### 1. **Collaborators**
-- **Table**: `collaborators`
-- **Password Column**: `collaborators_password`
-- **Storage**: bcrypt hash (10 rounds)
-- Created during collaborator signup
+- Never persist plaintext or bcrypt password values in `merchant_details.owner_password` or `collaborators.collaborators_password`. These legacy columns remain `NULL` for new and migrated V2 rows.
+- Never import ASP.NET Identity password hashes, security stamps, OpenID tokens, refresh tokens, or other reusable credential material from V1.
+- Backend login calls Supabase Auth and then loads the active `user_profiles` role and linked merchant/collaborator entity.
+- Authorization is based on the verified Supabase Auth user plus the active V2 profile. Client-supplied roles are not trusted.
+- New passwords and recovery passwords require at least 12 characters with uppercase, lowercase, numeric, and symbol characters.
+- Production must enable leaked-password protection before customer onboarding.
 
-### 2. **Merchants**
-- **Table**: `merchant_details`
-- **Password Column**: `owner_password`
-- **Storage**: bcrypt hash (10 rounds)
-- Created during merchant signup
+## Recovery
 
-### 3. **Admin Users**
-- **Table**: Supabase Auth (built-in)
-- **Password Column**: Managed by Supabase Auth
-- **Storage**: Supabase's secure password hashing
-- Created via `create-admin.js` script
+The frontend requests recovery with `resetPasswordForEmail` and redirects only to an allow-listed `/reset-password` URL. The recovery page updates the authenticated recovery session through Supabase Auth, signs out, and requires a fresh login. The request screen uses a non-enumerating confirmation message.
 
-### 4. **User Profiles Table**
-- **Table**: `user_profiles`
-- **Password Column**: ❌ NO PASSWORD STORED HERE
-- **Purpose**: Links email → role → specific user record
-- Maps to collaborator_id, merchant_id, or user_id (for admin)
+Configure production SMTP, Site URL, Redirect URLs, recovery templates, rate limits, and support handling in Supabase before sending any customer-facing reset. Migration/import scripts do not send recovery or invitation mail.
 
-## Authentication Flow
+## Test accounts
 
-### Login Process:
-1. User enters email/password at `/login`
-2. Backend looks up `user_profiles` table by email
-3. Finds role (admin/merchant/collaborator)
-4. Routes to appropriate login handler:
-   - **Admin**: Uses Supabase Auth
-   - **Merchant**: Checks `merchant_details.owner_password`
-   - **Collaborator**: Checks `collaborators.collaborators_password`
-5. Verifies password matches
-6. Returns JWT token + user data
+Use only authorized local or UAT test accounts. Supply passwords through environment variables; do not commit or print them. The supported isolated checks are:
 
-## Testing Admin Access
-
-### Admin Credentials:
-```
-Email: admin@travelrepo.com
-Password: admin123
-```
-
-### Access Points:
-- **Login**: http://localhost:3001/login
-- **Admin Dashboard**: http://localhost:3001/admin/dashboard
-
-### Why Site Was Unreachable:
-- Frontend server wasn't running on port 3001
-- Both servers are now running:
-  - Backend: http://localhost:3000 ✅
-  - Frontend: http://localhost:3001 ✅
-
-## Creating Additional Admin Users
-
-Run this script:
 ```bash
-cd /workspaces/TravelRepo/backend
-node scripts/create-admin.js
+node migration/v2/test-password-reset.mjs
+node migration/v2/test-authorization.mjs
 ```
 
-This will:
-1. Create Supabase Auth user
-2. Create user_profiles entry with role='admin'
-3. Return login credentials
-
-## Database Schema Summary
-
-```
-user_profiles (links all users)
-├── role: 'admin' → Supabase Auth password
-├── role: 'merchant' → merchant_details.owner_password
-└── role: 'collaborator' → collaborators.collaborators_password
-```
-
-## Security Notes
-
-- All passwords are bcrypt hashed (except admin which uses Supabase's hashing)
-- JWT tokens expire and require refresh
-- Admin passwords should be changed after first login
-- Service role key is only used server-side (backend)
+Legacy scripts that read or write domain password columns are disabled.

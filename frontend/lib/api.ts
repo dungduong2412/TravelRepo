@@ -2,7 +2,9 @@
  * API utility for making requests to the backend
  */
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+import { getAuthToken } from './supabase';
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3100';
 
 interface FetchOptions extends RequestInit {
   token?: string;
@@ -13,14 +15,19 @@ interface FetchOptions extends RequestInit {
  */
 export async function apiFetch(endpoint: string, options: FetchOptions = {}) {
   const { token, ...fetchOptions } = options;
+  let authToken = token;
 
-  const headers: HeadersInit = {
+  if (!authToken && typeof window !== 'undefined') {
+    authToken = (await getAuthToken()) || undefined;
+  }
+
+  const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    ...fetchOptions.headers,
+    ...(fetchOptions.headers as Record<string, string> | undefined),
   };
 
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
+  if (authToken) {
+    headers.Authorization = `Bearer ${authToken}`;
   }
 
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
@@ -40,9 +47,9 @@ export async function apiFetch(endpoint: string, options: FetchOptions = {}) {
  * Make a public (non-authenticated) API request
  */
 export async function publicApiFetch(endpoint: string, options: RequestInit = {}) {
-  const headers: HeadersInit = {
+  const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    ...options.headers,
+    ...(options.headers as Record<string, string> | undefined),
   };
 
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
@@ -66,26 +73,26 @@ export const api = {
     return apiFetch(endpoint, { method: 'GET', token });
   },
 
-  post: async (endpoint: string, data: any, token?: string) => {
+  post: async (endpoint: string, data?: any, token?: string) => {
     return apiFetch(endpoint, {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: data !== undefined ? JSON.stringify(data) : undefined,
       token,
     });
   },
 
-  patch: async (endpoint: string, data: any, token?: string) => {
+  patch: async (endpoint: string, data?: any, token?: string) => {
     return apiFetch(endpoint, {
       method: 'PATCH',
-      body: JSON.stringify(data),
+      body: data !== undefined ? JSON.stringify(data) : undefined,
       token,
     });
   },
 
-  put: async (endpoint: string, data: any, token?: string) => {
+  put: async (endpoint: string, data?: any, token?: string) => {
     return apiFetch(endpoint, {
       method: 'PUT',
-      body: JSON.stringify(data),
+      body: data !== undefined ? JSON.stringify(data) : undefined,
       token,
     });
   },

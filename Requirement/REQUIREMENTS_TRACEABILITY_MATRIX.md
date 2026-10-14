@@ -283,7 +283,7 @@
   2. QR contains only collaborator code ✅
   3. Download functionality works ✅
   4. Profile page displays correctly ✅
-  5. Login works with testctv03@gmail.com / 123456 ✅
+  5. Login works with an authorized test account and environment-supplied password ✅
 - Needs testing: 
   1. Login as a collaborator
   2. Navigate to "Mã QR" menu item in dashboard

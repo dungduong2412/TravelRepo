@@ -16,15 +16,28 @@ exports.AuthController = exports.LoginDto = void 0;
 const common_1 = require("@nestjs/common");
 const auth_service_1 = require("./auth.service");
 const public_decorator_1 = require("../../common/decorators/public.decorator");
+const class_validator_1 = require("class-validator");
 class LoginDto {
 }
 exports.LoginDto = LoginDto;
+__decorate([
+    (0, class_validator_1.IsEmail)(),
+    __metadata("design:type", String)
+], LoginDto.prototype, "email", void 0);
+__decorate([
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], LoginDto.prototype, "password", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", String)
+], LoginDto.prototype, "userType", void 0);
 let AuthController = class AuthController {
     constructor(authService) {
         this.authService = authService;
     }
     async login(dto) {
-        return this.authService.login(dto.email, dto.password, dto.userType);
+        return this.authService.loginAuto(dto.email, dto.password, dto.userType);
     }
 };
 exports.AuthController = AuthController;

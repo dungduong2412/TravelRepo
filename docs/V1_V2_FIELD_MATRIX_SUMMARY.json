@@ -1,0 +1,38 @@
+{
+  "inventory": "/Users/dungduongdinhquoc/Documents/VNO/vno_v1_schema_20261011_152737.txt",
+  "output": "docs/V1_V2_FIELD_MATRIX.csv",
+  "column_count": 1416,
+  "table_count": 135,
+  "database_count": 6,
+  "classification_counts": {
+    "direct": 114,
+    "excluded": 188,
+    "legacy_archive": 1048,
+    "transformed_lossless": 45,
+    "unresolved": 21
+  },
+  "verification_status_counts": {
+    "blocked": 22,
+    "unverified": 3,
+    "verified": 1391
+  },
+  "tenant_scope_counts": {
+    "global OpenIddict application ownership unresolved": 14,
+    "global OpenIddict scope ownership unresolved": 7,
+    "literal TenantId filter": 1092,
+    "shared identity infrastructure explicitly excluded": 22,
+    "shared/non-VNO infrastructure explicitly excluded": 166,
+    "verified provider-key or relational tenant path": 48,
+    "verified relational tenant path": 67
+  },
+  "excluded_count": 188,
+  "schema_object_output": "docs/V1_V2_SCHEMA_OBJECT_MATRIX.csv",
+  "foreign_key_record_count": 58,
+  "index_column_record_count": 339,
+  "schema_object_classification_counts": {
+    "excluded_non_vno_infrastructure": 47,
+    "mapped_equivalent": 26,
+    "preserved_archive_metadata": 315,
+    "unresolved": 9
+  }
+}

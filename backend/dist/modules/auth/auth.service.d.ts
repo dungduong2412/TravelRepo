@@ -1,42 +1,38 @@
 import { SupabaseService } from '../../infrastructure/supabase/supabase.service';
+type AppRole = 'merchant' | 'collaborator' | 'admin';
 export declare class AuthService {
     private readonly supabase;
     constructor(supabase: SupabaseService);
     private getAuthClient;
-    login(email: string, password: string, userType: 'merchant' | 'collaborator'): Promise<{
+    loginAuto(email: string, password: string, requestedRole?: AppRole): Promise<{
         user: {
             id: any;
             email: any;
-            role: string;
-            collaborator_id: any;
+            role: any;
             name: any;
-        };
-        collaborator: {
-            id: any;
-            code: any;
-            name: any;
-            verified: any;
-        };
-        access_token: string;
-        refresh_token: string;
-    } | {
-        user: {
-            id: any;
-            email: any;
-            role: string;
             merchant_id: any;
-            name: any;
+            collaborator_id: any;
         };
-        merchant: {
-            id: any;
-            code: any;
-            name: any;
-            verified: any;
-        };
+        entity: Record<string, unknown>;
+        merchant: Record<string, unknown>;
+        collaborator: Record<string, unknown>;
         access_token: string;
         refresh_token: string;
     }>;
-    private loginCollaborator;
-    private loginMerchant;
+    login(email: string, password: string, role: AppRole): Promise<{
+        user: {
+            id: any;
+            email: any;
+            role: any;
+            name: any;
+            merchant_id: any;
+            collaborator_id: any;
+        };
+        entity: Record<string, unknown>;
+        merchant: Record<string, unknown>;
+        collaborator: Record<string, unknown>;
+        access_token: string;
+        refresh_token: string;
+    }>;
 }
-//# sourceMappingURL=auth.service.d.ts.map
+export {};

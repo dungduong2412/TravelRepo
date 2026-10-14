@@ -10,25 +10,25 @@ export declare const CategorySchema: z.ZodObject<{
     created_at: z.ZodString;
     updated_at: z.ZodString;
 }, "strip", z.ZodTypeAny, {
-    id: string;
-    created_at: string;
-    updated_at: string;
-    category_name: string;
-    category_name_vi: string;
-    is_active: boolean;
-    display_order: number;
-    category_description?: string | null | undefined;
-    category_icon?: string | null | undefined;
+    id?: string;
+    display_order?: number;
+    is_active?: boolean;
+    category_name?: string;
+    category_name_vi?: string;
+    category_description?: string;
+    category_icon?: string;
+    created_at?: string;
+    updated_at?: string;
 }, {
-    id: string;
-    created_at: string;
-    updated_at: string;
-    category_name: string;
-    category_name_vi: string;
-    is_active: boolean;
-    display_order: number;
-    category_description?: string | null | undefined;
-    category_icon?: string | null | undefined;
+    id?: string;
+    display_order?: number;
+    is_active?: boolean;
+    category_name?: string;
+    category_name_vi?: string;
+    category_description?: string;
+    category_icon?: string;
+    created_at?: string;
+    updated_at?: string;
 }>;
 export type CategoryDto = z.infer<typeof CategorySchema>;
 export declare const CreateCategorySchema: z.ZodObject<{
@@ -39,19 +39,19 @@ export declare const CreateCategorySchema: z.ZodObject<{
     is_active: z.ZodOptional<z.ZodBoolean>;
     display_order: z.ZodOptional<z.ZodNumber>;
 }, "strip", z.ZodTypeAny, {
-    category_name: string;
-    category_name_vi: string;
-    category_description?: string | undefined;
-    category_icon?: string | undefined;
-    is_active?: boolean | undefined;
-    display_order?: number | undefined;
+    display_order?: number;
+    is_active?: boolean;
+    category_name?: string;
+    category_name_vi?: string;
+    category_description?: string;
+    category_icon?: string;
 }, {
-    category_name: string;
-    category_name_vi: string;
-    category_description?: string | undefined;
-    category_icon?: string | undefined;
-    is_active?: boolean | undefined;
-    display_order?: number | undefined;
+    display_order?: number;
+    is_active?: boolean;
+    category_name?: string;
+    category_name_vi?: string;
+    category_description?: string;
+    category_icon?: string;
 }>;
 export type CreateCategoryDto = z.infer<typeof CreateCategorySchema>;
 export declare const UpdateCategorySchema: z.ZodObject<{
@@ -62,19 +62,18 @@ export declare const UpdateCategorySchema: z.ZodObject<{
     is_active: z.ZodOptional<z.ZodBoolean>;
     display_order: z.ZodOptional<z.ZodNumber>;
 }, "strip", z.ZodTypeAny, {
-    category_name?: string | undefined;
-    category_name_vi?: string | undefined;
-    category_description?: string | undefined;
-    category_icon?: string | undefined;
-    is_active?: boolean | undefined;
-    display_order?: number | undefined;
+    display_order?: number;
+    is_active?: boolean;
+    category_name?: string;
+    category_name_vi?: string;
+    category_description?: string;
+    category_icon?: string;
 }, {
-    category_name?: string | undefined;
-    category_name_vi?: string | undefined;
-    category_description?: string | undefined;
-    category_icon?: string | undefined;
-    is_active?: boolean | undefined;
-    display_order?: number | undefined;
+    display_order?: number;
+    is_active?: boolean;
+    category_name?: string;
+    category_name_vi?: string;
+    category_description?: string;
+    category_icon?: string;
 }>;
 export type UpdateCategoryDto = z.infer<typeof UpdateCategorySchema>;
-//# sourceMappingURL=categories.dto.d.ts.map

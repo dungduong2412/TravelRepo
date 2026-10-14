@@ -31,19 +31,9 @@ export default function CollaboratorProfilePage() {
   const fetchProfile = async () => {
     try {
       setLoading(true);
-      
-      // Get collaborator ID from localStorage
-      const collaboratorData = localStorage.getItem('collaborator');
-      if (!collaboratorData) {
-        setError('Không tìm thấy thông tin đăng nhập. Vui lòng đăng nhập lại.');
-        setLoading(false);
-        return;
-      }
-      
-      const { id } = JSON.parse(collaboratorData);
-      
+
       // Fetch collaborator profile
-      const data = await apiFetch(`/collaborators/${id}`);
+      const data = await apiFetch('/collaborators/me');
       setCollaborator(data);
       setFormData({
         collaborators_name: data.collaborators_name || '',

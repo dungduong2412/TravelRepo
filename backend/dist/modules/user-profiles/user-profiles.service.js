@@ -12,6 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.UserProfilesService = void 0;
 const common_1 = require("@nestjs/common");
 const supabase_service_1 = require("../../infrastructure/supabase/supabase.service");
+const crypto_1 = require("crypto");
 let UserProfilesService = class UserProfilesService {
     constructor(supabase) {
         this.supabase = supabase;
@@ -49,16 +50,15 @@ let UserProfilesService = class UserProfilesService {
         return data;
     }
     async createOrUpdate(dto) {
-        // Check if profile exists
         const existing = await this.findByEmail(dto.email);
         if (existing) {
-            // Update existing profile
             const { data, error } = await this.supabase.getClient()
                 .from('user_profiles')
                 .update({
                 role: dto.role,
                 merchant_id: dto.merchant_id,
                 collaborator_id: dto.collaborator_id,
+                user_profiles_status: dto.status || existing.user_profiles_status || 'active',
             })
                 .eq('email', dto.email)
                 .select()
@@ -69,22 +69,23 @@ let UserProfilesService = class UserProfilesService {
             return data;
         }
         else {
-            // Get or create auth user
             let userId = dto.user_id;
             if (!userId) {
-                // Check if auth user exists
                 const { data: authUsers } = await this.supabase.getClient().auth.admin.listUsers();
-                const existingAuthUser = authUsers?.users?.find(u => u.email === dto.email);
+                const existingAuthUser = authUsers?.users?.find((u) => u.email === dto.email);
                 if (existingAuthUser) {
                     userId = existingAuthUser.id;
                 }
                 else {
-                    // Create auth user
-                    const password = dto.password || `Temp${Math.random().toString(36).slice(2)}!`;
+                    const password = dto.password || `${(0, crypto_1.randomBytes)(24).toString('base64url')}Aa1!`;
                     const { data: newAuthUser, error: authError } = await this.supabase.getClient().auth.admin.createUser({
                         email: dto.email,
                         password: password,
                         email_confirm: true,
+                        app_metadata: {
+                            role: dto.role,
+                            password_reset_required: !dto.password,
+                        },
                     });
                     if (authError || !newAuthUser.user) {
                         throw new Error(`Failed to create auth user: ${authError?.message || 'Unknown error'}`);
@@ -92,7 +93,6 @@ let UserProfilesService = class UserProfilesService {
                     userId = newAuthUser.user.id;
                 }
             }
-            // Create new profile
             const { data, error } = await this.supabase.getClient()
                 .from('user_profiles')
                 .insert({
@@ -102,6 +102,7 @@ let UserProfilesService = class UserProfilesService {
                 merchant_id: dto.merchant_id,
                 collaborator_id: dto.collaborator_id,
                 login_count: 0,
+                user_profiles_status: dto.status || 'active',
             })
                 .select()
                 .single();
@@ -135,10 +136,9 @@ let UserProfilesService = class UserProfilesService {
             merchants: { created: 0, skipped: 0, errors: [] },
             collaborators: { created: 0, skipped: 0, errors: [] },
         };
-        // Backfill approved merchants
         const { data: merchants, error: merchantError } = await this.supabase.getClient()
             .from('merchant_details')
-            .select('merchant_system_id, owner_email, owner_password, merchant_verified')
+            .select('merchant_system_id, owner_email, merchant_verified')
             .eq('merchant_verified', true);
         if (merchantError) {
             results.merchants.errors.push(`Failed to fetch merchants: ${merchantError.message}`);
@@ -156,21 +156,20 @@ let UserProfilesService = class UserProfilesService {
                         console.log(`Merchant user profile already exists: ${merchant.owner_email}`);
                     }
                     else {
-                        // Check if auth user exists
                         const { data: authUser } = await this.supabase.getClient().auth.admin.listUsers();
-                        const existingAuthUser = authUser?.users?.find(u => u.email === merchant.owner_email);
+                        const existingAuthUser = authUser?.users?.find((u) => u.email === merchant.owner_email);
                         let userId;
                         if (existingAuthUser) {
                             userId = existingAuthUser.id;
                             console.log(`Auth user already exists for ${merchant.owner_email}`);
                         }
                         else {
-                            // Create auth user with their password (if available) or temporary password
-                            const password = merchant.owner_password || `Temp${Math.random().toString(36).slice(2)}!`;
+                            const password = `${(0, crypto_1.randomBytes)(24).toString('base64url')}Aa1!`;
                             const { data: newAuthUser, error: authError } = await this.supabase.getClient().auth.admin.createUser({
                                 email: merchant.owner_email,
                                 password: password,
-                                email_confirm: true, // Auto-confirm email
+                                email_confirm: true,
+                                app_metadata: { role: 'merchant', password_reset_required: true },
                             });
                             if (authError || !newAuthUser.user) {
                                 throw new Error(`Failed to create auth user: ${authError?.message || 'Unknown error'}`);
@@ -178,7 +177,6 @@ let UserProfilesService = class UserProfilesService {
                             userId = newAuthUser.user.id;
                             console.log(`Created auth user for ${merchant.owner_email}`);
                         }
-                        // Create user profile
                         const { error: profileError } = await this.supabase.getClient()
                             .from('user_profiles')
                             .insert({
@@ -201,10 +199,9 @@ let UserProfilesService = class UserProfilesService {
                 }
             }
         }
-        // Backfill approved collaborators
         const { data: collaborators, error: collaboratorError } = await this.supabase.getClient()
             .from('collaborators')
-            .select('id, collaborators_email, collaborators_password, collaborators_verified')
+            .select('id, collaborators_email, collaborators_verified')
             .eq('collaborators_verified', true);
         if (collaboratorError) {
             results.collaborators.errors.push(`Failed to fetch collaborators: ${collaboratorError.message}`);
@@ -222,21 +219,20 @@ let UserProfilesService = class UserProfilesService {
                         console.log(`Collaborator user profile already exists: ${collaborator.collaborators_email}`);
                     }
                     else {
-                        // Check if auth user exists
                         const { data: authUser } = await this.supabase.getClient().auth.admin.listUsers();
-                        const existingAuthUser = authUser?.users?.find(u => u.email === collaborator.collaborators_email);
+                        const existingAuthUser = authUser?.users?.find((u) => u.email === collaborator.collaborators_email);
                         let userId;
                         if (existingAuthUser) {
                             userId = existingAuthUser.id;
                             console.log(`Auth user already exists for ${collaborator.collaborators_email}`);
                         }
                         else {
-                            // Create auth user with their password (if available) or temporary password
-                            const password = collaborator.collaborators_password || `Temp${Math.random().toString(36).slice(2)}!`;
+                            const password = `${(0, crypto_1.randomBytes)(24).toString('base64url')}Aa1!`;
                             const { data: newAuthUser, error: authError } = await this.supabase.getClient().auth.admin.createUser({
                                 email: collaborator.collaborators_email,
                                 password: password,
-                                email_confirm: true, // Auto-confirm email
+                                email_confirm: true,
+                                app_metadata: { role: 'collaborator', password_reset_required: true },
                             });
                             if (authError || !newAuthUser.user) {
                                 throw new Error(`Failed to create auth user: ${authError?.message || 'Unknown error'}`);
@@ -244,7 +240,6 @@ let UserProfilesService = class UserProfilesService {
                             userId = newAuthUser.user.id;
                             console.log(`Created auth user for ${collaborator.collaborators_email}`);
                         }
-                        // Create user profile
                         const { error: profileError } = await this.supabase.getClient()
                             .from('user_profiles')
                             .insert({

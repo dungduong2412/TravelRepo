@@ -62,3 +62,23 @@ export async function signUp(email: string, password: string) {
   if (error) throw error;
   return data;
 }
+
+/**
+ * Request a recovery email. Supabase deliberately does not disclose whether
+ * an address exists, so callers should always show the same confirmation.
+ */
+export async function requestPasswordReset(email: string, redirectTo: string) {
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo,
+  });
+
+  if (error) throw error;
+}
+
+/**
+ * Set a new password for the recovery session established by Supabase Auth.
+ */
+export async function updateRecoveredPassword(password: string) {
+  const { error } = await supabase.auth.updateUser({ password });
+  if (error) throw error;
+}

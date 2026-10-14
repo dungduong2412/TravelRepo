@@ -16,7 +16,7 @@ exports.UserProfilesController = void 0;
 const common_1 = require("@nestjs/common");
 const user_profiles_service_1 = require("./user-profiles.service");
 const jwt_guard_1 = require("../../common/auth/jwt.guard");
-const public_decorator_1 = require("../../common/decorators/public.decorator");
+const admin_guard_1 = require("../../common/auth/admin.guard");
 const user_decorator_1 = require("../../common/auth/user.decorator");
 const zod_validation_pipe_1 = require("../../common/pipes/zod-validation.pipe");
 const user_profiles_dto_1 = require("./user-profiles.dto");
@@ -55,17 +55,15 @@ let UserProfilesController = class UserProfilesController {
 };
 exports.UserProfilesController = UserProfilesController;
 __decorate([
-    (0, public_decorator_1.Public)() // TODO: Change to @Roles('admin') when ready
-    ,
     (0, common_1.Get)(),
+    (0, common_1.UseGuards)(admin_guard_1.AdminGuard),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", Promise)
 ], UserProfilesController.prototype, "findAll", null);
 __decorate([
-    (0, public_decorator_1.Public)() // TODO: Change to @Roles('admin') when ready
-    ,
     (0, common_1.Post)('backfill'),
+    (0, common_1.UseGuards)(admin_guard_1.AdminGuard),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", Promise)
@@ -85,11 +83,11 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], UserProfilesController.prototype, "trackLogin", null);
 __decorate([
-    (0, public_decorator_1.Public)() // TODO: Change to @Roles('admin') when ready
-    ,
     (0, common_1.Post)('create'),
+    (0, common_1.UseGuards)(admin_guard_1.AdminGuard),
     __param(0, (0, common_1.Body)(new zod_validation_pipe_1.ZodValidationPipe(user_profiles_dto_1.CreateUserProfileSchema.extend({
-        password: zod_1.z.string().min(6),
+        password: zod_1.z.string().min(12)
+            .regex(/[a-z]/).regex(/[A-Z]/).regex(/\d/).regex(/[^A-Za-z0-9]/),
     })))),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object]),

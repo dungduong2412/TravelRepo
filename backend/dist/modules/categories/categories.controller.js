@@ -18,6 +18,7 @@ const categories_service_1 = require("./categories.service");
 const categories_dto_1 = require("./categories.dto");
 const zod_validation_pipe_1 = require("../../common/pipes/zod-validation.pipe");
 const jwt_guard_1 = require("../../common/auth/jwt.guard");
+const admin_guard_1 = require("../../common/auth/admin.guard");
 const public_decorator_1 = require("../../common/decorators/public.decorator");
 let CategoriesController = class CategoriesController {
     constructor(categoriesService) {
@@ -66,18 +67,16 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], CategoriesController.prototype, "findById", null);
 __decorate([
-    (0, public_decorator_1.Public)() // TODO: Change to @Roles('admin') when ready
-    ,
     (0, common_1.Post)(),
+    (0, common_1.UseGuards)(admin_guard_1.AdminGuard),
     __param(0, (0, common_1.Body)(new zod_validation_pipe_1.ZodValidationPipe(categories_dto_1.CreateCategorySchema))),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", Promise)
 ], CategoriesController.prototype, "create", null);
 __decorate([
-    (0, public_decorator_1.Public)() // TODO: Change to @Roles('admin') when ready
-    ,
     (0, common_1.Put)(':id'),
+    (0, common_1.UseGuards)(admin_guard_1.AdminGuard),
     __param(0, (0, common_1.Param)('id')),
     __param(1, (0, common_1.Body)(new zod_validation_pipe_1.ZodValidationPipe(categories_dto_1.UpdateCategorySchema))),
     __metadata("design:type", Function),
@@ -85,9 +84,8 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], CategoriesController.prototype, "update", null);
 __decorate([
-    (0, public_decorator_1.Public)() // TODO: Change to @Roles('admin') when ready
-    ,
     (0, common_1.Delete)(':id'),
+    (0, common_1.UseGuards)(admin_guard_1.AdminGuard),
     __param(0, (0, common_1.Param)('id')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),

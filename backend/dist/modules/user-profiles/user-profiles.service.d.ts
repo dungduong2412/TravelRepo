@@ -9,6 +9,7 @@ export declare class UserProfilesService {
     createOrUpdate(dto: CreateUserProfileDto & {
         user_id?: string;
         password?: string;
+        status?: 'active' | 'pending' | 'inactive';
     }): Promise<any>;
     trackLogin(email: string): Promise<any>;
     backfillFromApprovedMerchantsAndCollaborators(): Promise<{
@@ -24,4 +25,3 @@ export declare class UserProfilesService {
         };
     }>;
 }
-//# sourceMappingURL=user-profiles.service.d.ts.map

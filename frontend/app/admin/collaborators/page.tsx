@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api } from '../../../lib/api';
 import { CheckCircle, User, Mail, Phone, Calendar, QrCode } from 'lucide-react';
 
@@ -11,45 +11,88 @@ interface Collaborator {
   collaborators_email: string;
   collaborators_phone: string;
   collaborators_verified: boolean;
+  collaborators_status?: string;
   collaborators_registered_date: string;
   collaborators_qr_code?: string;
 }
 
+function formatCollaboratorDate(value?: string | null, includeTime = false) {
+  if (!value) return '—';
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime()) || date.getTime() === 0) return '—';
+
+  return includeTime ? date.toLocaleString() : date.toLocaleDateString();
+}
+
+function getCollaboratorStatus(item: Collaborator) {
+  if (item.collaborators_status) {
+    return item.collaborators_status.toLowerCase();
+  }
+  return item.collaborators_verified ? 'active' : 'pending';
+}
+
 export default function AdminCollaboratorsPage() {
+  const [allItems, setAllItems] = useState<Collaborator[]>([]);
   const [pendingItems, setPendingItems] = useState<Collaborator[]>([]);
   const [verifiedItems, setVerifiedItems] = useState<Collaborator[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedQr, setSelectedQr] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Collaborator | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'active'>('all');
 
-  useEffect(() => {
-    fetchCollaborators();
-  }, []);
-
-  async function fetchCollaborators() {
+  const fetchCollaborators = useCallback(async () => {
     try {
-      const [pending, all] = await Promise.all([
-        api.get('/admin/collaborators/pending').then(r => r.data),
-        api.get('/collaborators').then(r => r.data)
-      ]);
-      
-      setPendingItems(pending || []);
-      setVerifiedItems((all || []).filter((c: Collaborator) => c.collaborators_verified));
+      setError(null);
+      const all = await api.get('/collaborators');
+      const normalized = (all || []) as Collaborator[];
+
+      const pending = normalized.filter((c: Collaborator) => getCollaboratorStatus(c) === 'pending');
+      const verified = normalized.filter((c: Collaborator) => getCollaboratorStatus(c) === 'active');
+
+      setAllItems(normalized);
+      setPendingItems(pending);
+      setVerifiedItems(verified);
     } catch (e: any) {
-      alert(e.message);
+      setError(e.message || 'Unable to load collaborators');
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    void fetchCollaborators();
+  }, [fetchCollaborators]);
+
+  const visibleItems =
+    statusFilter === 'pending'
+      ? pendingItems
+      : statusFilter === 'active'
+        ? verifiedItems
+        : allItems;
 
   async function handleApprove(id: string) {
     if (!confirm('Approve this collaborator? A QR code will be generated.')) return;
     
     try {
-      await api.post(`/admin/collaborators/${id}/approve`);
+      await api.post(`/collaborators/${id}/approve`);
       alert('Collaborator approved and QR code generated!');
       fetchCollaborators();
     } catch (e: any) {
-      alert('Failed to approve: ' + e.message);
+      setError('Failed to approve: ' + e.message);
+    }
+  }
+
+  async function handleReject(id: string) {
+    if (!confirm('Reject this pending collaborator?')) return;
+
+    try {
+      await api.post(`/collaborators/${id}/reject`);
+      alert('Collaborator rejected.');
+      fetchCollaborators();
+    } catch (e: any) {
+      setError('Failed to reject: ' + e.message);
     }
   }
 
@@ -69,101 +112,154 @@ export default function AdminCollaboratorsPage() {
       <div className="max-w-7xl mx-auto">
         <h1 className="text-3xl font-bold text-gray-900 mb-8">Collaborator Management</h1>
 
-        {/* Pending Approval Section */}
+        {error && (
+          <div role="alert" className="mb-6 flex items-center justify-between gap-4 rounded-lg bg-red-100 p-4 text-red-800">
+            <span>{error}</span>
+            <button type="button" onClick={fetchCollaborators} className="rounded bg-white px-3 py-1 text-sm font-semibold">Retry</button>
+          </div>
+        )}
+
+        <div className="mb-6 flex flex-wrap gap-2">
+          {[
+            ['all', 'All'],
+            ['pending', 'Pending'],
+            ['active', 'Active'],
+          ].map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setStatusFilter(value as 'all' | 'pending' | 'active')}
+              className={`rounded-full px-4 py-2 text-sm font-medium transition ${
+                statusFilter === value
+                  ? 'bg-gray-900 text-white'
+                  : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
         <div className="mb-12">
           <h2 className="text-2xl font-semibold text-gray-800 mb-4">
-            Pending Approval ({pendingItems.length})
+            {statusFilter === 'pending'
+              ? `Pending Approval (${pendingItems.length})`
+              : statusFilter === 'active'
+                ? `Active Collaborators (${verifiedItems.length})`
+                : `All Collaborators (${allItems.length})`}
           </h2>
-          
-          {pendingItems.length === 0 ? (
+
+          {visibleItems.length === 0 ? (
             <div className="bg-white rounded-lg shadow p-8 text-center text-gray-500">
-              No pending collaborators for approval
+              {statusFilter === 'pending'
+                ? 'No pending collaborators for approval'
+                : statusFilter === 'active'
+                  ? 'No active collaborators yet'
+                  : 'No collaborators found'}
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {pendingItems.map((c) => (
-                <div key={c.id} className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex items-center">
-                      <div className="bg-gray-100 rounded-full p-3 mr-3">
-                        <User className="w-6 h-6 text-gray-600" />
+              {visibleItems.map((c) => {
+                const isPending = getCollaboratorStatus(c) === 'pending';
+                return (
+                  <div key={c.id} className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition">
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex items-center">
+                        <div className="bg-gray-100 rounded-full p-3 mr-3">
+                          {isPending ? <User className="w-6 h-6 text-gray-600" /> : <CheckCircle className="w-6 h-6 text-green-500" />}
+                        </div>
+                        <div>
+                          <h3 className="font-bold text-lg">{c.collaborators_name}</h3>
+                          <p className="text-sm text-gray-500 font-mono">{c.collaborators_code}</p>
+                        </div>
                       </div>
-                      <div>
-                        <h3 className="font-bold text-lg">{c.collaborators_name}</h3>
-                        <p className="text-sm text-gray-500 font-mono">{c.collaborators_code}</p>
+                      <span className={`rounded-full px-2 py-1 text-xs font-semibold ${isPending ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'}`}>
+                        {isPending ? 'PENDING' : 'ACTIVE'}
+                      </span>
+                    </div>
+
+                    <div className="space-y-2 mb-4 text-sm">
+                      <div className="flex items-center text-gray-600">
+                        <Mail className="w-4 h-4 mr-2" />
+                        {c.collaborators_email}
+                      </div>
+                      <div className="flex items-center text-gray-600">
+                        <Phone className="w-4 h-4 mr-2" />
+                        {c.collaborators_phone}
+                      </div>
+                      <div className="flex items-center text-gray-600">
+                        <Calendar className="w-4 h-4 mr-2" />
+                        {formatCollaboratorDate(c.collaborators_registered_date)}
                       </div>
                     </div>
-                  </div>
-                  
-                  <div className="space-y-2 mb-4 text-sm">
-                    <div className="flex items-center text-gray-600">
-                      <Mail className="w-4 h-4 mr-2" />
-                      {c.collaborators_email}
-                    </div>
-                    <div className="flex items-center text-gray-600">
-                      <Phone className="w-4 h-4 mr-2" />
-                      {c.collaborators_phone}
-                    </div>
-                    <div className="flex items-center text-gray-600">
-                      <Calendar className="w-4 h-4 mr-2" />
-                      {new Date(c.collaborators_registered_date).toLocaleDateString()}
-                    </div>
-                  </div>
 
-                  <button
-                    onClick={() => handleApprove(c.id)}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg transition"
-                  >
-                    <CheckCircle className="w-5 h-5" />
-                    Approve & Generate QR
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Verified Collaborators Section */}
-        <div>
-          <h2 className="text-2xl font-semibold text-gray-800 mb-4">
-            Verified Collaborators ({verifiedItems.length})
-          </h2>
-          
-          {verifiedItems.length === 0 ? (
-            <div className="bg-white rounded-lg shadow p-8 text-center text-gray-500">
-              No verified collaborators yet
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {verifiedItems.map((c) => (
-                <div key={c.id} className="bg-white rounded-lg shadow-md p-6">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center">
-                      <CheckCircle className="w-5 h-5 text-green-500 mr-2" />
-                      <span className="text-xs font-semibold text-green-600">VERIFIED</span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSelected(c)}
+                        className="w-full px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-900 font-semibold rounded-lg transition"
+                      >
+                        View Details
+                      </button>
+                      {isPending ? (
+                        <>
+                        <button
+                          onClick={() => handleApprove(c.id)}
+                          className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg transition"
+                        >
+                          <CheckCircle className="w-5 h-5" />
+                          Approve
+                        </button>
+                        <button
+                          onClick={() => handleReject(c.id)}
+                          className="w-full px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition"
+                        >
+                          Reject
+                        </button>
+                        </>
+                      ) : c.collaborators_qr_code ? (
+                        <button
+                          onClick={() => setSelectedQr(c.collaborators_qr_code!)}
+                          className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded transition"
+                        >
+                          <QrCode className="w-4 h-4" />
+                          View QR Code
+                        </button>
+                      ) : null}
                     </div>
                   </div>
-                  
-                  <h3 className="font-bold text-lg mb-1">{c.collaborators_name}</h3>
-                  <p className="text-sm text-gray-500 font-mono mb-3">{c.collaborators_code}</p>
-                  
-                  {c.collaborators_qr_code && (
-                    <button
-                      onClick={() => setSelectedQr(c.collaborators_qr_code!)}
-                      className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded transition"
-                    >
-                      <QrCode className="w-4 h-4" />
-                      View QR Code
-                    </button>
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
       </div>
 
       {/* QR Code Modal */}
+      {selected && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+          onClick={() => setSelected(null)}
+        >
+          <div className="bg-white rounded-lg p-8 max-w-lg w-full" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-4 mb-5">
+              <div>
+                <h3 className="text-xl font-bold">{selected.collaborators_name}</h3>
+                <p className="text-sm text-gray-500 font-mono">{selected.collaborators_code}</p>
+              </div>
+              <button type="button" aria-label="Close" onClick={() => setSelected(null)} className="text-2xl text-gray-500">×</button>
+            </div>
+            <dl className="grid gap-3 text-sm">
+              <div><dt className="font-semibold text-gray-500">System ID</dt><dd className="break-all">{selected.id}</dd></div>
+              <div><dt className="font-semibold text-gray-500">Email</dt><dd>{selected.collaborators_email || '—'}</dd></div>
+              <div><dt className="font-semibold text-gray-500">Phone</dt><dd>{selected.collaborators_phone || '—'}</dd></div>
+              <div><dt className="font-semibold text-gray-500">Status</dt><dd>{getCollaboratorStatus(selected).toUpperCase()}</dd></div>
+              <div><dt className="font-semibold text-gray-500">Registered</dt><dd>{formatCollaboratorDate(selected.collaborators_registered_date, true)}</dd></div>
+            </dl>
+          </div>
+        </div>
+      )}
+
       {selectedQr && (
         <div 
           className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"

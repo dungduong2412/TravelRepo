@@ -10,9 +10,14 @@ async function bootstrap() {
   app.use(express.json({ limit: '15mb' }));
   app.use(express.urlencoded({ limit: '15mb', extended: true }));
 
-  // Enable CORS for frontend
+  const corsOrigins = (process.env.CORS_ORIGINS || 'http://localhost:3001')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  // Allow only explicitly configured frontend origins in deployed environments.
   app.enableCors({
-    origin: ['http://localhost:3001', 'http://localhost:3000'],
+    origin: corsOrigins,
     credentials: true,
   });
 
@@ -24,9 +29,9 @@ async function bootstrap() {
     }),
   );
 
-  const port = process.env.PORT || 3000;
+  const port = Number(process.env.PORT) || 3100;
   await app.listen(port);
-  
+
   console.log(`🚀 Backend API running on http://localhost:${port}`);
 }
 

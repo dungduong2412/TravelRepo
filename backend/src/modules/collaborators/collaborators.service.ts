@@ -30,7 +30,6 @@ import {
 import { CreateCollaboratorDto, UpdateCollaboratorDto } from './collaborators.dto';
 import { randomBytes } from 'crypto';
 import { SupabaseService } from '../../infrastructure/supabase/supabase.service';
-import * as bcrypt from 'bcryptjs';
 import { UserProfilesService } from '../user-profiles/user-profiles.service';
 import * as QRCode from 'qrcode';
 
@@ -43,17 +42,10 @@ export class CollaboratorsService {
   ) {}
 
   async createCollaborator(actor: any, dto: CreateCollaboratorDto) {
-    // Hash password if provided
-    let hashedPassword: string | undefined;
-    if (dto.collaborators_password) {
-      hashedPassword = await bcrypt.hash(dto.collaborators_password, 10);
-    }
-    
-    // Prepare data - remove plain password and add hashed version
     const { collaborators_password, ...restDto } = dto;
     const insertData = {
       ...restDto,
-      ...(hashedPassword && { collaborators_password: hashedPassword }),
+      collaborators_password: null,
       collaborators_code: dto.collaborators_code || this.generateCollaboratorCode(),
       collaborators_verified: dto.collaborators_verified ?? false,
     };
@@ -68,15 +60,96 @@ export class CollaboratorsService {
       throw new Error(`Failed to create collaborator: ${error.message}`);
     }
 
-    return data;
+    if (data.collaborators_email && collaborators_password) {
+      await this.userProfilesService.createOrUpdate({
+        email: data.collaborators_email,
+        role: 'collaborator',
+        merchant_id: null,
+        collaborator_id: data.id,
+        password: collaborators_password,
+        status: 'pending',
+      });
+    }
+    return this.withoutPassword(data);
+  }
+
+  private withoutPassword<T extends Record<string, any>>(row: T) {
+    if (!row) return row;
+    const { collaborators_password: _password, ...safe } = row;
+    return safe;
+  }
+
+  private async assertOwnerOrAdmin(actor: any, collaboratorId: string) {
+    if (!actor?.id) throw new ForbiddenException('Collaborator access denied');
+    const { data: profile } = await this.supabase.getClient().from('user_profiles')
+      .select('role,user_profiles_status,collaborator_id').eq('user_id', actor.id).maybeSingle();
+    if (!profile || profile.user_profiles_status !== 'active' ||
+        (profile.role !== 'admin' && !(profile.role === 'collaborator' && profile.collaborator_id === collaboratorId))) {
+      throw new ForbiddenException('Collaborator access denied');
+    }
   }
 
   async getMyCollaborator(actor: any) {
-    // Note: The table doesn't have ownerUserId, fetching by email or code
+    if (!actor?.id && !actor?.email) {
+      throw new NotFoundException('User identity not found in token');
+    }
+
+    if (actor?.email) {
+      const { data: byEmailDirect, error: byEmailDirectError } = await this.supabase.getClient()
+        .from('collaborators')
+        .select('*')
+        .eq('collaborators_email', actor.email)
+        .maybeSingle();
+
+      if (byEmailDirectError) {
+        throw new Error(`Failed to fetch collaborator by email: ${byEmailDirectError.message}`);
+      }
+
+      if (byEmailDirect) {
+        return this.withoutPassword(byEmailDirect);
+      }
+    }
+
+    let profile: any = null;
+
+    if (actor?.id) {
+      const { data: byUserId, error: byUserIdError } = await this.supabase.getClient()
+        .from('user_profiles')
+        .select('collaborator_id, role')
+        .eq('user_id', actor.id)
+        .eq('role', 'collaborator')
+        .maybeSingle();
+
+      if (byUserIdError) {
+        throw new Error(`Failed to fetch collaborator profile by user_id: ${byUserIdError.message}`);
+      }
+
+      profile = byUserId;
+    }
+
+    if (!profile && actor?.email) {
+      const { data: byEmail, error: byEmailError } = await this.supabase.getClient()
+        .from('user_profiles')
+        .select('collaborator_id, role')
+        .eq('email', actor.email)
+        .eq('role', 'collaborator')
+        .maybeSingle();
+
+      if (byEmailError) {
+        throw new Error(`Failed to fetch collaborator profile by email: ${byEmailError.message}`);
+      }
+
+      profile = byEmail;
+    }
+
+    if (!profile?.collaborator_id) {
+      throw new NotFoundException('Collaborator profile not found');
+    }
+
     const { data, error } = await this.supabase.getClient()
       .from('collaborators')
       .select('*')
-      .limit(1)
+      .eq('id', profile.collaborator_id)
       .maybeSingle();
 
     if (error) {
@@ -87,7 +160,7 @@ export class CollaboratorsService {
       throw new NotFoundException('Collaborator not found');
     }
 
-    return data;
+    return this.withoutPassword(data);
   }
 
   async getMyQrCode(actor: any) {
@@ -103,8 +176,12 @@ export class CollaboratorsService {
 
     return {
       qr_code: collaborator.collaborators_qr_code,
+      qr_code_image: collaborator.collaborators_qr_code,
       code: collaborator.collaborators_code,
+      collaborator_code: collaborator.collaborators_code,
       name: collaborator.collaborators_name,
+      collaborator_name: collaborator.collaborators_name,
+      collaborator_phone: collaborator.collaborators_phone,
       verified: collaborator.collaborators_verified,
     };
   }
@@ -118,6 +195,7 @@ export class CollaboratorsService {
     collaboratorId: string,
     dto: UpdateCollaboratorDto,
   ) {
+    await this.assertOwnerOrAdmin(actor, collaboratorId);
     const { data: collaborator, error: fetchError } = await this.supabase.getClient()
       .from('collaborators')
       .select('*')
@@ -128,9 +206,10 @@ export class CollaboratorsService {
       throw new NotFoundException('Collaborator not found');
     }
 
+    const { collaborators_password: _password, ...safeDto } = dto;
     const { data, error } = await this.supabase.getClient()
       .from('collaborators')
-      .update(dto)
+      .update(safeDto)
       .eq('id', collaboratorId)
       .select()
       .single();
@@ -139,10 +218,11 @@ export class CollaboratorsService {
       throw new Error(`Failed to update collaborator: ${error.message}`);
     }
 
-    return data;
+    return this.withoutPassword(data);
   }
 
   async deleteCollaborator(actor: any, collaboratorId: string) {
+    await this.assertOwnerOrAdmin(actor, collaboratorId);
     const { data: collaborator, error: fetchError } = await this.supabase.getClient()
       .from('collaborators')
       .select('*')
@@ -195,7 +275,7 @@ export class CollaboratorsService {
       throw new Error(`Failed to fetch collaborators: ${error.message}`);
     }
 
-    return data || [];
+    return (data || []).map((row) => this.withoutPassword(row));
   }
 
   async findPending() {
@@ -208,7 +288,7 @@ export class CollaboratorsService {
       throw new Error(`Failed to fetch pending collaborators: ${error.message}`);
     }
 
-    return data || [];
+    return (data || []).map((row) => this.withoutPassword(row));
   }
 
   async approve(id: string) {
@@ -251,6 +331,7 @@ export class CollaboratorsService {
       .from('collaborators')
       .update({
         collaborators_verified: true,
+        collaborators_status: 'active',
         collaborators_qr_code: qrCodeBase64,
       })
       .eq('id', id)
@@ -269,9 +350,8 @@ export class CollaboratorsService {
           role: 'collaborator',
           merchant_id: null,
           collaborator_id: data.id,
-          password: data.collaborators_password, // Pass the hashed password
+          status: 'active',
         });
-        console.log(`User profile created for collaborator: ${data.collaborators_email}`);
       } catch (err) {
         console.error('Failed to create user profile:', err);
       }
@@ -280,7 +360,7 @@ export class CollaboratorsService {
     // TODO: Send approval email notification here
     // await this.emailService.sendApprovalEmail(data.collaborators_email, 'collaborator');
 
-    return data;
+    return this.withoutPassword(data);
   }
 
   async resolveByQrToken(qrToken: string) {
@@ -328,17 +408,13 @@ export class CollaboratorsService {
     // Generate QR code token
     const qrCode = randomBytes(16).toString('hex');
 
-    // Hash password
-    const hashedPassword = await bcrypt.hash(dto.collaborators_password, 10);
-
-    // Remove plain password and add hashed version + generated fields
     const { collaborators_password, ...restDto } = dto;
 
     const { data, error } = await this.supabase.getClient()
       .from('collaborators')
       .insert({
         ...restDto,
-        collaborators_password: hashedPassword,
+        collaborators_password: null,
         qr_code: qrCode,
         collaborators_code: this.generateCollaboratorCode(),
         collaborators_verified: false,
@@ -351,7 +427,13 @@ export class CollaboratorsService {
       throw new Error(`Failed to create collaborator: ${error.message}`);
     }
 
-    return data;
+    if (data.collaborators_email && collaborators_password) {
+      await this.userProfilesService.createOrUpdate({
+        email: data.collaborators_email, role: 'collaborator', merchant_id: null,
+        collaborator_id: data.id, password: collaborators_password, status: 'pending',
+      });
+    }
+    return this.withoutPassword(data);
   }
 
   async findOne(id: string) {
@@ -365,13 +447,14 @@ export class CollaboratorsService {
       throw new NotFoundException('Collaborator not found');
     }
 
-    return data;
+    return this.withoutPassword(data);
   }
 
   async update(id: string, dto: UpdateCollaboratorDto) {
+    const { collaborators_password: _password, ...safeDto } = dto;
     const { data, error } = await this.supabase.getClient()
       .from('collaborators')
-      .update(dto)
+      .update(safeDto)
       .eq('id', id)
       .select()
       .single();
@@ -380,7 +463,7 @@ export class CollaboratorsService {
       throw new NotFoundException('Failed to update collaborator');
     }
 
-    return data;
+    return this.withoutPassword(data);
   }
 
   async generateQRCodeImage(id: string) {

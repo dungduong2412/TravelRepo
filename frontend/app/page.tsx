@@ -429,7 +429,7 @@ export default function HomePage() {
         {!activeCategory && (
           <div className="mb-8">
             <h2 className="text-2xl font-bold text-gray-900 mb-2">
-              Explore Vietnam's Best Deals
+              Explore Vietnam Best Deals
             </h2>
             <p className="text-gray-600">
               Discover unique places to stay, eat, and experience with exclusive discounts

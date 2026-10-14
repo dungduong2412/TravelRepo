@@ -19,4 +19,3 @@ export declare class UserProfilesController {
     trackLogin(actor: any): Promise<any>;
     createUser(dto: any): Promise<any>;
 }
-//# sourceMappingURL=user-profiles.controller.d.ts.map

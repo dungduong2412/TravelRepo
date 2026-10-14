@@ -7,7 +7,7 @@
 cd /workspaces/TravelRepo/backend
 npm run dev
 ```
-**Expected**: Backend running on `http://localhost:3000`
+**Expected**: Backend running on `http://localhost:3100`
 
 ### 2. Start Frontend Server (New Terminal)
 ```bash
@@ -25,7 +25,7 @@ npm run dev
 
 **Test Account**:
 - Email: `testctv03@gmail.com`
-- Password: `123456`
+- Password: supply the authorized test password through the local environment
 - Role: Collaborator (auto-detected)
 
 **Expected**: Login → Redirect to `/collaborator/dashboard`
@@ -93,7 +93,7 @@ Login with new credentials → Access dashboard
 ## 🔍 Verify Backend is Running
 
 ```bash
-curl http://localhost:3000/categories
+curl http://localhost:3100/categories
 ```
 **Expected**: JSON response with categories
 
@@ -103,8 +103,8 @@ curl http://localhost:3000/categories
 
 ### Backend won't start
 ```bash
-# Kill any process on port 3000
-lsof -ti:3000 | xargs kill -9
+# Kill any process on port 3100
+lsof -ti:3100 | xargs kill -9
 
 # Restart
 cd /workspaces/TravelRepo/backend && npm run dev
@@ -145,7 +145,7 @@ Run these commands to verify system is ready:
 
 ```bash
 # 1. Backend health
-curl http://localhost:3000/categories
+curl http://localhost:3100/categories
 
 # 2. Frontend accessible
 curl http://localhost:3001

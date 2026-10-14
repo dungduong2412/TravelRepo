@@ -11,7 +11,7 @@ Added the ability to manually create users directly from the User Management pag
 2. Click the **"+ Thêm Người Dùng"** (Add User) button in the top right
 3. Fill in the form:
    - **Email**: User's email address (required)
-   - **Password**: User's password, minimum 6 characters (required)
+   - **Password**: At least 12 characters with uppercase, lowercase, number, and symbol (required)
    - **Role**: Select from dropdown (required):
      - Quản Trị Viên (Admin)
      - Nhà Cung Cấp (Merchant)
@@ -27,7 +27,7 @@ Added the ability to manually create users directly from the User Management pag
 ```json
 {
   "email": "user@example.com",
-  "password": "password123",
+  "password": "Example-Only!42-ChangeMe",
   "role": "merchant",
   "merchant_id": null,
   "collaborator_id": null
@@ -55,7 +55,7 @@ curl -X POST http://localhost:3000/user-profiles/create \
   -H "Content-Type: application/json" \
   -d '{
     "email": "newuser@example.com",
-    "password": "securepass123",
+    "password": "Example-Only!42-ChangeMe",
     "role": "collaborator"
   }'
 ```
@@ -90,7 +90,7 @@ curl -X POST http://localhost:3000/user-profiles/create \
 ### Authentication
 - User can log in immediately with the created email and password
 - No email verification required (auto-confirmed)
-- Password must be at least 6 characters
+- Password must meet the 12-character complexity rule and is stored only by Supabase Auth
 
 ### Existing Users
 - If email already exists in user_profiles: Updates the role

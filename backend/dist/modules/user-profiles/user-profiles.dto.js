@@ -8,6 +8,7 @@ exports.UserProfileSchema = zod_1.z.object({
     role: zod_1.z.enum(['admin', 'merchant', 'collaborator']),
     merchant_id: zod_1.z.string().uuid().nullable().optional(),
     collaborator_id: zod_1.z.string().uuid().nullable().optional(),
+    user_profiles_status: zod_1.z.string().optional(),
     last_login_at: zod_1.z.string().nullable().optional(),
     login_count: zod_1.z.number().int().optional(),
     created_at: zod_1.z.string().optional(),
@@ -18,5 +19,6 @@ exports.CreateUserProfileSchema = zod_1.z.object({
     role: zod_1.z.enum(['admin', 'merchant', 'collaborator']),
     merchant_id: zod_1.z.string().uuid().nullable().optional(),
     collaborator_id: zod_1.z.string().uuid().nullable().optional(),
+    user_profiles_status: zod_1.z.string().optional(),
 });
 //# sourceMappingURL=user-profiles.dto.js.map

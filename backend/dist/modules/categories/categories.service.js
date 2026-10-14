@@ -16,12 +16,22 @@ let CategoriesService = class CategoriesService {
     constructor(supabase) {
         this.supabase = supabase;
     }
+    logSupabaseError(operation, error) {
+        console.error(`[categories] ${operation} failed`, {
+            message: error?.message,
+            code: error?.code,
+            details: error?.details,
+            hint: error?.hint,
+            status: error?.status,
+        });
+    }
     async findAll() {
         const { data, error } = await this.supabase.getClient()
             .from('categories')
             .select('*')
             .order('display_order', { ascending: true });
         if (error) {
+            this.logSupabaseError('findAll', error);
             throw new Error(`Failed to fetch categories: ${error.message}`);
         }
         return data || [];
@@ -33,6 +43,7 @@ let CategoriesService = class CategoriesService {
             .eq('is_active', true)
             .order('display_order', { ascending: true });
         if (error) {
+            this.logSupabaseError('findActive', error);
             throw new Error(`Failed to fetch active categories: ${error.message}`);
         }
         return data || [];

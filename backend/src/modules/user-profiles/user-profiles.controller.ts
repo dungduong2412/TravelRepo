@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Body, UseGuards } from '@nestjs/common';
 import { UserProfilesService } from './user-profiles.service';
 import { JwtGuard } from '../../common/auth/jwt.guard';
-import { Public } from '../../common/decorators/public.decorator';
+import { AdminGuard } from '../../common/auth/admin.guard';
 import { User } from '../../common/auth/user.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { CreateUserProfileSchema } from './user-profiles.dto';
@@ -12,14 +12,14 @@ import { z } from 'zod';
 export class UserProfilesController {
   constructor(private readonly userProfilesService: UserProfilesService) {}
 
-  @Public() // TODO: Change to @Roles('admin') when ready
   @Get()
+  @UseGuards(AdminGuard)
   async findAll() {
     return this.userProfilesService.findAll();
   }
 
-  @Public() // TODO: Change to @Roles('admin') when ready
   @Post('backfill')
+  @UseGuards(AdminGuard)
   async backfill() {
     return this.userProfilesService.backfillFromApprovedMerchantsAndCollaborators();
   }
@@ -40,11 +40,12 @@ export class UserProfilesController {
     return this.userProfilesService.trackLogin(actor.email);
   }
 
-  @Public() // TODO: Change to @Roles('admin') when ready
   @Post('create')
+  @UseGuards(AdminGuard)
   async createUser(
     @Body(new ZodValidationPipe(CreateUserProfileSchema.extend({
-      password: z.string().min(6),
+      password: z.string().min(12)
+        .regex(/[a-z]/).regex(/[A-Z]/).regex(/\d/).regex(/[^A-Za-z0-9]/),
     }))) dto: any,
   ) {
     return this.userProfilesService.createOrUpdate({

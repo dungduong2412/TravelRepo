@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
+import { api } from '../../../lib/api';
 
 interface DashboardStats {
   activeCollaborators: number;
@@ -26,27 +27,24 @@ export default function AdminDashboardPage() {
   const fetchStats = async () => {
     try {
       setLoading(true);
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-
-      // Fetch all collaborators and merchants
-      const [collabResponse, merchantResponse] = await Promise.all([
-        fetch(`${apiUrl}/collaborators`),
-        fetch(`${apiUrl}/merchants`)
+      const [collaborators, merchants] = await Promise.all([
+        api.get('/collaborators'),
+        api.get('/merchants'),
       ]);
 
-      if (!collabResponse.ok || !merchantResponse.ok) {
-        throw new Error('Failed to fetch data');
-      }
-
-      const collaborators = await collabResponse.json();
-      const merchants = await merchantResponse.json();
+      const collaboratorStatus = (item: any) =>
+        item.collaborators_status?.toLowerCase() ||
+        (item.collaborators_verified ? 'active' : 'pending');
+      const merchantStatus = (item: any) =>
+        item.merchants_status?.toLowerCase() ||
+        (item.merchant_verified ? 'active' : 'pending');
 
       // Calculate statistics
       setStats({
-        activeCollaborators: collaborators.filter((c: any) => c.collaborators_verified === true).length,
-        pendingCollaborators: collaborators.filter((c: any) => c.collaborators_verified === false).length,
-        activeMerchants: merchants.filter((m: any) => m.merchant_verified === true).length,
-        pendingMerchants: merchants.filter((m: any) => m.merchant_verified === false).length,
+        activeCollaborators: collaborators.filter((c: any) => collaboratorStatus(c) === 'active').length,
+        pendingCollaborators: collaborators.filter((c: any) => collaboratorStatus(c) === 'pending').length,
+        activeMerchants: merchants.filter((m: any) => merchantStatus(m) === 'active').length,
+        pendingMerchants: merchants.filter((m: any) => merchantStatus(m) === 'pending').length,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load statistics');

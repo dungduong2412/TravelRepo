@@ -1,4 +1,4 @@
-import { Injectable, Inject, forwardRef } from '@nestjs/common';
+import { ForbiddenException, Injectable, Inject, forwardRef } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { SupabaseService } from '../../infrastructure/supabase/supabase.service';
 import { CreateMerchantDto, UpdateMerchantDto } from './merchants.dto';
@@ -17,6 +17,12 @@ export class MerchantsService {
     return 'MCH' + randomBytes(4).toString('hex').toUpperCase().slice(0, 5);
   }
 
+  private withoutPassword<T extends Record<string, any>>(row: T) {
+    if (!row) return row;
+    const { owner_password: _password, ...safe } = row;
+    return safe;
+  }
+
   async findAll() {
     const { data, error } = await this.supabase.getClient()
       .from('merchant_details')
@@ -27,21 +33,31 @@ export class MerchantsService {
       throw new Error(`Failed to fetch merchants: ${error.message}`);
     }
 
-    return data || [];
+    return (data || []).map((row) => this.withoutPassword(row));
   }
 
   async findById(id: string) {
     const { data, error } = await this.supabase.getClient()
       .from('merchant_details')
       .select('*')
-      .eq('id', id)
+      .eq('merchant_system_id', id)
       .single();
 
     if (error) {
       throw new Error(`Failed to fetch merchant: ${error.message}`);
     }
 
-    return data;
+    return this.withoutPassword(data);
+  }
+
+  async findByIdForActor(userId: string, id: string) {
+    const { data: profile } = await this.supabase.getClient().from('user_profiles')
+      .select('role,user_profiles_status,merchant_id').eq('user_id', userId).maybeSingle();
+    if (!profile || profile.user_profiles_status !== 'active' ||
+        (profile.role !== 'admin' && !(profile.role === 'merchant' && profile.merchant_id === id))) {
+      throw new ForbiddenException('Merchant access denied');
+    }
+    return this.findById(id);
   }
 
   async findByEmail(email: string) {
@@ -69,7 +85,7 @@ export class MerchantsService {
       throw new Error(`Failed to fetch verified merchants: ${error.message}`);
     }
 
-    return data || [];
+    return (data || []).map((row) => this.withoutPassword(row));
   }
 
   async create(dto: CreateMerchantDto) {
@@ -80,7 +96,7 @@ export class MerchantsService {
       .insert({
         merchant_code: merchantCode,
         owner_email: dto.owner_email,
-        owner_password: dto.owner_password,
+        owner_password: null,
         merchant_name: dto.merchant_name,
         merchant_description: dto.merchant_description,
         merchant_phone: dto.merchant_phone,
@@ -103,14 +119,22 @@ export class MerchantsService {
       throw new Error(`Failed to create merchant: ${error.message}`);
     }
 
-    return data;
+    await this.userProfilesService.createOrUpdate({
+      email: dto.owner_email,
+      role: 'merchant',
+      merchant_id: data.merchant_system_id,
+      collaborator_id: null,
+      password: dto.owner_password,
+      status: 'pending',
+    });
+    return this.withoutPassword(data);
   }
 
   async update(id: string, dto: UpdateMerchantDto) {
     const { data, error } = await this.supabase.getClient()
       .from('merchant_details')
       .update(dto)
-      .eq('id', id)
+      .eq('merchant_system_id', id)
       .select()
       .single();
 
@@ -118,14 +142,24 @@ export class MerchantsService {
       throw new Error(`Failed to update merchant: ${error.message}`);
     }
 
-    return data;
+    return this.withoutPassword(data);
+  }
+
+  async updateForActor(userId: string, id: string, dto: UpdateMerchantDto) {
+    const { data: profile } = await this.supabase.getClient().from('user_profiles')
+      .select('role,user_profiles_status,merchant_id').eq('user_id', userId).maybeSingle();
+    if (!profile || profile.user_profiles_status !== 'active' ||
+        (profile.role !== 'admin' && !(profile.role === 'merchant' && profile.merchant_id === id))) {
+      throw new ForbiddenException('Merchant update access denied');
+    }
+    return this.update(id, dto);
   }
 
   async delete(id: string) {
     const { error } = await this.supabase.getClient()
       .from('merchant_details')
       .delete()
-      .eq('id', id);
+      .eq('merchant_system_id', id);
 
     if (error) {
       throw new Error(`Failed to delete merchant: ${error.message}`);
@@ -135,8 +169,6 @@ export class MerchantsService {
   }
 
   async approve(id: string) {
-    console.log(`[MerchantsService] Approving merchant ${id}`);
-    
     // Get merchant details
     const merchant = await this.findById(id);
     
@@ -145,24 +177,12 @@ export class MerchantsService {
       throw new Error('Merchant not found');
     }
 
-    console.log(`[MerchantsService] Merchant data:`, {
-      id: merchant.id,
-      merchant_name: merchant.merchant_name,
-      owner_email: merchant.owner_email,
-      has_password: !!merchant.owner_password
-    });
-
     // Validate required fields for user profile creation
     if (!merchant.owner_email) {
       console.error(`[MerchantsService] Missing owner_email for merchant ${id}`);
       throw new Error('Cannot approve merchant: owner_email is required');
     }
-    if (!merchant.owner_password) {
-      console.error(`[MerchantsService] Missing owner_password for merchant ${id}`);
-      throw new Error('Cannot approve merchant: owner_password is required');
-    }
 
-    console.log(`[MerchantsService] Updating merchant status to active`);
     // Update merchant status
     const { data, error } = await this.supabase.getClient()
       .from('merchant_details')
@@ -170,7 +190,7 @@ export class MerchantsService {
         merchant_verified: true,
         merchants_status: 'active',
       })
-      .eq('id', id)
+      .eq('merchant_system_id', id)
       .select()
       .single();
 
@@ -179,18 +199,16 @@ export class MerchantsService {
       throw new Error(`Failed to approve merchant: ${error.message}`);
     }
 
-    console.log(`[MerchantsService] Merchant approved, creating user profile`);
     // Create user profile for login access (use owner_email as username)
     try {
-      const userProfile = await this.userProfilesService.createOrUpdate({
+      await this.userProfilesService.createOrUpdate({
         email: merchant.owner_email,
         role: 'merchant',
-        merchant_id: id,
+        merchant_id: merchant.merchant_system_id,
         collaborator_id: null,
-        password: merchant.owner_password, // Use password from signup
+        status: 'active',
       });
-      console.log(`[MerchantsService] User profile created successfully`);
-      return data;
+      return this.withoutPassword(data);
     } catch (profileError) {
       // Log error but don't fail the approval
       console.error('[MerchantsService] Failed to create user profile:', profileError);
@@ -205,7 +223,7 @@ export class MerchantsService {
         merchant_verified: false,
         merchants_status: 'blocked',
       })
-      .eq('id', id)
+      .eq('merchant_system_id', id)
       .select()
       .single();
 
@@ -213,6 +231,6 @@ export class MerchantsService {
       throw new Error(`Failed to reject merchant: ${error.message}`);
     }
 
-    return data;
+    return this.withoutPassword(data);
   }
 }

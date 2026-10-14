@@ -3,6 +3,7 @@ import { CategoriesService } from './categories.service';
 import { CreateCategoryDto, UpdateCategoryDto, CreateCategorySchema, UpdateCategorySchema } from './categories.dto';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { JwtGuard } from '../../common/auth/jwt.guard';
+import { AdminGuard } from '../../common/auth/admin.guard';
 import { Public } from '../../common/decorators/public.decorator';
 
 @Controller('categories')
@@ -28,16 +29,16 @@ export class CategoriesController {
     return this.categoriesService.findById(id);
   }
 
-  @Public() // TODO: Change to @Roles('admin') when ready
   @Post()
+  @UseGuards(AdminGuard)
   async create(
     @Body(new ZodValidationPipe(CreateCategorySchema)) dto: CreateCategoryDto,
   ) {
     return this.categoriesService.create(dto);
   }
 
-  @Public() // TODO: Change to @Roles('admin') when ready
   @Put(':id')
+  @UseGuards(AdminGuard)
   async update(
     @Param('id') id: string,
     @Body(new ZodValidationPipe(UpdateCategorySchema)) dto: UpdateCategoryDto,
@@ -45,8 +46,8 @@ export class CategoriesController {
     return this.categoriesService.update(id, dto);
   }
 
-  @Public() // TODO: Change to @Roles('admin') when ready
   @Delete(':id')
+  @UseGuards(AdminGuard)
   async delete(@Param('id') id: string) {
     return this.categoriesService.delete(id);
   }

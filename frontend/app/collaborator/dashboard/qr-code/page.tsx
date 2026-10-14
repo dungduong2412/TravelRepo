@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from 'react';
-import { publicApiFetch } from '@/lib/api';
+import { apiFetch } from '@/lib/api';
 
 export default function CollaboratorQRCodePage() {
   const [qrData, setQrData] = useState<any>(null);
@@ -11,19 +11,8 @@ export default function CollaboratorQRCodePage() {
   useEffect(() => {
     async function fetchQRCode() {
       try {
-        // Get collaborator ID from localStorage
-        const collaborator = localStorage.getItem('collaborator');
-        if (!collaborator) {
-          setError('Collaborator data not found. Please log in again.');
-          setLoading(false);
-          return;
-        }
-
-        const collaboratorData = JSON.parse(collaborator);
-        const collaboratorId = collaboratorData.id;
-
         // Fetch QR code from backend
-        const data = await publicApiFetch(`/collaborators/${collaboratorId}/qr-code`);
+        const data = await apiFetch('/collaborators/me/qr-code');
         setQrData(data);
       } catch (err: any) {
         console.error('Error fetching QR code:', err);

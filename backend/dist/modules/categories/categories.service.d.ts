@@ -3,6 +3,7 @@ import { CreateCategoryDto, UpdateCategoryDto } from './categories.dto';
 export declare class CategoriesService {
     private readonly supabase;
     constructor(supabase: SupabaseService);
+    private logSupabaseError;
     findAll(): Promise<any[]>;
     findActive(): Promise<any[]>;
     findById(id: string): Promise<any>;
@@ -12,4 +13,3 @@ export declare class CategoriesService {
         success: boolean;
     }>;
 }
-//# sourceMappingURL=categories.service.d.ts.map

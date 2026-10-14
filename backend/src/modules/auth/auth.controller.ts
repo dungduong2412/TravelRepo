@@ -11,7 +11,7 @@ export class LoginDto {
   password!: string;
   
   @IsOptional()
-  userType?: 'merchant' | 'collaborator';
+  userType?: 'merchant' | 'collaborator' | 'admin';
 }
 
 @Controller('auth')
@@ -21,7 +21,6 @@ export class AuthController {
   @Public()
   @Post('login')
   async login(@Body() dto: LoginDto) {
-    console.log('Controller received:', dto);
     // Auto-detect user type if not provided
     return this.authService.loginAuto(dto.email, dto.password, dto.userType);
   }

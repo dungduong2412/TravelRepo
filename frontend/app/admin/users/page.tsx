@@ -1,9 +1,11 @@
 "use client";
 
 import { useState, useEffect } from 'react';
+import { api } from '../../../lib/api';
 
 interface UserProfile {
   id: string;
+  full_name?: string | null;
   email: string;
   role: 'admin' | 'merchant' | 'collaborator';
   merchant_id?: string | null;
@@ -29,14 +31,7 @@ export default function UserManagementPage() {
   const fetchUsers = async () => {
     try {
       setLoading(true);
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-      const response = await fetch(`${apiUrl}/user-profiles`);
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch user profiles');
-      }
-
-      const data = await response.json();
+      const data = await api.get('/user-profiles');
       
       // Determine status based on user_profiles_status column or fallback
       const processedUsers = data.map((user: any) => ({
@@ -121,6 +116,7 @@ export default function UserManagementPage() {
         <table style={styles.table}>
           <thead>
             <tr style={styles.tableHeader}>
+              <th style={styles.th}>Name</th>
               <th style={styles.th}>Email</th>
               <th style={styles.th}>Role</th>
               <th style={styles.th}>Status</th>
@@ -133,6 +129,7 @@ export default function UserManagementPage() {
           <tbody>
             {filteredUsers.map((user) => (
               <tr key={user.id} style={styles.tableRow}>
+                <td style={styles.td}>{user.full_name || '—'}</td>
                 <td style={styles.td}>{user.email}</td>
                 <td style={styles.td}>
                   <span style={{

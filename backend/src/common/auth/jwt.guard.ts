@@ -1,9 +1,21 @@
 import { Injectable, CanActivate, ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
+import { createClient } from '@supabase/supabase-js';
 
 @Injectable()
 export class JwtGuard implements CanActivate {
+  private readonly authClient = createClient(
+    process.env.SUPABASE_URL || '',
+    process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    },
+  );
+
   constructor(private reflector: Reflector) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -17,14 +29,23 @@ export class JwtGuard implements CanActivate {
       return true;
     }
 
-    // For now, allow all requests (authentication can be added later)
-    // TODO: Implement proper JWT validation
     const request = context.switchToHttp().getRequest();
-    
-    // Mock user for development
+
+    const authHeader = request.headers?.authorization as string | undefined;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      throw new UnauthorizedException('Missing or invalid authorization header');
+    }
+
+    const token = authHeader.slice(7);
+    const { data, error } = await this.authClient.auth.getUser(token);
+
+    if (error || !data.user) {
+      throw new UnauthorizedException('Invalid or expired token');
+    }
+
     request.user = {
-      id: 'mock-user-id',
-      email: 'mock@example.com',
+      id: data.user.id,
+      email: data.user.email,
     };
 
     return true;

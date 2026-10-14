@@ -12,4 +12,3 @@ export declare class CategoriesController {
         success: boolean;
     }>;
 }
-//# sourceMappingURL=categories.controller.d.ts.map

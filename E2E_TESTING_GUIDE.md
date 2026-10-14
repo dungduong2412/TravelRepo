@@ -31,8 +31,8 @@ This guide covers complete end-to-end testing for all user roles: **Collaborator
    - Bank Name: "Vietcombank"
    - Bank Account Name: "Test Collaborator"
    - Bank Account Number: "1234567890"
-   - Password: "password123"
-   - Confirm Password: "password123"
+   - Password: use an environment-supplied authorized test password
+   - Confirm Password: repeat the authorized test password
 
 2. Click "Đăng Ký"
 
@@ -69,7 +69,7 @@ This guide covers complete end-to-end testing for all user roles: **Collaborator
 
 **Actions**:
 1. Enter email: "testcollaborator@example.com"
-2. Enter password: "password123"
+2. Enter the environment-supplied authorized test password
 3. Click "Đăng Nhập"
 
 **Expected Results**:
@@ -136,8 +136,8 @@ This guide covers complete end-to-end testing for all user roles: **Collaborator
    - Owner Name: "Test Owner"
    - Owner Email: "owner@example.com"
    - Owner Phone: "0912345678"
-   - Password: "password123"
-   - Confirm Password: "password123"
+   - Password: use an environment-supplied authorized test password
+   - Confirm Password: repeat the authorized test password
 
 2. Click "Đăng Ký"
 
@@ -172,7 +172,7 @@ This guide covers complete end-to-end testing for all user roles: **Collaborator
 
 **Actions**:
 1. Enter email: "owner@example.com" (owner email, not business email)
-2. Enter password: "password123"
+2. Enter the environment-supplied authorized test password
 3. Click "Đăng Nhập"
 
 **Expected Results**:
@@ -467,19 +467,14 @@ After each test scenario, verify in Supabase:
 ## 📊 Test Data Preparation
 
 ### Create Test Admin (if not exists)
-```sql
--- Run in Supabase SQL Editor
-INSERT INTO user_profiles (email, role, password)
-VALUES ('admin@test.com', 'admin', '$2a$10$...');  -- Hash password with bcrypt
-```
+
+Use the reviewed Supabase Auth test-account procedure. Never insert passwords into `user_profiles`.
 
 ### Sample Test Accounts
 
 | Role | Email | Password | Status |
 |------|-------|----------|--------|
-| Admin | admin@test.com | admin123 | Active |
-| Collaborator | testctv01@gmail.com | 123456 | Pending → Active |
-| Merchant | merchant@test.com | merchant123 | Pending → Active |
+Use authorized `.invalid` or designated UAT accounts and environment-supplied passwords. Do not place credentials in this document.
 
 ---
 

@@ -1,5 +1,11 @@
 import { z } from 'zod';
 
+const StrongPasswordSchema = z.string().min(12)
+  .regex(/[a-z]/, 'Password requires a lowercase letter')
+  .regex(/[A-Z]/, 'Password requires an uppercase letter')
+  .regex(/\d/, 'Password requires a number')
+  .regex(/[^A-Za-z0-9]/, 'Password requires a symbol');
+
 export const MerchantSchema = z.object({
   id: z.string().uuid(),
   owner_email: z.string().email(),
@@ -20,7 +26,7 @@ export type MerchantDto = z.infer<typeof MerchantSchema>;
 
 export const CreateMerchantSchema = z.object({
   owner_email: z.string().email(),
-  owner_password: z.string().min(6),
+  owner_password: StrongPasswordSchema,
   merchant_name: z.string().min(1).max(200),
   merchant_description: z.string().optional(),
   merchant_phone: z.string().min(10).max(20).optional(),

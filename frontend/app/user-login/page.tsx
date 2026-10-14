@@ -1,11 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { publicApiFetch } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
 
-export default function UserLoginPage() {
+function UserLoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const userType = searchParams.get('type') || 'collaborator'; // default to collaborator
@@ -115,6 +115,13 @@ export default function UserLoginPage() {
         </form>
 
         <div style={styles.footer}>
+          <button
+            onClick={() => router.push('/forgot-password')}
+            style={styles.switchButton}
+          >
+            Quên mật khẩu?
+          </button>
+
           <button
             onClick={() => {
               if (userType === 'merchant') {
@@ -245,3 +252,11 @@ const styles: Record<string, React.CSSProperties> = {
     textAlign: 'center',
   },
 };
+
+export default function UserLoginPage() {
+  return (
+    <Suspense fallback={<div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div>}>
+      <UserLoginContent />
+    </Suspense>
+  );
+}

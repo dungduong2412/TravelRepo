@@ -4,7 +4,7 @@
 
 **New to this codebase?** Start servers first:
 ```bash
-# Terminal 1: Backend (port 3000)
+# Terminal 1: Backend (port 3100)
 cd backend && npm install && npm run dev
 
 # Terminal 2: Frontend (port 3001)
@@ -43,7 +43,7 @@ This is a **monorepo** with a single NestJS backend and Next.js frontend, enforc
 - **Services**: All business logic lives here, inject `SupabaseService` for database queries
 - **DTOs**: Validated with Zod schemas for type safety
 - **Infrastructure**: SupabaseService provides configured Supabase client
-- **Port**: Backend runs on port 3000
+- **Port**: Backend runs on port 3100
 
 ### Frontend (`frontend/`)
 - **Next.js 14** (App Router) on port 3001, using client-side rendering ("use client") for interactive pages
@@ -104,7 +104,7 @@ This is a **monorepo** with a single NestJS backend and Next.js frontend, enforc
 # From repository root
 cd backend
 npm install
-npm run dev                   # Start backend (port 3000)
+npm run dev                   # Start backend (port 3100)
 ```
 
 ### Frontend Setup
@@ -221,10 +221,10 @@ create(
 
 ### Frontend-Backend Communication
 - Frontend uses `apiFetch()` utility from [frontend/lib/api.ts](frontend/lib/api.ts)
-- API base URL: `http://localhost:3000` (configurable via `NEXT_PUBLIC_API_URL`)
+- API base URL: `http://localhost:3100` (configurable via `NEXT_PUBLIC_API_URL`)
 - Auth token passed via `Authorization: Bearer ${token}` header
 - Public endpoints use `publicApiFetch()` (no auth header)
-- CORS configured in [main.ts](backend/src/main.ts) for localhost:3000 and localhost:3001
+- CORS configured in [main.ts](backend/src/main.ts) for localhost:3001 only
 - **State management**: React useState/useEffect for client state, no global state library
 - **Data fetching pattern**: useEffect hooks call backend APIs on component mount, store in local state
   ```typescript
@@ -349,8 +349,8 @@ npm run lint
 ## Troubleshooting
 - Backend won't start: Check `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` in `.env`
 - Database errors: Verify table names match Supabase schema exactly
-- Frontend API calls: Ensure backend is running on port 3000, frontend on 3001
-- CORS issues: Backend CORS configured for localhost:3000 and localhost:3001
+- Frontend API calls: Ensure backend is running on port 3100, frontend on 3001
+- CORS issues: Backend CORS configured for localhost:3001 only
 - Auth failures: Check [backend/scripts/test-login.js](backend/scripts/test-login.js) output for detailed error messages
 - Circular dependencies: Use `forwardRef()` when modules need each other (see collaborators/merchants services)
 

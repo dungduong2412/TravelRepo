@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { publicApiFetch } from '../../../../lib/api';
+import { api, publicApiFetch } from '../../../../lib/api';
 
 interface Category {
   id: string;
@@ -87,15 +87,9 @@ export default function CategoriesPage() {
 
     try {
       if (editingCategory) {
-        await publicApiFetch(`/categories/${editingCategory.id}`, {
-          method: 'PUT',
-          body: JSON.stringify(formData),
-        });
+        await api.put(`/categories/${editingCategory.id}`, formData);
       } else {
-        await publicApiFetch('/categories', {
-          method: 'POST',
-          body: JSON.stringify(formData),
-        });
+        await api.post('/categories', formData);
       }
 
       handleCloseModal();
@@ -113,9 +107,7 @@ export default function CategoriesPage() {
     }
 
     try {
-      await publicApiFetch(`/categories/${id}`, {
-        method: 'DELETE',
-      });
+      await api.delete(`/categories/${id}`);
       await fetchCategories();
     } catch (err: any) {
       alert(err.message || 'Failed to delete category');

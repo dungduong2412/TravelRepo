@@ -7,17 +7,24 @@ import {
   UpdateOrganizationProfileSchema 
 } from './organization-profile.dto';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
+import { UseGuards } from '@nestjs/common';
+import { JwtGuard } from '../../common/auth/jwt.guard';
+import { AdminGuard } from '../../common/auth/admin.guard';
+import { Public } from '../../common/decorators/public.decorator';
 
 @Controller('organization-profile')
+@UseGuards(JwtGuard)
 export class OrganizationProfileController {
   constructor(private readonly service: OrganizationProfileService) {}
 
   @Get()
+  @Public()
   async get() {
     return this.service.get();
   }
 
   @Post()
+  @UseGuards(AdminGuard)
   async create(
     @Body(new ZodValidationPipe(CreateOrganizationProfileSchema)) dto: CreateOrganizationProfileDto
   ) {
@@ -25,6 +32,7 @@ export class OrganizationProfileController {
   }
 
   @Put()
+  @UseGuards(AdminGuard)
   async update(
     @Body(new ZodValidationPipe(UpdateOrganizationProfileSchema)) dto: UpdateOrganizationProfileDto
   ) {
@@ -32,6 +40,7 @@ export class OrganizationProfileController {
   }
 
   @Post('upsert')
+  @UseGuards(AdminGuard)
   async createOrUpdate(
     @Body(new ZodValidationPipe(CreateOrganizationProfileSchema)) dto: CreateOrganizationProfileDto
   ) {
@@ -39,6 +48,7 @@ export class OrganizationProfileController {
   }
 
   @Delete()
+  @UseGuards(AdminGuard)
   async delete() {
     return this.service.delete();
   }

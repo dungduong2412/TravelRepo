@@ -50,8 +50,8 @@ export default function CollaboratorOnboardPage() {
 
     if (!formData.password) {
       errors.password = 'Mật khẩu là bắt buộc';
-    } else if (formData.password.length < 6) {
-      errors.password = 'Mật khẩu phải có ít nhất 6 ký tự';
+    } else if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{12,}$/.test(formData.password)) {
+      errors.password = 'Mật khẩu phải có ít nhất 12 ký tự, gồm chữ hoa, chữ thường, số và ký tự đặc biệt';
     }
 
     if (formData.password !== formData.confirmPassword) {
@@ -65,8 +65,8 @@ export default function CollaboratorOnboardPage() {
     }
 
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-      
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3100';
+
       const payload = {
         collaborators_name: formData.fullName,
         collaborators_phone: formData.phone,

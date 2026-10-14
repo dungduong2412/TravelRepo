@@ -1,12 +1,51 @@
 "use client";
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import { api } from '../../lib/api';
+import { supabase } from '../../lib/supabase';
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isAuthorized, setIsAuthorized] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+
+    async function verifyAdmin() {
+      try {
+        const profile = await api.get('/user-profiles/me');
+        if (!active) return;
+
+        if (profile?.role !== 'admin' || profile?.user_profiles_status !== 'active') {
+          router.replace('/login');
+          return;
+        }
+
+        setIsAuthorized(true);
+      } catch {
+        if (active) router.replace('/login');
+      }
+    }
+
+    verifyAdmin();
+    return () => {
+      active = false;
+    };
+  }, [router]);
+
+  async function handleLogout() {
+    try {
+      await supabase.auth.signOut();
+    } finally {
+      ['user', 'userRole', 'accessToken', 'refreshToken', 'merchant', 'collaborator']
+        .forEach((key) => localStorage.removeItem(key));
+      router.replace('/login');
+    }
+  }
 
   const menuItems = [
     { name: 'Dashboard', path: '/admin/dashboard', icon: '📊' },
@@ -20,6 +59,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       ]
     },
   ];
+
+  if (!isAuthorized) {
+    return (
+      <div style={styles.authLoading}>
+        Checking admin access...
+      </div>
+    );
+  }
 
   return (
     <div style={styles.container}>
@@ -88,7 +135,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </h1>
           <div style={styles.userInfo}>
             <span>Admin User</span>
-            <button style={styles.logoutButton}>Logout</button>
+            <button onClick={handleLogout} style={styles.logoutButton}>Logout</button>
           </div>
         </header>
 
@@ -208,5 +255,13 @@ const styles: Record<string, React.CSSProperties> = {
     flex: 1,
     padding: '30px',
     overflow: 'auto',
+  },
+  authLoading: {
+    minHeight: '100vh',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: '#4b5563',
+    backgroundColor: '#f3f4f6',
   },
 };

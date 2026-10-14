@@ -6,6 +6,16 @@ import { CreateCategoryDto, UpdateCategoryDto } from './categories.dto';
 export class CategoriesService {
   constructor(private readonly supabase: SupabaseService) {}
 
+  private logSupabaseError(operation: string, error: any) {
+    console.error(`[categories] ${operation} failed`, {
+      message: error?.message,
+      code: error?.code,
+      details: error?.details,
+      hint: error?.hint,
+      status: error?.status,
+    });
+  }
+
   async findAll() {
     const { data, error } = await this.supabase.getClient()
       .from('categories')
@@ -13,6 +23,7 @@ export class CategoriesService {
       .order('display_order', { ascending: true });
 
     if (error) {
+      this.logSupabaseError('findAll', error);
       throw new Error(`Failed to fetch categories: ${error.message}`);
     }
 
@@ -27,6 +38,7 @@ export class CategoriesService {
       .order('display_order', { ascending: true });
 
     if (error) {
+      this.logSupabaseError('findActive', error);
       throw new Error(`Failed to fetch active categories: ${error.message}`);
     }
 

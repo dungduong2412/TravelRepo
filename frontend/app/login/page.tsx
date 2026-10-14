@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { publicApiFetch } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
 
@@ -42,7 +43,7 @@ export default function LoginPage() {
       // Store user info
       localStorage.setItem('user', JSON.stringify(response.user));
       localStorage.setItem('userRole', response.user.role);
-      
+
       if (response.user.role === 'merchant') {
         localStorage.setItem('merchant', JSON.stringify(response.merchant));
         router.push('/merchant/dashboard');
@@ -106,6 +107,9 @@ export default function LoginPage() {
           >
             {loading ? 'Đang đăng nhập...' : 'Đăng Nhập'}
           </button>
+          <Link href="/forgot-password" style={styles.forgotPassword}>
+            Quên mật khẩu?
+          </Link>
         </form>
 
         <div style={styles.divider}>
@@ -205,6 +209,12 @@ const styles: Record<string, React.CSSProperties> = {
   buttonDisabled: {
     backgroundColor: '#9ca3af',
     cursor: 'not-allowed',
+  },
+  forgotPassword: {
+    alignSelf: 'center',
+    color: '#be123c',
+    fontSize: '14px',
+    textDecoration: 'none',
   },
   divider: {
     marginTop: '32px',

@@ -1,33 +1,27 @@
-// Test login functionality
-const fetch = require('node-fetch');
+#!/usr/bin/env node
 
-async function testLogin() {
-  console.log('Testing login endpoint...\n');
-  
-  // Test cases
-  const tests = [
-    { email: 'merchant@test.com', password: 'password123', userType: 'merchant' },
-    { email: 'collaborator@test.com', password: 'password123', userType: 'collaborator' },
-  ];
-  
-  for (const test of tests) {
-    console.log(`Testing ${test.userType} login: ${test.email}`);
-    try {
-      const response = await fetch('http://localhost:3000/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(test),
-      });
-      
-      const data = await response.json();
-      console.log(`Status: ${response.status}`);
-      console.log('Response:', JSON.stringify(data, null, 2));
-      console.log('---\n');
-    } catch (error) {
-      console.log('Error:', error.message);
-      console.log('---\n');
-    }
-  }
+const endpoint = process.env.VNO_TEST_BACKEND_URL || 'http://127.0.0.1:3100';
+const email = process.env.VNO_TEST_EMAIL;
+const password = process.env.VNO_TEST_PASSWORD;
+const userType = process.env.VNO_TEST_ROLE;
+
+if (!email || !password || !['admin', 'merchant', 'collaborator'].includes(userType)) {
+  throw new Error('VNO_TEST_EMAIL, VNO_TEST_PASSWORD, and VNO_TEST_ROLE are required');
+}
+if (!['127.0.0.1', 'localhost', '::1'].includes(new URL(endpoint).hostname)) {
+  throw new Error('This login smoke script is restricted to a local backend');
 }
 
-testLogin();
+const response = await fetch(`${endpoint}/auth/login`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ email, password, userType }),
+});
+const body = await response.json().catch(() => null);
+console.log(JSON.stringify({
+  status: response.status < 300 && body?.user?.role === userType ? 'PASS' : 'FAIL',
+  http_status: response.status,
+  expected_role: userType,
+  actual_role: body?.user?.role || null,
+}, null, 2));
+if (response.status >= 300 || body?.user?.role !== userType) process.exitCode = 1;

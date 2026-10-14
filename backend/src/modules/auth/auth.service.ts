@@ -1,304 +1,89 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
-import { SupabaseService } from '../../infrastructure/supabase/supabase.service';
 import { createClient } from '@supabase/supabase-js';
-import * as bcrypt from 'bcryptjs';
+import { SupabaseService } from '../../infrastructure/supabase/supabase.service';
+
+type AppRole = 'merchant' | 'collaborator' | 'admin';
 
 @Injectable()
 export class AuthService {
   constructor(private readonly supabase: SupabaseService) {}
-  
-  // Create a fresh Supabase client for authentication to avoid any cached/scoped issues
+
   private getAuthClient() {
-    return createClient(
-      process.env.SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false,
-        },
-      }
-    );
-  }
-
-  async loginAuto(email: string, password: string, userType?: 'merchant' | 'collaborator') {
-    // If userType is provided, use it directly
-    if (userType) {
-      return this.login(email, password, userType);
-    }
-
-    // Auto-detect user type by checking which table has this email
-    const authClient = this.getAuthClient();
-    
-    // Check user_profiles first
-    const { data: profile } = await authClient
-      .from('user_profiles')
-      .select('role')
-      .eq('email', email)
-      .single();
-    
-    if (profile && profile.role) {
-      console.log('Auto-detected user type:', profile.role);
-      return this.login(email, password, profile.role as 'merchant' | 'collaborator');
-    }
-
-    // If not in user_profiles, throw error
-    throw new UnauthorizedException('Email not found. Please sign up first.');
-  }
-
-  async login(email: string, password: string, userType: 'merchant' | 'collaborator' | 'admin') {
-    console.log('Login attempt:', { email, userType, userTypeType: typeof userType });
-    
-    if (userType === 'collaborator') {
-      return this.loginCollaborator(email, password);
-    } else if (userType === 'merchant') {
-      return this.loginMerchant(email, password);
-    } else if (userType === 'admin') {
-      return this.loginAdmin(email, password);
-    }
-    throw new UnauthorizedException('Invalid user type');
-  }
-
-  private async loginCollaborator(email: string, password: string) {
-    // Use fresh client to avoid any scope/cache issues
-    const authClient = this.getAuthClient();
-    
-    // STEP 1: Find user_profile by email
-    const { data: profile, error: profileError } = await authClient
-      .from('user_profiles')
-      .select('*')
-      .eq('email', email)
-      .eq('role', 'collaborator')
-      .single();
-    
-    if (profileError || !profile) {
-      throw new UnauthorizedException('Invalid email or password');
-    }
-
-    // STEP 2: Check if collaborator_id exists
-    if (!profile.collaborator_id) {
-      throw new UnauthorizedException('Collaborator profile not found. Please contact admin.');
-    }
-
-    // STEP 3: Get collaborator details
-    const { data: collaborator, error: collabError } = await authClient
-      .from('collaborators')
-      .select('*')
-      .eq('id', profile.collaborator_id)
-      .maybeSingle();
-
-    if (collabError || !collaborator) {
-      throw new UnauthorizedException('Collaborator details not found. Please contact admin.');
-    }
-
-    // STEP 4: Check if verified
-    if (!collaborator.collaborators_verified) {
-      throw new UnauthorizedException('Account not verified yet. Please wait for admin approval.');
-    }
-
-    // STEP 5: Verify password
-    if (!collaborator.collaborators_password) {
-      throw new UnauthorizedException('Password not set for this account');
-    }
-
-    const isValidPassword = await bcrypt.compare(password, collaborator.collaborators_password);
-    
-    if (!isValidPassword) {
-      throw new UnauthorizedException('Invalid email or password');
-    }
-
-    // STEP 6: Try to sign in with Supabase using the auth user
-    let session = await authClient.auth.signInWithPassword({
-      email: email,
-      password: password,
+    const url = process.env.SUPABASE_URL;
+    const anonKey = process.env.SUPABASE_ANON_KEY;
+    if (!url || !anonKey) throw new Error('Supabase public Auth configuration is missing');
+    return createClient(url, anonKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
     });
-
-    if (session.error) {
-      // If Supabase auth fails, try to sync the password
-      try {
-        // Update Supabase auth user password to match the one user registered with
-        await authClient.auth.admin.updateUserById(profile.user_id, {
-          password: password,
-        });
-        
-        // Retry sign in
-        session = await authClient.auth.signInWithPassword({
-          email: email,
-          password: password,
-        });
-        
-        if (session.error) {
-          throw new Error(session.error.message);
-        }
-      } catch (syncError: any) {
-        throw new UnauthorizedException('Login failed. Please contact support.');
-      }
-    }
-
-    return {
-      user: {
-        id: profile.user_id,
-        email: profile.email,
-        role: 'collaborator',
-        collaborator_id: collaborator.id,
-        name: collaborator.collaborators_name,
-      },
-      collaborator: {
-        id: collaborator.id,
-        code: collaborator.collaborators_code,
-        name: collaborator.collaborators_name,
-        verified: collaborator.collaborators_verified,
-      },
-      access_token: session.data.session?.access_token,
-      refresh_token: session.data.session?.refresh_token,
-    };
   }
 
-  private async loginMerchant(email: string, password: string) {
-    // STEP 1: Find user_profile by email
+  async loginAuto(email: string, password: string, requestedRole?: AppRole) {
+    // Supabase Auth is the only password verifier. Legacy/domain password hashes
+    // and failed-login password synchronization are deliberately unsupported.
+    const { data: session, error: authError } = await this.getAuthClient().auth
+      .signInWithPassword({ email, password });
+    if (authError || !session.user || !session.session) {
+      throw new UnauthorizedException('Invalid email or password');
+    }
+
     const { data: profile, error: profileError } = await this.supabase.getClient()
       .from('user_profiles')
-      .select('*')
-      .eq('email', email)
-      .eq('role', 'merchant')
-      .single();
-
-    if (profileError || !profile) {
-      throw new UnauthorizedException('Invalid email or password');
-    }
-
-    // STEP 2: Check if merchant_id exists
-    if (!profile.merchant_id) {
-      throw new UnauthorizedException('Merchant profile not found. Please contact admin.');
-    }
-
-    // STEP 3: Get merchant details
-    const { data: merchant, error: merchantError } = await this.supabase.getClient()
-      .from('merchant_details')
-      .select('*')
-      .eq('id', profile.merchant_id)
+      .select('id,user_id,email,role,full_name,user_profiles_status,merchant_id,collaborator_id,login_count')
+      .eq('user_id', session.user.id)
       .maybeSingle();
-
-    if (merchantError || !merchant) {
-      throw new UnauthorizedException('Merchant details not found. Please contact admin.');
+    if (profileError || !profile || profile.user_profiles_status !== 'active') {
+      throw new UnauthorizedException('Account is not active');
+    }
+    if (requestedRole && profile.role !== requestedRole) {
+      throw new UnauthorizedException('Account role does not match');
     }
 
-    // STEP 4: Check if verified
-    if (!merchant.merchant_verified) {
-      throw new UnauthorizedException('Account not verified yet. Please wait for admin approval.');
-    }
-
-    // STEP 5: Verify password
-    if (!merchant.owner_password) {
-      throw new UnauthorizedException('Password not set for this account');
-    }
-
-    const isValidPassword = await bcrypt.compare(password, merchant.owner_password);
-    if (!isValidPassword) {
-      throw new UnauthorizedException('Invalid email or password');
-    }
-
-    // STEP 6: Try to sign in with Supabase using the auth user
-    let session = await this.supabase.getClient().auth.signInWithPassword({
-      email: email,
-      password: password,
-    });
-
-    if (session.error) {
-      // If Supabase auth fails, try to sync the password
-      console.log('Supabase auth failed, attempting to sync password:', session.error.message);
-      
-      try {
-        // Update Supabase auth user password to match the one user registered with
-        await this.supabase.getClient().auth.admin.updateUserById(profile.user_id, {
-          password: password,
-        });
-        
-        console.log('Password synced successfully, retrying login');
-        
-        // Retry sign in
-        session = await this.supabase.getClient().auth.signInWithPassword({
-          email: email,
-          password: password,
-        });
-        
-        if (session.error) {
-          throw new Error(session.error.message);
-        }
-      } catch (syncError: any) {
-        console.error('Failed to sync password:', syncError);
-        throw new UnauthorizedException('Login failed. Please contact support.');
+    let entity: Record<string, unknown> | null = null;
+    if (profile.role === 'merchant') {
+      const { data } = await this.supabase.getClient().from('merchant_details')
+        .select('merchant_system_id,merchant_code,merchant_name,merchant_verified,merchants_status')
+        .eq('merchant_system_id', profile.merchant_id).maybeSingle();
+      if (!data?.merchant_verified || data.merchants_status === 'blocked') {
+        throw new UnauthorizedException('Merchant account is not approved');
       }
+      entity = data;
+    } else if (profile.role === 'collaborator') {
+      const { data } = await this.supabase.getClient().from('collaborators')
+        .select('id,collaborators_code,collaborators_name,collaborators_verified,collaborators_status')
+        .eq('id', profile.collaborator_id).maybeSingle();
+      if (!data?.collaborators_verified || data.collaborators_status === 'blocked') {
+        throw new UnauthorizedException('Collaborator account is not approved');
+      }
+      entity = data;
+    } else if (profile.role !== 'admin') {
+      throw new UnauthorizedException('Unsupported account role');
     }
+
+    await this.supabase.getClient().from('user_profiles').update({
+      login_count: (profile.login_count || 0) + 1,
+      last_login_at: new Date().toISOString(),
+    }).eq('id', profile.id);
 
     return {
       user: {
         id: profile.user_id,
         email: profile.email,
-        role: 'merchant',
-        merchant_id: merchant.id,
-        name: merchant.merchant_name,
+        role: profile.role,
+        name: profile.full_name,
+        merchant_id: profile.merchant_id,
+        collaborator_id: profile.collaborator_id,
       },
-      merchant: {
-        id: merchant.id,
-        code: merchant.merchant_code,
-        name: merchant.merchant_name,
-        verified: merchant.merchant_verified,
-      },
-      access_token: session.data.session?.access_token,
-      refresh_token: session.data.session?.refresh_token,
-    };
-  }
-
-  private async loginAdmin(email: string, password: string) {
-    // Admin uses Supabase Auth directly (no separate password table)
-    const authClient = this.getAuthClient();
-    
-    // STEP 1: Find admin user_profile
-    const { data: profile, error: profileError } = await authClient
-      .from('user_profiles')
-      .select('*')
-      .eq('email', email)
-      .eq('role', 'admin')
-      .single();
-    
-    if (profileError || !profile) {
-      throw new UnauthorizedException('Invalid email or password');
-    }
-    
-    // STEP 2: Check if active
-    if (profile.user_profiles_status !== 'active') {
-      throw new UnauthorizedException('Admin account is not active');
-    }
-    
-    // STEP 3: Authenticate with Supabase Auth
-    const { data: session, error: authError } = await authClient.auth.signInWithPassword({
-      email: email,
-      password: password,
-    });
-    
-    if (authError || !session.session) {
-      throw new UnauthorizedException('Invalid email or password');
-    }
-    
-    // STEP 4: Update login tracking
-    await authClient
-      .from('user_profiles')
-      .update({
-        login_count: (profile.login_count || 0) + 1,
-        last_login_at: new Date().toISOString(),
-      })
-      .eq('id', profile.id);
-    
-    return {
-      user: {
-        id: profile.user_id,
-        email: profile.email,
-        role: 'admin',
-        name: profile.full_name || 'Admin',
-      },
+      entity,
+      // Keep the established frontend contract while exposing the generic
+      // entity field for newer consumers.
+      merchant: profile.role === 'merchant' ? entity : null,
+      collaborator: profile.role === 'collaborator' ? entity : null,
       access_token: session.session.access_token,
       refresh_token: session.session.refresh_token,
     };
+  }
+
+  login(email: string, password: string, role: AppRole) {
+    return this.loginAuto(email, password, role);
   }
 }

@@ -8,6 +8,9 @@ import { MerchantsModule } from './modules/merchants/merchants.module';
 import { CollaboratorsModule } from './modules/collaborators/collaborators.module';
 import { QrModule } from './modules/qr/qr.module';
 import { OrganizationProfileModule } from './modules/organization-profile/organization-profile.module';
+import { TransactionsModule } from './modules/transactions/transactions.module';
+import { CommissionsModule } from './modules/commissions/commissions.module';
+import { MediaModule } from './modules/media/media.module';
 
 @Module({
   imports: [
@@ -23,6 +26,9 @@ import { OrganizationProfileModule } from './modules/organization-profile/organi
     CollaboratorsModule,
     QrModule,
     OrganizationProfileModule,
+    TransactionsModule,
+    CommissionsModule,
+    MediaModule,
   ],
 })
 export class AppModule {}
