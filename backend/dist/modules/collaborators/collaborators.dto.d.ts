@@ -15,11 +15,11 @@ export declare const CreateCollaboratorSchema: z.ZodObject<{
     collaborators_avatar_url: z.ZodOptional<z.ZodString>;
     collaborators_qr_code: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
+    collaborators_code?: string;
     collaborators_name?: string;
+    collaborators_verified?: boolean;
     collaborators_phone?: string;
     collaborators_email?: string;
-    collaborators_code?: string;
-    collaborators_verified?: boolean;
     collaborators_rating?: number;
     collaborators_bank_name?: string;
     collaborators_bank_acc_name?: string;
@@ -30,11 +30,11 @@ export declare const CreateCollaboratorSchema: z.ZodObject<{
     collaborators_avatar_url?: string;
     collaborators_qr_code?: string;
 }, {
+    collaborators_code?: string;
     collaborators_name?: string;
+    collaborators_verified?: boolean;
     collaborators_phone?: string;
     collaborators_email?: string;
-    collaborators_code?: string;
-    collaborators_verified?: boolean;
     collaborators_rating?: number;
     collaborators_bank_name?: string;
     collaborators_bank_acc_name?: string;
@@ -62,11 +62,11 @@ export declare const UpdateCollaboratorSchema: z.ZodObject<{
     collaborators_avatar_url: z.ZodOptional<z.ZodOptional<z.ZodString>>;
     collaborators_qr_code: z.ZodOptional<z.ZodOptional<z.ZodString>>;
 }, "strip", z.ZodTypeAny, {
+    collaborators_code?: string;
     collaborators_name?: string;
+    collaborators_verified?: boolean;
     collaborators_phone?: string;
     collaborators_email?: string;
-    collaborators_code?: string;
-    collaborators_verified?: boolean;
     collaborators_rating?: number;
     collaborators_bank_name?: string;
     collaborators_bank_acc_name?: string;
@@ -77,11 +77,11 @@ export declare const UpdateCollaboratorSchema: z.ZodObject<{
     collaborators_avatar_url?: string;
     collaborators_qr_code?: string;
 }, {
+    collaborators_code?: string;
     collaborators_name?: string;
+    collaborators_verified?: boolean;
     collaborators_phone?: string;
     collaborators_email?: string;
-    collaborators_code?: string;
-    collaborators_verified?: boolean;
     collaborators_rating?: number;
     collaborators_bank_name?: string;
     collaborators_bank_acc_name?: string;

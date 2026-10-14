@@ -11,6 +11,7 @@ import { OrganizationProfileModule } from './modules/organization-profile/organi
 import { TransactionsModule } from './modules/transactions/transactions.module';
 import { CommissionsModule } from './modules/commissions/commissions.module';
 import { MediaModule } from './modules/media/media.module';
+import { HealthController } from './health.controller';
 
 @Module({
   imports: [
@@ -30,5 +31,6 @@ import { MediaModule } from './modules/media/media.module';
     CommissionsModule,
     MediaModule,
   ],
+  controllers: [HealthController],
 })
 export class AppModule {}

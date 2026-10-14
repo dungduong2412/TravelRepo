@@ -20,6 +20,7 @@ const organization_profile_module_1 = require("./modules/organization-profile/or
 const transactions_module_1 = require("./modules/transactions/transactions.module");
 const commissions_module_1 = require("./modules/commissions/commissions.module");
 const media_module_1 = require("./modules/media/media.module");
+const health_controller_1 = require("./health.controller");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -42,6 +43,7 @@ exports.AppModule = AppModule = __decorate([
             commissions_module_1.CommissionsModule,
             media_module_1.MediaModule,
         ],
+        controllers: [health_controller_1.HealthController],
     })
 ], AppModule);
 //# sourceMappingURL=app.module.js.map
