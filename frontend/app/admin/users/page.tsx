@@ -1,323 +1,78 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../../lib/api';
 
-interface UserProfile {
-  id: string;
-  full_name?: string | null;
-  email: string;
-  role: 'admin' | 'merchant' | 'collaborator';
-  merchant_id?: string | null;
-  collaborator_id?: string | null;
-  user_profiles_status?: string;
-  status: 'active' | 'inactive';
-  last_login_at?: string | null;
-  login_count?: number;
-  created_at?: string;
-  updated_at?: string;
-}
+type Role = 'admin' | 'merchant' | 'collaborator';
+type Status = 'active' | 'pending' | 'inactive' | 'blocked';
+type UserProfile = {
+  id: string; email: string; full_name?: string | null; role: Role;
+  user_profiles_status: Status; merchant_id: string | null; collaborator_id: string | null;
+  last_login_at?: string | null; login_count?: number;
+};
+type Option = { id: string; label: string };
 
 export default function UserManagementPage() {
   const [users, setUsers] = useState<UserProfile[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [merchants, setMerchants] = useState<Option[]>([]);
+  const [collaborators, setCollaborators] = useState<Option[]>([]);
+  const [filter, setFilter] = useState<'all' | Role>('all');
+  const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<'all' | 'admin' | 'merchant' | 'collaborator'>('all');
 
-  useEffect(() => {
-    fetchUsers();
-  }, []);
-
-  const fetchUsers = async () => {
+  const load = async () => {
+    setError(null);
     try {
-      setLoading(true);
-      const data = await api.get('/user-profiles');
-      
-      // Determine status based on user_profiles_status column or fallback
-      const processedUsers = data.map((user: any) => ({
-        ...user,
-        status: user.user_profiles_status || 'active',
-      }));
-      
-      setUsers(processedUsers);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load users');
-    } finally {
-      setLoading(false);
-    }
+      const [profiles, merchantRows, collaboratorRows] = await Promise.all([
+        api.get('/user-profiles'), api.get('/merchants'), api.get('/collaborators'),
+      ]);
+      setUsers((profiles || []).map((row: any) => ({ ...row, user_profiles_status: row.user_profiles_status || 'pending', merchant_id: row.merchant_id || null, collaborator_id: row.collaborator_id || null })));
+      setMerchants((merchantRows || []).map((row: any) => ({ id: row.merchant_system_id, label: `${row.merchant_code || '—'} · ${row.merchant_name || row.merchant_system_id}` })));
+      setCollaborators((collaboratorRows || []).map((row: any) => ({ id: row.id, label: `${row.collaborators_code || '—'} · ${row.collaborators_name || row.id}` })));
+    } catch (err: any) { setError(err.message || 'Unable to load user management data'); }
   };
 
-  const filteredUsers = filter === 'all' 
-    ? users 
-    : users.filter(u => u.role === filter);
+  useEffect(() => { void load(); }, []);
+  const visible = useMemo(() => filter === 'all' ? users : users.filter((user) => user.role === filter), [filter, users]);
+  const update = (id: string, patch: Partial<UserProfile>) => setUsers((current) => current.map((user) => user.id === id ? normalize({ ...user, ...patch }) : user));
 
-  if (loading) {
-    return <div style={styles.loadingContainer}>Loading user profiles...</div>;
-  }
+  const save = async (user: UserProfile) => {
+    setSaving(user.id); setError(null);
+    try {
+      await api.patch(`/user-profiles/${user.id}`, { role: user.role, user_profiles_status: user.user_profiles_status, merchant_id: user.merchant_id, collaborator_id: user.collaborator_id });
+      await load();
+    } catch (err: any) { setError(err.message || 'Unable to update user'); }
+    finally { setSaving(null); }
+  };
 
-  if (error) {
-    return (
-      <div style={styles.errorContainer}>
-        <p style={styles.errorText}>❌ {error}</p>
-        <button onClick={fetchUsers} style={styles.retryButton}>Retry</button>
-      </div>
-    );
-  }
-
-  return (
-    <div style={styles.container}>
-      <div style={styles.header}>
-        <h2 style={styles.title}>User Management</h2>
-        <div style={styles.filterButtons}>
-          <button
-            onClick={() => setFilter('all')}
-            style={{
-              ...styles.filterButton,
-              backgroundColor: filter === 'all' ? '#3b82f6' : '#e5e7eb',
-              color: filter === 'all' ? 'white' : '#374151',
-            }}
-          >
-            All ({users.length})
-          </button>
-          <button
-            onClick={() => setFilter('admin')}
-            style={{
-              ...styles.filterButton,
-              backgroundColor: filter === 'admin' ? '#8b5cf6' : '#e5e7eb',
-              color: filter === 'admin' ? 'white' : '#374151',
-            }}
-          >
-            Admin ({users.filter(u => u.role === 'admin').length})
-          </button>
-          <button
-            onClick={() => setFilter('merchant')}
-            style={{
-              ...styles.filterButton,
-              backgroundColor: filter === 'merchant' ? '#10b981' : '#e5e7eb',
-              color: filter === 'merchant' ? 'white' : '#374151',
-            }}
-          >
-            Merchants ({users.filter(u => u.role === 'merchant').length})
-          </button>
-          <button
-            onClick={() => setFilter('collaborator')}
-            style={{
-              ...styles.filterButton,
-              backgroundColor: filter === 'collaborator' ? '#f59e0b' : '#e5e7eb',
-              color: filter === 'collaborator' ? 'white' : '#374151',
-            }}
-          >
-            Collaborators ({users.filter(u => u.role === 'collaborator').length})
-          </button>
-        </div>
-      </div>
-
-      <div style={styles.tableContainer}>
-        <table style={styles.table}>
-          <thead>
-            <tr style={styles.tableHeader}>
-              <th style={styles.th}>Name</th>
-              <th style={styles.th}>Email</th>
-              <th style={styles.th}>Role</th>
-              <th style={styles.th}>Status</th>
-              <th style={styles.th}>Login Count</th>
-              <th style={styles.th}>Last Login</th>
-              <th style={styles.th}>Created</th>
-              <th style={styles.th}>Last Updated</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredUsers.map((user) => (
-              <tr key={user.id} style={styles.tableRow}>
-                <td style={styles.td}>{user.full_name || '—'}</td>
-                <td style={styles.td}>{user.email}</td>
-                <td style={styles.td}>
-                  <span style={{
-                    ...styles.roleBadge,
-                    backgroundColor: 
-                      user.role === 'admin' ? '#ede9fe' :
-                      user.role === 'merchant' ? '#d1fae5' : '#fef3c7',
-                    color:
-                      user.role === 'admin' ? '#6b21a8' :
-                      user.role === 'merchant' ? '#065f46' : '#92400e',
-                  }}>
-                    {user.role.charAt(0).toUpperCase() + user.role.slice(1)}
-                  </span>
-                </td>
-                <td style={styles.td}>
-                  <span style={{
-                    ...styles.statusBadge,
-                    backgroundColor: 
-                      user.status === 'active' ? '#d1fae5' :
-                      user.status === 'inactive' ? '#e5e7eb' :
-                      user.status === 'suspended' ? '#fee2e2' : '#e5e7eb',
-                    color: 
-                      user.status === 'active' ? '#065f46' :
-                      user.status === 'inactive' ? '#374151' :
-                      user.status === 'suspended' ? '#991b1b' : '#374151',
-                  }}>
-                    {user.status.charAt(0).toUpperCase() + user.status.slice(1)}
-                  </span>
-                </td>
-                <td style={styles.td}>{user.login_count || 0}</td>
-                <td style={styles.td}>
-                  {user.last_login_at 
-                    ? new Date(user.last_login_at).toLocaleString()
-                    : 'Never'}
-                </td>
-                <td style={styles.td}>
-                  {user.created_at
-                    ? new Date(user.created_at).toLocaleDateString()
-                    : 'N/A'}
-                </td>
-                <td style={styles.td}>
-                  {user.updated_at
-                    ? new Date(user.updated_at).toLocaleDateString()
-                    : 'N/A'}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-
-        {filteredUsers.length === 0 && (
-          <div style={styles.emptyState}>
-            <p>No users found for this filter</p>
-          </div>
-        )}
-      </div>
-
-      <div style={styles.summary}>
-        <div style={styles.summaryItem}>
-          <strong>Total Users:</strong> {users.length}
-        </div>
-        <div style={styles.summaryItem}>
-          <strong>Active:</strong> {users.filter(u => u.status === 'active').length}
-        </div>
-        <div style={styles.summaryItem}>
-          <strong>Total Logins:</strong> {users.reduce((sum, u) => sum + (u.login_count || 0), 0)}
-        </div>
-      </div>
+  return <div>
+    <div style={styles.header}>
+      <div><h2 style={styles.title}>User and Access Management</h2><p style={styles.help}>Role, activation state, and business assignments are enforced together and audited.</p></div>
+      <div style={styles.filters}>{(['all', 'admin', 'merchant', 'collaborator'] as const).map((value) => <button key={value} onClick={() => setFilter(value)} style={{ ...styles.filter, ...(filter === value ? styles.active : {}) }}>{value}</button>)}</div>
     </div>
-  );
+    {error && <div style={styles.error}>{error}</div>}
+    <div style={styles.wrapper}><table style={styles.table}>
+      <thead><tr><th style={styles.th}>User</th><th style={styles.th}>Role</th><th style={styles.th}>Status</th><th style={styles.th}>Business assignment</th><th style={styles.th}>Login activity</th><th style={styles.th}>Action</th></tr></thead>
+      <tbody>{visible.map((user) => <tr key={user.id} style={styles.row}>
+        <td style={styles.td}><strong>{user.full_name || '—'}</strong><div>{user.email}</div></td>
+        <td style={styles.td}><select value={user.role} onChange={(e) => update(user.id, { role: e.target.value as Role })} style={styles.select}><option value="admin">Admin</option><option value="merchant">Merchant</option><option value="collaborator">Collaborator</option></select></td>
+        <td style={styles.td}><select value={user.user_profiles_status} onChange={(e) => update(user.id, { user_profiles_status: e.target.value as Status })} style={styles.select}><option value="active">Active</option><option value="pending">Pending</option><option value="inactive">Inactive</option><option value="blocked">Blocked</option></select></td>
+        <td style={styles.td}>{user.role === 'merchant' ? <select value={user.merchant_id || ''} onChange={(e) => update(user.id, { merchant_id: e.target.value || null })} style={styles.select}><option value="">Select merchant</option>{merchants.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select> : user.role === 'collaborator' ? <select value={user.collaborator_id || ''} onChange={(e) => update(user.id, { collaborator_id: e.target.value || null })} style={styles.select}><option value="">Select collaborator</option>{collaborators.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select> : 'Platform-wide'}</td>
+        <td style={styles.td}>{user.login_count || 0} logins<br />{user.last_login_at ? new Date(user.last_login_at).toLocaleString() : 'Never'}</td>
+        <td style={styles.td}><button disabled={saving === user.id || (user.role === 'merchant' && !user.merchant_id) || (user.role === 'collaborator' && !user.collaborator_id)} onClick={() => save(user)} style={styles.save}>{saving === user.id ? 'Saving…' : 'Save'}</button></td>
+      </tr>)}</tbody>
+    </table></div>
+  </div>;
+}
+
+function normalize(user: UserProfile): UserProfile {
+  if (user.role === 'admin') return { ...user, merchant_id: null, collaborator_id: null };
+  if (user.role === 'merchant') return { ...user, collaborator_id: null };
+  return { ...user, merchant_id: null };
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  container: {
-    maxWidth: '1400px',
-  },
-  header: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '25px',
-    flexWrap: 'wrap',
-    gap: '15px',
-  },
-  title: {
-    fontSize: '24px',
-    fontWeight: 600,
-    margin: 0,
-    color: '#111827',
-  },
-  filterButtons: {
-    display: 'flex',
-    gap: '10px',
-    flexWrap: 'wrap',
-  },
-  filterButton: {
-    padding: '8px 16px',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontSize: '14px',
-    fontWeight: 500,
-    transition: 'all 0.2s',
-  },
-  tableContainer: {
-    backgroundColor: 'white',
-    borderRadius: '8px',
-    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
-    overflow: 'auto',
-    marginBottom: '20px',
-  },
-  table: {
-    width: '100%',
-    borderCollapse: 'collapse',
-  },
-  tableHeader: {
-    backgroundColor: '#f9fafb',
-  },
-  th: {
-    padding: '12px 16px',
-    textAlign: 'left',
-    fontSize: '14px',
-    fontWeight: 600,
-    color: '#374151',
-    borderBottom: '1px solid #e5e7eb',
-    whiteSpace: 'nowrap',
-  },
-  tableRow: {
-    borderBottom: '1px solid #e5e7eb',
-  },
-  td: {
-    padding: '12px 16px',
-    fontSize: '14px',
-    color: '#111827',
-  },
-  roleBadge: {
-    padding: '4px 12px',
-    borderRadius: '12px',
-    fontSize: '12px',
-    fontWeight: 500,
-    display: 'inline-block',
-  },
-  statusBadge: {
-    padding: '4px 12px',
-    borderRadius: '12px',
-    fontSize: '12px',
-    fontWeight: 500,
-    display: 'inline-block',
-  },
-  loadingContainer: {
-    textAlign: 'center',
-    padding: '40px',
-    fontSize: '16px',
-    color: '#6b7280',
-  },
-  errorContainer: {
-    textAlign: 'center',
-    padding: '40px',
-  },
-  errorText: {
-    color: '#dc2626',
-    fontSize: '16px',
-    marginBottom: '15px',
-  },
-  retryButton: {
-    padding: '10px 20px',
-    backgroundColor: '#3b82f6',
-    color: 'white',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-  },
-  emptyState: {
-    textAlign: 'center',
-    padding: '40px',
-    color: '#6b7280',
-  },
-  summary: {
-    backgroundColor: 'white',
-    padding: '20px',
-    borderRadius: '8px',
-    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
-    display: 'flex',
-    gap: '30px',
-    flexWrap: 'wrap',
-  },
-  summaryItem: {
-    fontSize: '14px',
-    color: '#374151',
-  },
+  header: { display: 'flex', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 20 }, title: { margin: 0, fontSize: 24 }, help: { color: '#64748b', margin: '6px 0 0' },
+  filters: { display: 'flex', gap: 8 }, filter: { border: 0, borderRadius: 999, padding: '8px 13px', cursor: 'pointer' }, active: { background: '#2563eb', color: 'white' }, error: { background: '#fef2f2', color: '#b91c1c', padding: 12, borderRadius: 8, marginBottom: 12 },
+  wrapper: { overflow: 'auto', background: 'white', borderRadius: 10 }, table: { width: '100%', borderCollapse: 'collapse' }, th: { textAlign: 'left', padding: 12, background: '#f8fafc', whiteSpace: 'nowrap' }, row: { borderTop: '1px solid #e2e8f0' }, td: { padding: 12, minWidth: 140, verticalAlign: 'top' }, select: { width: '100%', minWidth: 150, padding: 8, border: '1px solid #cbd5e1', borderRadius: 6 }, save: { border: 0, borderRadius: 6, background: '#0f766e', color: 'white', padding: '8px 14px', cursor: 'pointer' },
 };

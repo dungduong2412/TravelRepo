@@ -3,7 +3,7 @@ import { SupabaseService } from '../../infrastructure/supabase/supabase.service'
 
 const COLUMNS = [
   'id', 'legacy_transaction_id', 'merchant_id', 'collaborator_id',
-  'legacy_restaurant_id', 'legacy_middleman_id', 'lifecycle_status',
+  'legacy_restaurant_id', 'legacy_middleman_id', 'legacy_status', 'lifecycle_status',
   'payment_status', 'document_number', 'document_date_utc',
   'document_total', 'document_discount_amount', 'commission_percent',
   'commission_amount', 'currency_code', 'created_at',

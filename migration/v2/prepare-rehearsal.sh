@@ -12,7 +12,9 @@ for migration in \
   20261011155533_vno_v1_phase2_schema_reconciliation.sql \
   20261011155535_vno_v1_remaining_additive_gaps.sql \
   20261011155725_vno_v1_advisor_repairs.sql \
-  20261013090000_vno_phase_d2_import_readiness.sql
+  20261013090000_vno_phase_d2_import_readiness.sql \
+  20261014080000_vno_phase_d2_fk_indexes.sql \
+  20261016140546_vno_phase_d6_functional_parity.sql
 do
   install -m 0600 "$repo_root/supabase/migrations/$migration" \
     "$rehearsal_root/supabase/migrations/$migration"

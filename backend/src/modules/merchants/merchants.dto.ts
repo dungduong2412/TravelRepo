@@ -43,16 +43,48 @@ export const CreateMerchantSchema = z.object({
 
 export type CreateMerchantDto = z.infer<typeof CreateMerchantSchema>;
 
-export const UpdateMerchantSchema = z.object({
-  business_name: z.string().min(1).max(200).optional(),
-  business_address: z.string().optional(),
-  business_phone: z.string().min(10).max(20).optional(),
-  business_email: z.string().email().optional(),
-  business_description: z.string().optional(),
-  commission_rate: z.number().min(0).max(100).optional(),
-  customer_discount_rate: z.number().min(0).max(100).optional(),
-  merchant_verified: z.boolean().optional(),
-  merchants_status: z.string().optional(),
+export const AdminCreateMerchantSchema = CreateMerchantSchema.omit({ owner_password: true }).extend({
+  owner_name: z.string().max(200).optional(),
+  owner_phone: z.string().max(20).optional(),
 });
 
+export type AdminCreateMerchantDto = z.infer<typeof AdminCreateMerchantSchema>;
+
+export const UpdateMerchantSchema = z.object({
+  merchant_name: z.string().min(1).max(200).optional(),
+  merchant_description: z.string().max(4000).nullable().optional(),
+  merchant_phone: z.string().min(7).max(20).nullable().optional(),
+  merchant_email: z.string().email().nullable().optional(),
+  merchant_contact_phone: z.string().max(20).nullable().optional(),
+  merchant_category: z.string().max(200).nullable().optional(),
+  owner_name: z.string().max(200).nullable().optional(),
+  owner_phone: z.string().max(20).nullable().optional(),
+  new_address_city: z.string().max(200).nullable().optional(),
+  new_address_ward: z.string().max(200).nullable().optional(),
+  new_address_line: z.string().max(1000).nullable().optional(),
+}).strict();
+
+export const AdminUpdateMerchantSchema = UpdateMerchantSchema.extend({
+  merchant_commission_type: z.enum(['percentage', 'fixed']).nullable().optional(),
+  merchant_commission_value: z.number().min(0).nullable().optional(),
+  merchant_discount_type: z.enum(['percentage', 'fixed']).nullable().optional(),
+  merchant_discount_value: z.number().min(0).nullable().optional(),
+  merchant_priority: z.number().int().optional(),
+  merchant_verified: z.boolean().optional(),
+  merchants_status: z.enum(['pending', 'active', 'inactive', 'blocked']).optional(),
+  merchant_action: z.string().max(500).nullable().optional(),
+}).strict();
+
 export type UpdateMerchantDto = z.infer<typeof UpdateMerchantSchema>;
+export type AdminUpdateMerchantDto = z.infer<typeof AdminUpdateMerchantSchema>;
+
+export const CreateMerchantMemberSchema = z.object({
+  collaborators_name: z.string().min(1).max(200),
+  collaborators_phone: z.string().min(7).max(20),
+  collaborators_email: z.string().email(),
+  collaborators_password: StrongPasswordSchema,
+  collaborators_bank_name: z.string().max(200).optional(),
+  collaborators_bank_acc_number: z.string().max(100).optional(),
+}).strict();
+
+export type CreateMerchantMemberDto = z.infer<typeof CreateMerchantMemberSchema>;

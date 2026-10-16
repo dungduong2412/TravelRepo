@@ -31,26 +31,38 @@ let CollaboratorsController = class CollaboratorsController {
     listAll() {
         return this.service.listAll();
     }
+    createByAdmin(actor, dto) {
+        return this.service.createByAdmin(actor, dto);
+    }
     getMe(actor) {
         return this.service.getMyCollaborator(actor);
     }
     getMyQrCode(actor) {
         return this.service.getMyQrCode(actor);
     }
+    listMembers(actor) {
+        return this.service.listMembers(actor.id);
+    }
+    createMember(actor, dto) {
+        return this.service.createMember(actor.id, dto);
+    }
     resolveByCode(code) {
         return this.service.resolveByCode(code);
     }
-    approve(id) {
-        return this.service.approve(id);
+    approve(actor, id) {
+        return this.service.approve(actor, id);
     }
-    reject(id) {
-        return this.service.reject(id);
+    reject(actor, id) {
+        return this.service.reject(actor, id);
+    }
+    updateByAdmin(actor, id, dto) {
+        return this.service.updateByAdmin(actor, id, dto);
     }
     update(actor, id, dto) {
         return this.service.updateCollaborator(actor, id, dto);
     }
     remove(actor, id) {
-        return this.service.deleteCollaborator(actor, id);
+        return this.service.deactivateCollaborator(actor, id);
     }
 };
 exports.CollaboratorsController = CollaboratorsController;
@@ -71,6 +83,15 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], CollaboratorsController.prototype, "listAll", null);
 __decorate([
+    (0, common_1.Post)('admin'),
+    (0, common_1.UseGuards)(admin_guard_1.AdminGuard),
+    __param(0, (0, user_decorator_1.User)()),
+    __param(1, (0, common_1.Body)(new zod_validation_pipe_1.ZodValidationPipe(collaborators_dto_1.AdminCreateCollaboratorSchema))),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", void 0)
+], CollaboratorsController.prototype, "createByAdmin", null);
+__decorate([
     (0, common_1.Get)('me'),
     __param(0, (0, user_decorator_1.User)()),
     __metadata("design:type", Function),
@@ -85,6 +106,21 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], CollaboratorsController.prototype, "getMyQrCode", null);
 __decorate([
+    (0, common_1.Get)('members'),
+    __param(0, (0, user_decorator_1.User)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", void 0)
+], CollaboratorsController.prototype, "listMembers", null);
+__decorate([
+    (0, common_1.Post)('members'),
+    __param(0, (0, user_decorator_1.User)()),
+    __param(1, (0, common_1.Body)(new zod_validation_pipe_1.ZodValidationPipe(collaborators_dto_1.CreateCollaboratorMemberSchema))),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", void 0)
+], CollaboratorsController.prototype, "createMember", null);
+__decorate([
     (0, common_1.Get)('code/:code'),
     (0, public_decorator_1.Public)(),
     __param(0, (0, common_1.Param)('code')),
@@ -95,19 +131,31 @@ __decorate([
 __decorate([
     (0, common_1.Post)(':id/approve'),
     (0, common_1.UseGuards)(admin_guard_1.AdminGuard),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, user_decorator_1.User)()),
+    __param(1, (0, common_1.Param)('id')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
+    __metadata("design:paramtypes", [Object, String]),
     __metadata("design:returntype", void 0)
 ], CollaboratorsController.prototype, "approve", null);
 __decorate([
     (0, common_1.Post)(':id/reject'),
     (0, common_1.UseGuards)(admin_guard_1.AdminGuard),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, user_decorator_1.User)()),
+    __param(1, (0, common_1.Param)('id')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
+    __metadata("design:paramtypes", [Object, String]),
     __metadata("design:returntype", void 0)
 ], CollaboratorsController.prototype, "reject", null);
+__decorate([
+    (0, common_1.Patch)(':id/admin'),
+    (0, common_1.UseGuards)(admin_guard_1.AdminGuard),
+    __param(0, (0, user_decorator_1.User)()),
+    __param(1, (0, common_1.Param)('id')),
+    __param(2, (0, common_1.Body)(new zod_validation_pipe_1.ZodValidationPipe(collaborators_dto_1.AdminUpdateCollaboratorSchema))),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String, Object]),
+    __metadata("design:returntype", void 0)
+], CollaboratorsController.prototype, "updateByAdmin", null);
 __decorate([
     (0, common_1.Patch)(':id'),
     __param(0, (0, user_decorator_1.User)()),
@@ -119,6 +167,7 @@ __decorate([
 ], CollaboratorsController.prototype, "update", null);
 __decorate([
     (0, common_1.Delete)(':id'),
+    (0, common_1.UseGuards)(admin_guard_1.AdminGuard),
     __param(0, (0, user_decorator_1.User)()),
     __param(1, (0, common_1.Param)('id')),
     __metadata("design:type", Function),

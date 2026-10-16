@@ -102,9 +102,10 @@ export default function CollaboratorMembersPage() {
     setError(null);
 
     try {
+      const { collaborators_avatar_url: _avatarPreviewOnly, ...payload } = formData;
       await apiFetch('/collaborators/members', {
         method: 'POST',
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       });
       
       // Reset form and close modal
@@ -165,7 +166,7 @@ export default function CollaboratorMembersPage() {
               </tr>
             </thead>
             <tbody>
-              {members.filter(m => m.collaborators_verified).map((member) => (
+              {members.map((member) => (
                 <tr key={member.id} style={styles.tableRow}>
                   <td style={styles.td}>
                     {member.collaborators_avatar_url ? (
@@ -187,7 +188,7 @@ export default function CollaboratorMembersPage() {
                       : '-'}
                   </td>
                   <td style={styles.td}>
-                    <span style={styles.verifiedBadge}>✓ Đã xác minh</span>
+                    <span style={styles.verifiedBadge}>{member.collaborators_verified ? '✓ Đã xác minh' : '⏳ Chờ duyệt'}</span>
                   </td>
                 </tr>
               ))}

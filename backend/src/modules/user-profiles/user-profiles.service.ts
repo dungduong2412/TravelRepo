@@ -1,11 +1,20 @@
-import { Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  InternalServerErrorException,
+  NotFoundException,
+} from '@nestjs/common';
 import { SupabaseService } from '../../infrastructure/supabase/supabase.service';
-import { CreateUserProfileDto } from './user-profiles.dto';
+import { CreateUserProfileDto, UpdateManagedUserProfileDto } from './user-profiles.dto';
 import { randomBytes } from 'crypto';
+import { AuditActor, AuditService } from '../audit/audit.service';
 
 @Injectable()
 export class UserProfilesService {
-  constructor(private readonly supabase: SupabaseService) {}
+  constructor(
+    private readonly supabase: SupabaseService,
+    private readonly audit: AuditService,
+  ) {}
 
   async findAll() {
     const { data, error } = await this.supabase.getClient()
@@ -41,11 +50,139 @@ export class UserProfilesService {
       .eq('id', id)
       .single();
 
-    if (error) {
-      throw new Error(`Failed to fetch user profile: ${error.message}`);
+    if (error || !data) {
+      throw new NotFoundException('User profile not found');
     }
 
     return data;
+  }
+
+  async assertIdentityAvailable(email: string) {
+    if (await this.findByEmail(email)) {
+      throw new BadRequestException('An account already exists for this email');
+    }
+    for (let page = 1; page <= 10; page += 1) {
+      const { data, error } = await this.supabase.getClient().auth.admin.listUsers({ page, perPage: 1000 });
+      if (error) throw new InternalServerErrorException('Unable to verify account availability');
+      const users = data.users as Array<{ email?: string }>;
+      if (users.some((user) => user.email?.toLowerCase() === email.toLowerCase())) {
+        throw new BadRequestException('An account already exists for this email');
+      }
+      if (users.length < 1000) return;
+    }
+    throw new InternalServerErrorException('Unable to verify account availability');
+  }
+
+  async updateManagedProfile(
+    actor: AuditActor,
+    id: string,
+    dto: UpdateManagedUserProfileDto,
+  ) {
+    const existing = await this.findById(id);
+
+    if (existing.user_id === actor.id &&
+        (dto.user_profiles_status !== 'active' || dto.role !== existing.role ||
+         dto.merchant_id !== existing.merchant_id || dto.collaborator_id !== existing.collaborator_id)) {
+      throw new BadRequestException('An administrator cannot change their own authorization assignment');
+    }
+
+    await this.assertBusinessAssignment(dto);
+
+    const client = this.supabase.getClient();
+    const { data: oldLinks, error: oldLinksError } = await client
+      .from('merchant_user_links')
+      .select('merchant_id,user_profile_id,legacy_user_id')
+      .eq('user_profile_id', id);
+    if (oldLinksError) {
+      throw new InternalServerErrorException('Unable to load current user assignment');
+    }
+
+    const oldState = {
+      role: existing.role,
+      user_profiles_status: existing.user_profiles_status,
+      merchant_id: existing.merchant_id,
+      collaborator_id: existing.collaborator_id,
+    };
+
+    const { data: updated, error: updateError } = await client
+      .from('user_profiles')
+      .update({
+        role: dto.role,
+        user_profiles_status: dto.user_profiles_status,
+        merchant_id: dto.merchant_id,
+        collaborator_id: dto.collaborator_id,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .select()
+      .single();
+    if (updateError) {
+      throw new InternalServerErrorException('Unable to update user profile');
+    }
+
+    try {
+      const { error: deleteError } = await client
+        .from('merchant_user_links')
+        .delete()
+        .eq('user_profile_id', id);
+      if (deleteError) throw deleteError;
+
+      if (dto.role === 'merchant' && dto.merchant_id) {
+        const { error: linkError } = await client.from('merchant_user_links').insert({
+          merchant_id: dto.merchant_id,
+          user_profile_id: id,
+        });
+        if (linkError) throw linkError;
+      }
+
+      const { data: authUser, error: authReadError } = await client.auth.admin.getUserById(existing.user_id);
+      if (authReadError || !authUser.user) throw authReadError || new Error('Auth user not found');
+
+      const { error: authUpdateError } = await client.auth.admin.updateUserById(existing.user_id, {
+        app_metadata: {
+          ...authUser.user.app_metadata,
+          role: dto.role,
+          account_status: dto.user_profiles_status,
+        },
+      });
+      if (authUpdateError) throw authUpdateError;
+    } catch {
+      await client.from('user_profiles').update(oldState).eq('id', id);
+      await client.from('merchant_user_links').delete().eq('user_profile_id', id);
+      if (oldLinks?.length) await client.from('merchant_user_links').insert(oldLinks);
+      throw new InternalServerErrorException('Unable to synchronize user authorization state');
+    }
+
+    await this.audit.record(actor, 'user_profile.authorization_updated', 'user_profile', id, {
+      before: oldState,
+      after: dto,
+    });
+
+    return updated;
+  }
+
+  private async assertBusinessAssignment(dto: {
+    role: 'admin' | 'merchant' | 'collaborator';
+    merchant_id?: string | null;
+    collaborator_id?: string | null;
+  }) {
+    const client = this.supabase.getClient();
+    if (dto.role === 'merchant' && dto.merchant_id) {
+      const { data, error } = await client
+        .from('merchant_details')
+        .select('merchant_system_id')
+        .eq('merchant_system_id', dto.merchant_id)
+        .maybeSingle();
+      if (error || !data) throw new BadRequestException('Assigned merchant does not exist');
+    }
+    if (dto.role === 'collaborator' && dto.collaborator_id) {
+      const { data, error } = await client
+        .from('collaborators')
+        .select('id')
+        .eq('id', dto.collaborator_id)
+        .maybeSingle();
+      if (error || !data) throw new BadRequestException('Assigned collaborator does not exist');
+    }
   }
 
   async createOrUpdate(dto: CreateUserProfileDto & {
@@ -53,6 +190,15 @@ export class UserProfilesService {
     password?: string;
     status?: 'active' | 'pending' | 'inactive';
   }) {
+    const merchantId = dto.merchant_id || null;
+    const collaboratorId = dto.collaborator_id || null;
+    const validAssignment =
+      (dto.role === 'admin' && !merchantId && !collaboratorId) ||
+      (dto.role === 'merchant' && !!merchantId && !collaboratorId) ||
+      (dto.role === 'collaborator' && !merchantId && !!collaboratorId);
+    if (!validAssignment) throw new BadRequestException('Role and business-entity assignment are inconsistent');
+    await this.assertBusinessAssignment({ role: dto.role, merchant_id: merchantId, collaborator_id: collaboratorId });
+
     // Check if profile exists
     const existing = await this.findByEmail(dto.email);
 
@@ -62,8 +208,8 @@ export class UserProfilesService {
         .from('user_profiles')
         .update({
           role: dto.role,
-          merchant_id: dto.merchant_id,
-          collaborator_id: dto.collaborator_id,
+          merchant_id: merchantId,
+          collaborator_id: collaboratorId,
           user_profiles_status: dto.status || existing.user_profiles_status || 'active',
         })
         .eq('email', dto.email)
@@ -73,6 +219,9 @@ export class UserProfilesService {
       if (error) {
         throw new Error(`Failed to update user profile: ${error.message}`);
       }
+
+      await this.syncMerchantLink(data.id, dto.role, merchantId);
+      await this.syncAuthMetadata(existing.user_id, dto.role, dto.status || existing.user_profiles_status || 'active');
 
       return data;
     } else {
@@ -95,6 +244,7 @@ export class UserProfilesService {
             email_confirm: true,
             app_metadata: {
               role: dto.role,
+              account_status: dto.status || 'active',
               password_reset_required: !dto.password,
             },
           });
@@ -114,8 +264,8 @@ export class UserProfilesService {
           user_id: userId,
           email: dto.email,
           role: dto.role,
-          merchant_id: dto.merchant_id,
-          collaborator_id: dto.collaborator_id,
+          merchant_id: merchantId,
+          collaborator_id: collaboratorId,
           login_count: 0,
           user_profiles_status: dto.status || 'active',
         })
@@ -126,8 +276,44 @@ export class UserProfilesService {
         throw new Error(`Failed to create user profile: ${error.message}`);
       }
 
+      await this.syncMerchantLink(data.id, dto.role, merchantId);
+      await this.syncAuthMetadata(userId, dto.role, dto.status || 'active');
+
       return data;
     }
+  }
+
+  async recordCreation(actor: AuditActor, profile: any) {
+    await this.audit.record(actor, 'user_profile.created', 'user_profile', profile.id, {
+      role: profile.role,
+      status: profile.user_profiles_status,
+      merchant_id: profile.merchant_id,
+      collaborator_id: profile.collaborator_id,
+    });
+  }
+
+  private async syncMerchantLink(profileId: string, role: string, merchantId: string | null) {
+    const client = this.supabase.getClient();
+    const { error: deleteError } = await client.from('merchant_user_links')
+      .delete().eq('user_profile_id', profileId);
+    if (deleteError) throw new InternalServerErrorException('Unable to synchronize merchant assignment');
+    if (role === 'merchant' && merchantId) {
+      const { error } = await client.from('merchant_user_links').insert({
+        merchant_id: merchantId,
+        user_profile_id: profileId,
+      });
+      if (error) throw new InternalServerErrorException('Unable to synchronize merchant assignment');
+    }
+  }
+
+  private async syncAuthMetadata(userId: string, role: string, status: string) {
+    const client = this.supabase.getClient();
+    const { data, error } = await client.auth.admin.getUserById(userId);
+    if (error || !data.user) throw new InternalServerErrorException('Unable to load Auth account');
+    const { error: updateError } = await client.auth.admin.updateUserById(userId, {
+      app_metadata: { ...data.user.app_metadata, role, account_status: status },
+    });
+    if (updateError) throw new InternalServerErrorException('Unable to synchronize Auth account');
   }
 
   async trackLogin(email: string) {

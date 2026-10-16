@@ -15,10 +15,9 @@ export declare const MerchantSchema: z.ZodObject<{
     updated_at: z.ZodString;
 }, "strip", z.ZodTypeAny, {
     id?: string;
-    merchant_verified?: boolean;
     created_at?: string;
-    updated_at?: string;
     owner_password?: string;
+    merchant_verified?: boolean;
     owner_email?: string;
     business_name?: string;
     business_address?: string;
@@ -27,12 +26,12 @@ export declare const MerchantSchema: z.ZodObject<{
     business_description?: string;
     commission_rate?: number;
     customer_discount_rate?: number;
+    updated_at?: string;
 }, {
     id?: string;
-    merchant_verified?: boolean;
     created_at?: string;
-    updated_at?: string;
     owner_password?: string;
+    merchant_verified?: boolean;
     owner_email?: string;
     business_name?: string;
     business_address?: string;
@@ -41,6 +40,7 @@ export declare const MerchantSchema: z.ZodObject<{
     business_description?: string;
     commission_rate?: number;
     customer_discount_rate?: number;
+    updated_at?: string;
 }>;
 export type MerchantDto = z.infer<typeof MerchantSchema>;
 export declare const CreateMerchantSchema: z.ZodObject<{
@@ -59,9 +59,9 @@ export declare const CreateMerchantSchema: z.ZodObject<{
     merchant_discount_type: z.ZodOptional<z.ZodEnum<["percentage", "fixed"]>>;
     merchant_discount_value: z.ZodOptional<z.ZodNumber>;
 }, "strip", z.ZodTypeAny, {
-    merchant_name?: string;
     owner_password?: string;
     owner_email?: string;
+    merchant_name?: string;
     merchant_description?: string;
     merchant_phone?: string;
     merchant_email?: string;
@@ -74,9 +74,9 @@ export declare const CreateMerchantSchema: z.ZodObject<{
     merchant_discount_type?: "fixed" | "percentage";
     merchant_discount_value?: number;
 }, {
-    merchant_name?: string;
     owner_password?: string;
     owner_email?: string;
+    merchant_name?: string;
     merchant_description?: string;
     merchant_phone?: string;
     merchant_email?: string;
@@ -90,35 +90,179 @@ export declare const CreateMerchantSchema: z.ZodObject<{
     merchant_discount_value?: number;
 }>;
 export type CreateMerchantDto = z.infer<typeof CreateMerchantSchema>;
-export declare const UpdateMerchantSchema: z.ZodObject<{
-    business_name: z.ZodOptional<z.ZodString>;
-    business_address: z.ZodOptional<z.ZodString>;
-    business_phone: z.ZodOptional<z.ZodString>;
-    business_email: z.ZodOptional<z.ZodString>;
-    business_description: z.ZodOptional<z.ZodString>;
-    commission_rate: z.ZodOptional<z.ZodNumber>;
-    customer_discount_rate: z.ZodOptional<z.ZodNumber>;
-    merchant_verified: z.ZodOptional<z.ZodBoolean>;
-    merchants_status: z.ZodOptional<z.ZodString>;
+export declare const AdminCreateMerchantSchema: z.ZodObject<Omit<{
+    owner_email: z.ZodString;
+    owner_password: z.ZodString;
+    merchant_name: z.ZodString;
+    merchant_description: z.ZodOptional<z.ZodString>;
+    merchant_phone: z.ZodOptional<z.ZodString>;
+    merchant_email: z.ZodOptional<z.ZodString>;
+    merchant_contact_phone: z.ZodOptional<z.ZodString>;
+    new_address_city: z.ZodOptional<z.ZodString>;
+    new_address_ward: z.ZodOptional<z.ZodString>;
+    new_address_line: z.ZodOptional<z.ZodString>;
+    merchant_commission_type: z.ZodOptional<z.ZodEnum<["percentage", "fixed"]>>;
+    merchant_commission_value: z.ZodOptional<z.ZodNumber>;
+    merchant_discount_type: z.ZodOptional<z.ZodEnum<["percentage", "fixed"]>>;
+    merchant_discount_value: z.ZodOptional<z.ZodNumber>;
+}, "owner_password"> & {
+    owner_name: z.ZodOptional<z.ZodString>;
+    owner_phone: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
+    owner_email?: string;
+    merchant_name?: string;
+    merchant_description?: string;
+    merchant_phone?: string;
+    merchant_email?: string;
+    merchant_contact_phone?: string;
+    new_address_city?: string;
+    new_address_ward?: string;
+    new_address_line?: string;
+    merchant_commission_type?: "fixed" | "percentage";
+    merchant_commission_value?: number;
+    merchant_discount_type?: "fixed" | "percentage";
+    merchant_discount_value?: number;
+    owner_name?: string;
+    owner_phone?: string;
+}, {
+    owner_email?: string;
+    merchant_name?: string;
+    merchant_description?: string;
+    merchant_phone?: string;
+    merchant_email?: string;
+    merchant_contact_phone?: string;
+    new_address_city?: string;
+    new_address_ward?: string;
+    new_address_line?: string;
+    merchant_commission_type?: "fixed" | "percentage";
+    merchant_commission_value?: number;
+    merchant_discount_type?: "fixed" | "percentage";
+    merchant_discount_value?: number;
+    owner_name?: string;
+    owner_phone?: string;
+}>;
+export type AdminCreateMerchantDto = z.infer<typeof AdminCreateMerchantSchema>;
+export declare const UpdateMerchantSchema: z.ZodObject<{
+    merchant_name: z.ZodOptional<z.ZodString>;
+    merchant_description: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    merchant_phone: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    merchant_email: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    merchant_contact_phone: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    merchant_category: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    owner_name: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    owner_phone: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    new_address_city: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    new_address_ward: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    new_address_line: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+}, "strict", z.ZodTypeAny, {
+    merchant_name?: string;
+    merchant_description?: string;
+    merchant_phone?: string;
+    merchant_email?: string;
+    merchant_contact_phone?: string;
+    new_address_city?: string;
+    new_address_ward?: string;
+    new_address_line?: string;
+    owner_name?: string;
+    owner_phone?: string;
+    merchant_category?: string;
+}, {
+    merchant_name?: string;
+    merchant_description?: string;
+    merchant_phone?: string;
+    merchant_email?: string;
+    merchant_contact_phone?: string;
+    new_address_city?: string;
+    new_address_ward?: string;
+    new_address_line?: string;
+    owner_name?: string;
+    owner_phone?: string;
+    merchant_category?: string;
+}>;
+export declare const AdminUpdateMerchantSchema: z.ZodObject<{
+    merchant_name: z.ZodOptional<z.ZodString>;
+    merchant_description: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    merchant_phone: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    merchant_email: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    merchant_contact_phone: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    merchant_category: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    owner_name: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    owner_phone: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    new_address_city: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    new_address_ward: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    new_address_line: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+} & {
+    merchant_commission_type: z.ZodOptional<z.ZodNullable<z.ZodEnum<["percentage", "fixed"]>>>;
+    merchant_commission_value: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
+    merchant_discount_type: z.ZodOptional<z.ZodNullable<z.ZodEnum<["percentage", "fixed"]>>>;
+    merchant_discount_value: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
+    merchant_priority: z.ZodOptional<z.ZodNumber>;
+    merchant_verified: z.ZodOptional<z.ZodBoolean>;
+    merchants_status: z.ZodOptional<z.ZodEnum<["pending", "active", "inactive", "blocked"]>>;
+    merchant_action: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+}, "strict", z.ZodTypeAny, {
     merchant_verified?: boolean;
-    merchants_status?: string;
-    business_name?: string;
-    business_address?: string;
-    business_phone?: string;
-    business_email?: string;
-    business_description?: string;
-    commission_rate?: number;
-    customer_discount_rate?: number;
+    merchant_name?: string;
+    merchant_description?: string;
+    merchant_phone?: string;
+    merchant_email?: string;
+    merchant_contact_phone?: string;
+    new_address_city?: string;
+    new_address_ward?: string;
+    new_address_line?: string;
+    merchant_commission_type?: "fixed" | "percentage";
+    merchant_commission_value?: number;
+    merchant_discount_type?: "fixed" | "percentage";
+    merchant_discount_value?: number;
+    owner_name?: string;
+    owner_phone?: string;
+    merchant_category?: string;
+    merchant_priority?: number;
+    merchants_status?: "pending" | "active" | "blocked" | "inactive";
+    merchant_action?: string;
 }, {
     merchant_verified?: boolean;
-    merchants_status?: string;
-    business_name?: string;
-    business_address?: string;
-    business_phone?: string;
-    business_email?: string;
-    business_description?: string;
-    commission_rate?: number;
-    customer_discount_rate?: number;
+    merchant_name?: string;
+    merchant_description?: string;
+    merchant_phone?: string;
+    merchant_email?: string;
+    merchant_contact_phone?: string;
+    new_address_city?: string;
+    new_address_ward?: string;
+    new_address_line?: string;
+    merchant_commission_type?: "fixed" | "percentage";
+    merchant_commission_value?: number;
+    merchant_discount_type?: "fixed" | "percentage";
+    merchant_discount_value?: number;
+    owner_name?: string;
+    owner_phone?: string;
+    merchant_category?: string;
+    merchant_priority?: number;
+    merchants_status?: "pending" | "active" | "blocked" | "inactive";
+    merchant_action?: string;
 }>;
 export type UpdateMerchantDto = z.infer<typeof UpdateMerchantSchema>;
+export type AdminUpdateMerchantDto = z.infer<typeof AdminUpdateMerchantSchema>;
+export declare const CreateMerchantMemberSchema: z.ZodObject<{
+    collaborators_name: z.ZodString;
+    collaborators_phone: z.ZodString;
+    collaborators_email: z.ZodString;
+    collaborators_password: z.ZodString;
+    collaborators_bank_name: z.ZodOptional<z.ZodString>;
+    collaborators_bank_acc_number: z.ZodOptional<z.ZodString>;
+}, "strict", z.ZodTypeAny, {
+    collaborators_name?: string;
+    collaborators_phone?: string;
+    collaborators_email?: string;
+    collaborators_bank_name?: string;
+    collaborators_bank_acc_number?: string;
+    collaborators_password?: string;
+}, {
+    collaborators_name?: string;
+    collaborators_phone?: string;
+    collaborators_email?: string;
+    collaborators_bank_name?: string;
+    collaborators_bank_acc_number?: string;
+    collaborators_password?: string;
+}>;
+export type CreateMerchantMemberDto = z.infer<typeof CreateMerchantMemberSchema>;

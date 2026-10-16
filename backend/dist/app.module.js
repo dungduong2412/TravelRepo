@@ -21,6 +21,7 @@ const transactions_module_1 = require("./modules/transactions/transactions.modul
 const commissions_module_1 = require("./modules/commissions/commissions.module");
 const media_module_1 = require("./modules/media/media.module");
 const health_controller_1 = require("./health.controller");
+const audit_module_1 = require("./modules/audit/audit.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -42,6 +43,7 @@ exports.AppModule = AppModule = __decorate([
             transactions_module_1.TransactionsModule,
             commissions_module_1.CommissionsModule,
             media_module_1.MediaModule,
+            audit_module_1.AuditModule,
         ],
         controllers: [health_controller_1.HealthController],
     })

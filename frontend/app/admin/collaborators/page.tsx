@@ -41,6 +41,8 @@ export default function AdminCollaboratorsPage() {
   const [selected, setSelected] = useState<Collaborator | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'active'>('all');
+  const [showCreate, setShowCreate] = useState(false);
+  const [createForm, setCreateForm] = useState({ collaborators_name: '', collaborators_email: '', collaborators_phone: '' });
 
   const fetchCollaborators = useCallback(async () => {
     try {
@@ -96,6 +98,28 @@ export default function AdminCollaboratorsPage() {
     }
   }
 
+  async function handleDeactivate(id: string) {
+    if (!confirm('Deactivate this collaborator and its application access?')) return;
+    try {
+      await api.delete(`/collaborators/${id}`);
+      await fetchCollaborators();
+    } catch (e: any) {
+      setError(e.message || 'Unable to deactivate collaborator');
+    }
+  }
+
+  async function createCollaborator(event: React.FormEvent) {
+    event.preventDefault();
+    try {
+      await api.post('/collaborators/admin', createForm);
+      setCreateForm({ collaborators_name: '', collaborators_email: '', collaborators_phone: '' });
+      setShowCreate(false);
+      await fetchCollaborators();
+    } catch (e: any) {
+      setError(e.message || 'Unable to create collaborator');
+    }
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -110,7 +134,10 @@ export default function AdminCollaboratorsPage() {
   return (
     <div className="min-h-screen bg-gray-50 p-8">
       <div className="max-w-7xl mx-auto">
-        <h1 className="text-3xl font-bold text-gray-900 mb-8">Collaborator Management</h1>
+        <div className="mb-8 flex items-center justify-between gap-4">
+          <h1 className="text-3xl font-bold text-gray-900">Collaborator Management</h1>
+          <button type="button" onClick={() => setShowCreate(true)} className="rounded-lg bg-gray-900 px-4 py-2 font-semibold text-white">Create collaborator</button>
+        </div>
 
         {error && (
           <div role="alert" className="mb-6 flex items-center justify-between gap-4 rounded-lg bg-red-100 p-4 text-red-800">
@@ -218,14 +245,11 @@ export default function AdminCollaboratorsPage() {
                         </button>
                         </>
                       ) : c.collaborators_qr_code ? (
-                        <button
-                          onClick={() => setSelectedQr(c.collaborators_qr_code!)}
-                          className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded transition"
-                        >
-                          <QrCode className="w-4 h-4" />
-                          View QR Code
-                        </button>
-                      ) : null}
+                        <>
+                          <button onClick={() => setSelectedQr(c.collaborators_qr_code!)} className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded transition"><QrCode className="w-4 h-4" />View QR Code</button>
+                          <button onClick={() => handleDeactivate(c.id)} className="w-full rounded bg-red-700 px-3 py-2 text-sm font-semibold text-white">Deactivate</button>
+                        </>
+                      ) : <button onClick={() => handleDeactivate(c.id)} className="w-full rounded bg-red-700 px-3 py-2 text-sm font-semibold text-white">Deactivate</button>}
                     </div>
                   </div>
                 );
@@ -284,6 +308,19 @@ export default function AdminCollaboratorsPage() {
               Close
             </button>
           </div>
+        </div>
+      )}
+
+      {showCreate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4" onClick={() => setShowCreate(false)}>
+          <form className="w-full max-w-lg rounded-lg bg-white p-8" onSubmit={createCollaborator} onClick={(event) => event.stopPropagation()}>
+            <div className="mb-5 flex items-center justify-between"><h3 className="text-xl font-bold">Create pending collaborator</h3><button type="button" onClick={() => setShowCreate(false)} className="text-2xl">×</button></div>
+            <label className="mb-4 block text-sm font-semibold">Name<input required className="mt-1 w-full rounded border p-2 font-normal" value={createForm.collaborators_name} onChange={(e) => setCreateForm({ ...createForm, collaborators_name: e.target.value })} /></label>
+            <label className="mb-4 block text-sm font-semibold">Email<input required type="email" className="mt-1 w-full rounded border p-2 font-normal" value={createForm.collaborators_email} onChange={(e) => setCreateForm({ ...createForm, collaborators_email: e.target.value })} /></label>
+            <label className="mb-4 block text-sm font-semibold">Phone<input required className="mt-1 w-full rounded border p-2 font-normal" value={createForm.collaborators_phone} onChange={(e) => setCreateForm({ ...createForm, collaborators_phone: e.target.value })} /></label>
+            <p className="mb-4 text-sm text-gray-500">This creates a pending business record only. Account assignment and activation remain separate governed actions.</p>
+            <button type="submit" className="rounded bg-green-700 px-4 py-2 font-semibold text-white">Create pending collaborator</button>
+          </form>
         </div>
       )}
     </div>

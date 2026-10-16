@@ -34,6 +34,8 @@ export default function AdminMerchantsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionId, setActionId] = useState<string | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
+  const [createForm, setCreateForm] = useState({ owner_email: '', merchant_name: '', merchant_email: '', merchant_phone: '' });
 
   async function fetchMerchants() {
     try {
@@ -66,10 +68,7 @@ export default function AdminMerchantsPage() {
       setActionId(merchant.merchant_system_id);
       setError(null);
       if (action === 'deactivate') {
-        await api.patch(`/merchants/${merchant.merchant_system_id}`, {
-          merchant_verified: false,
-          merchants_status: 'inactive',
-        });
+        await api.delete(`/merchants/${merchant.merchant_system_id}`);
       } else {
         await api.post(`/merchants/${merchant.merchant_system_id}/${action}`);
       }
@@ -79,6 +78,24 @@ export default function AdminMerchantsPage() {
       setError(err instanceof Error ? err.message : `Unable to ${action} merchant`);
     } finally {
       setActionId(null);
+    }
+  }
+
+  async function createMerchant(event: React.FormEvent) {
+    event.preventDefault();
+    try {
+      setError(null);
+      await api.post('/merchants/admin', {
+        owner_email: createForm.owner_email,
+        merchant_name: createForm.merchant_name,
+        merchant_email: createForm.merchant_email || undefined,
+        merchant_phone: createForm.merchant_phone || undefined,
+      });
+      setCreateForm({ owner_email: '', merchant_name: '', merchant_email: '', merchant_phone: '' });
+      setShowCreate(false);
+      await fetchMerchants();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to create merchant');
     }
   }
 
@@ -92,6 +109,7 @@ export default function AdminMerchantsPage() {
           <p style={styles.subtitle}>{items.length} merchants from the live merchant directory</p>
         </div>
         <div style={styles.filters}>
+          <button type="button" onClick={() => setShowCreate(true)} style={styles.createButton}>Create merchant</button>
           {(['all', 'pending', 'active'] as MerchantFilter[]).map((value) => (
             <button
               key={value}
@@ -190,6 +208,20 @@ export default function AdminMerchantsPage() {
           </section>
         </div>
       )}
+
+      {showCreate && (
+        <div style={styles.modalOverlay} onClick={() => setShowCreate(false)}>
+          <form style={styles.modal} onSubmit={createMerchant} onClick={(event) => event.stopPropagation()}>
+            <div style={styles.modalHeader}><h3 style={styles.modalTitle}>Create pending merchant</h3><button type="button" onClick={() => setShowCreate(false)} style={styles.closeButton}>×</button></div>
+            <label style={styles.detailLabel}>Merchant name<input required value={createForm.merchant_name} onChange={(e) => setCreateForm({ ...createForm, merchant_name: e.target.value })} style={styles.input} /></label>
+            <label style={styles.detailLabel}>Owner email<input required type="email" value={createForm.owner_email} onChange={(e) => setCreateForm({ ...createForm, owner_email: e.target.value })} style={styles.input} /></label>
+            <label style={styles.detailLabel}>Business email<input type="email" value={createForm.merchant_email} onChange={(e) => setCreateForm({ ...createForm, merchant_email: e.target.value })} style={styles.input} /></label>
+            <label style={styles.detailLabel}>Business phone<input value={createForm.merchant_phone} onChange={(e) => setCreateForm({ ...createForm, merchant_phone: e.target.value })} style={styles.input} /></label>
+            <p style={styles.muted}>This creates a pending business record only. Account assignment and activation remain separate governed actions.</p>
+            <button type="submit" style={styles.approveButton}>Create pending merchant</button>
+          </form>
+        </div>
+      )}
     </div>
   );
 }
@@ -223,6 +255,7 @@ const styles: Record<string, React.CSSProperties> = {
   filters: { display: 'flex', gap: 8, flexWrap: 'wrap' },
   filterButton: { border: 0, borderRadius: 999, padding: '9px 14px', cursor: 'pointer', color: '#374151', background: '#e5e7eb' },
   filterButtonActive: { color: '#fff', background: '#2563eb' },
+  createButton: { border: 0, borderRadius: 999, padding: '9px 14px', cursor: 'pointer', color: '#fff', background: '#0f766e' },
   error: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, color: '#991b1b', background: '#fee2e2', borderRadius: 8, padding: 14, marginBottom: 16 },
   retryButton: { border: 0, borderRadius: 6, padding: '7px 12px', cursor: 'pointer' },
   tableWrapper: { overflow: 'auto', background: '#fff', borderRadius: 8, boxShadow: '0 1px 3px rgba(0,0,0,.1)' },
@@ -246,4 +279,5 @@ const styles: Record<string, React.CSSProperties> = {
   detailRow: { display: 'grid', gridTemplateColumns: '140px 1fr', gap: 14, paddingBottom: 10, borderBottom: '1px solid #e5e7eb' },
   detailLabel: { color: '#6b7280', fontWeight: 600 },
   detailValue: { margin: 0, color: '#111827', overflowWrap: 'anywhere' },
+  input: { display: 'block', width: '100%', boxSizing: 'border-box', margin: '6px 0 14px', padding: 10, border: '1px solid #cbd5e1', borderRadius: 6 },
 };

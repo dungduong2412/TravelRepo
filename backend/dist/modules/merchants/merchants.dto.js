@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.UpdateMerchantSchema = exports.CreateMerchantSchema = exports.MerchantSchema = void 0;
+exports.CreateMerchantMemberSchema = exports.AdminUpdateMerchantSchema = exports.UpdateMerchantSchema = exports.AdminCreateMerchantSchema = exports.CreateMerchantSchema = exports.MerchantSchema = void 0;
 const zod_1 = require("zod");
 const StrongPasswordSchema = zod_1.z.string().min(12)
     .regex(/[a-z]/, 'Password requires a lowercase letter')
@@ -38,15 +38,39 @@ exports.CreateMerchantSchema = zod_1.z.object({
     merchant_discount_type: zod_1.z.enum(['percentage', 'fixed']).optional(),
     merchant_discount_value: zod_1.z.number().min(0).optional(),
 });
-exports.UpdateMerchantSchema = zod_1.z.object({
-    business_name: zod_1.z.string().min(1).max(200).optional(),
-    business_address: zod_1.z.string().optional(),
-    business_phone: zod_1.z.string().min(10).max(20).optional(),
-    business_email: zod_1.z.string().email().optional(),
-    business_description: zod_1.z.string().optional(),
-    commission_rate: zod_1.z.number().min(0).max(100).optional(),
-    customer_discount_rate: zod_1.z.number().min(0).max(100).optional(),
-    merchant_verified: zod_1.z.boolean().optional(),
-    merchants_status: zod_1.z.string().optional(),
+exports.AdminCreateMerchantSchema = exports.CreateMerchantSchema.omit({ owner_password: true }).extend({
+    owner_name: zod_1.z.string().max(200).optional(),
+    owner_phone: zod_1.z.string().max(20).optional(),
 });
+exports.UpdateMerchantSchema = zod_1.z.object({
+    merchant_name: zod_1.z.string().min(1).max(200).optional(),
+    merchant_description: zod_1.z.string().max(4000).nullable().optional(),
+    merchant_phone: zod_1.z.string().min(7).max(20).nullable().optional(),
+    merchant_email: zod_1.z.string().email().nullable().optional(),
+    merchant_contact_phone: zod_1.z.string().max(20).nullable().optional(),
+    merchant_category: zod_1.z.string().max(200).nullable().optional(),
+    owner_name: zod_1.z.string().max(200).nullable().optional(),
+    owner_phone: zod_1.z.string().max(20).nullable().optional(),
+    new_address_city: zod_1.z.string().max(200).nullable().optional(),
+    new_address_ward: zod_1.z.string().max(200).nullable().optional(),
+    new_address_line: zod_1.z.string().max(1000).nullable().optional(),
+}).strict();
+exports.AdminUpdateMerchantSchema = exports.UpdateMerchantSchema.extend({
+    merchant_commission_type: zod_1.z.enum(['percentage', 'fixed']).nullable().optional(),
+    merchant_commission_value: zod_1.z.number().min(0).nullable().optional(),
+    merchant_discount_type: zod_1.z.enum(['percentage', 'fixed']).nullable().optional(),
+    merchant_discount_value: zod_1.z.number().min(0).nullable().optional(),
+    merchant_priority: zod_1.z.number().int().optional(),
+    merchant_verified: zod_1.z.boolean().optional(),
+    merchants_status: zod_1.z.enum(['pending', 'active', 'inactive', 'blocked']).optional(),
+    merchant_action: zod_1.z.string().max(500).nullable().optional(),
+}).strict();
+exports.CreateMerchantMemberSchema = zod_1.z.object({
+    collaborators_name: zod_1.z.string().min(1).max(200),
+    collaborators_phone: zod_1.z.string().min(7).max(20),
+    collaborators_email: zod_1.z.string().email(),
+    collaborators_password: StrongPasswordSchema,
+    collaborators_bank_name: zod_1.z.string().max(200).optional(),
+    collaborators_bank_acc_number: zod_1.z.string().max(100).optional(),
+}).strict();
 //# sourceMappingURL=merchants.dto.js.map

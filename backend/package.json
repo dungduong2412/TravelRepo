@@ -9,7 +9,8 @@
     "start": "node dist/main.js",
     "watch": "tsc --watch",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint 'src/**/*.ts'"
+    "lint": "eslint 'src/**/*.ts'",
+    "test:d6-contracts": "node -r ts-node/register/transpile-only scripts/test-d6-contracts.ts"
   },
   "dependencies": {
     "@nestjs/common": "^12.1.3",

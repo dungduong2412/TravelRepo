@@ -1,6 +1,17 @@
 import { Controller, Get, Post, Patch, Delete, Param, Body, UseGuards } from '@nestjs/common';
 import { MerchantsService } from './merchants.service';
-import { CreateMerchantDto, UpdateMerchantDto, CreateMerchantSchema, UpdateMerchantSchema } from './merchants.dto';
+import {
+  AdminCreateMerchantDto,
+  AdminCreateMerchantSchema,
+  AdminUpdateMerchantDto,
+  AdminUpdateMerchantSchema,
+  CreateMerchantDto,
+  CreateMerchantMemberDto,
+  CreateMerchantMemberSchema,
+  UpdateMerchantDto,
+  CreateMerchantSchema,
+  UpdateMerchantSchema,
+} from './merchants.dto';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { JwtGuard } from '../../common/auth/jwt.guard';
 import { AdminGuard } from '../../common/auth/admin.guard';
@@ -22,6 +33,38 @@ export class MerchantsController {
   @Public()
   async findVerified() {
     return this.service.findVerified();
+  }
+
+  @Get('members')
+  async listMembers(@User() actor: { id: string }) {
+    return this.service.listMembers(actor.id);
+  }
+
+  @Post('members')
+  async createMember(
+    @User() actor: { id: string },
+    @Body(new ZodValidationPipe(CreateMerchantMemberSchema)) dto: CreateMerchantMemberDto,
+  ) {
+    return this.service.createMember(actor.id, dto);
+  }
+
+  @Post('admin')
+  @UseGuards(AdminGuard)
+  async createByAdmin(
+    @User() actor: any,
+    @Body(new ZodValidationPipe(AdminCreateMerchantSchema)) dto: AdminCreateMerchantDto,
+  ) {
+    return this.service.createByAdmin(actor, dto);
+  }
+
+  @Patch(':id/admin')
+  @UseGuards(AdminGuard)
+  async updateByAdmin(
+    @User() actor: any,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(AdminUpdateMerchantSchema)) dto: AdminUpdateMerchantDto,
+  ) {
+    return this.service.updateByAdmin(actor, id, dto);
   }
 
   @Get(':id')
@@ -46,9 +89,9 @@ export class MerchantsController {
 
   @Post(':id/approve')
   @UseGuards(JwtGuard, AdminGuard)
-  async approve(@Param('id') id: string) {
+  async approve(@User() actor: any, @Param('id') id: string) {
     try {
-      return await this.service.approve(id);
+      return await this.service.approve(actor, id);
     } catch (error) {
       console.error('Approve merchant error:', error);
       throw error;
@@ -57,9 +100,9 @@ export class MerchantsController {
 
   @Post(':id/reject')
   @UseGuards(JwtGuard, AdminGuard)
-  async reject(@Param('id') id: string) {
+  async reject(@User() actor: any, @Param('id') id: string) {
     try {
-      return await this.service.reject(id);
+      return await this.service.reject(actor, id);
     } catch (error) {
       console.error('Reject merchant error:', error);
       throw error;
@@ -68,7 +111,7 @@ export class MerchantsController {
 
   @Delete(':id')
   @UseGuards(JwtGuard, AdminGuard)
-  async delete(@Param('id') id: string) {
-    return this.service.delete(id);
+  async delete(@User() actor: any, @Param('id') id: string) {
+    return this.service.deactivate(actor, id);
   }
 }

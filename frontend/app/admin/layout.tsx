@@ -52,6 +52,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     { name: 'Collaborators', path: '/admin/collaborators', icon: '👥' },
     { name: 'Merchants', path: '/admin/merchants', icon: '🏪' },
     { name: 'User Management', path: '/admin/users', icon: '👤' },
+    { name: 'Financials', path: '/admin/financials', icon: '💰' },
     { name: 'Master Data', path: '/admin/master-data', icon: '📋', 
       subItems: [
         { name: 'Organization', path: '/admin/master-data/organization' },

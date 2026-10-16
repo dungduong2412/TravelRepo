@@ -3,6 +3,7 @@
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { supabase } from '../../../lib/supabase';
+import { api } from '../../../lib/api';
 
 export default function CollaboratorDashboardLayout({
   children,
@@ -14,17 +15,21 @@ export default function CollaboratorDashboardLayout({
   const [user, setUser] = useState<any>(null);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }: any) => {
+    supabase.auth.getUser().then(async ({ data: { user } }: any) => {
       if (!user) {
         router.push('/login');
       } else {
-        setUser(user);
-        // Role-based protection - only collaborators can access collaborator routes
-        const userRole = localStorage.getItem('userRole');
-        if (userRole === 'merchant') {
+        const profile = await api.get('/user-profiles/me').catch(() => null);
+        if (!profile || profile.user_profiles_status !== 'active') {
+          router.replace('/login');
+        } else if (profile.role === 'merchant') {
           router.replace('/merchant/dashboard/profile');
-        } else if (userRole === 'admin' || (!userRole && user.email)) {
-          router.replace('/admin');
+        } else if (profile.role === 'admin') {
+          router.replace('/admin/dashboard');
+        } else if (profile.role === 'collaborator' && profile.collaborator_id) {
+          setUser(user);
+        } else {
+          router.replace('/login');
         }
       }
     });
@@ -34,6 +39,7 @@ export default function CollaboratorDashboardLayout({
     { label: 'Hồ Sơ', path: '/collaborator/dashboard/profile', icon: '👤' },
     { label: 'Mã QR', path: '/collaborator/dashboard/qr-code', icon: '📱' },
     { label: 'Người Theo Dõi', path: '/collaborator/dashboard/members', icon: '👥' },
+    { label: 'Giao Dịch & Hoa Hồng', path: '/collaborator/dashboard/reports', icon: '📊' },
   ];
 
   const handleLogout = async () => {

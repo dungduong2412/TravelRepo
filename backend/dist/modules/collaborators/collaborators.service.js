@@ -51,18 +51,23 @@ const crypto_1 = require("crypto");
 const supabase_service_1 = require("../../infrastructure/supabase/supabase.service");
 const user_profiles_service_1 = require("../user-profiles/user-profiles.service");
 const QRCode = __importStar(require("qrcode"));
+const audit_service_1 = require("../audit/audit.service");
 let CollaboratorsService = class CollaboratorsService {
-    constructor(supabase, userProfilesService) {
+    constructor(supabase, userProfilesService, audit) {
         this.supabase = supabase;
         this.userProfilesService = userProfilesService;
+        this.audit = audit;
     }
     async createCollaborator(actor, dto) {
+        await this.userProfilesService.assertIdentityAvailable(dto.collaborators_email);
         const { collaborators_password, ...restDto } = dto;
         const insertData = {
             ...restDto,
             collaborators_password: null,
-            collaborators_code: dto.collaborators_code || this.generateCollaboratorCode(),
-            collaborators_verified: dto.collaborators_verified ?? false,
+            collaborators_code: this.generateCollaboratorCode(),
+            collaborators_verified: false,
+            collaborators_status: 'pending',
+            collaborators_registered_date: new Date().toISOString(),
         };
         const { data, error } = await this.supabase.getClient()
             .from('collaborators')
@@ -73,15 +78,45 @@ let CollaboratorsService = class CollaboratorsService {
             throw new Error(`Failed to create collaborator: ${error.message}`);
         }
         if (data.collaborators_email && collaborators_password) {
-            await this.userProfilesService.createOrUpdate({
-                email: data.collaborators_email,
-                role: 'collaborator',
-                merchant_id: null,
-                collaborator_id: data.id,
-                password: collaborators_password,
-                status: 'pending',
-            });
+            try {
+                await this.userProfilesService.createOrUpdate({
+                    email: data.collaborators_email,
+                    role: 'collaborator',
+                    merchant_id: null,
+                    collaborator_id: data.id,
+                    password: collaborators_password,
+                    status: 'pending',
+                });
+            }
+            catch (identityError) {
+                await this.supabase.getClient().from('collaborators').delete().eq('id', data.id);
+                throw identityError;
+            }
         }
+        return this.withoutPassword(data);
+    }
+    async createByAdmin(actor, dto) {
+        if (dto.merchant_system_id) {
+            const { data: merchant } = await this.supabase.getClient().from('merchant_details')
+                .select('merchant_system_id').eq('merchant_system_id', dto.merchant_system_id).maybeSingle();
+            if (!merchant)
+                throw new common_1.BadRequestException('Assigned merchant does not exist');
+        }
+        const { data, error } = await this.supabase.getClient().from('collaborators').insert({
+            ...dto,
+            collaborators_code: this.generateCollaboratorCode(),
+            collaborators_password: null,
+            collaborators_registered_date: new Date().toISOString(),
+            collaborators_verified: false,
+            collaborators_status: 'pending',
+        }).select().single();
+        if (error)
+            throw new common_1.BadRequestException(`Failed to create collaborator: ${error.message}`);
+        await this.audit.record(actor, 'collaborator.created', 'collaborator', data.id, {
+            code: data.collaborators_code,
+            merchant_system_id: data.merchant_system_id,
+            status: data.collaborators_status,
+        });
         return this.withoutPassword(data);
     }
     withoutPassword(row) {
@@ -90,61 +125,32 @@ let CollaboratorsService = class CollaboratorsService {
         const { collaborators_password: _password, ...safe } = row;
         return safe;
     }
-    async assertOwnerOrAdmin(actor, collaboratorId) {
+    async assertOwner(actor, collaboratorId) {
         if (!actor?.id)
             throw new common_1.ForbiddenException('Collaborator access denied');
         const { data: profile } = await this.supabase.getClient().from('user_profiles')
             .select('role,user_profiles_status,collaborator_id').eq('user_id', actor.id).maybeSingle();
         if (!profile || profile.user_profiles_status !== 'active' ||
-            (profile.role !== 'admin' && !(profile.role === 'collaborator' && profile.collaborator_id === collaboratorId))) {
+            !(profile.role === 'collaborator' && profile.collaborator_id === collaboratorId)) {
             throw new common_1.ForbiddenException('Collaborator access denied');
         }
     }
+    async requireActiveCollaboratorProfile(userId) {
+        const { data: profile, error } = await this.supabase.getClient().from('user_profiles')
+            .select('id,role,user_profiles_status,collaborator_id')
+            .eq('user_id', userId)
+            .maybeSingle();
+        if (error || !profile || profile.role !== 'collaborator' ||
+            profile.user_profiles_status !== 'active' || !profile.collaborator_id) {
+            throw new common_1.ForbiddenException('Active collaborator access required');
+        }
+        return profile;
+    }
     async getMyCollaborator(actor) {
-        if (!actor?.id && !actor?.email) {
+        if (!actor?.id) {
             throw new common_1.NotFoundException('User identity not found in token');
         }
-        if (actor?.email) {
-            const { data: byEmailDirect, error: byEmailDirectError } = await this.supabase.getClient()
-                .from('collaborators')
-                .select('*')
-                .eq('collaborators_email', actor.email)
-                .maybeSingle();
-            if (byEmailDirectError) {
-                throw new Error(`Failed to fetch collaborator by email: ${byEmailDirectError.message}`);
-            }
-            if (byEmailDirect) {
-                return this.withoutPassword(byEmailDirect);
-            }
-        }
-        let profile = null;
-        if (actor?.id) {
-            const { data: byUserId, error: byUserIdError } = await this.supabase.getClient()
-                .from('user_profiles')
-                .select('collaborator_id, role')
-                .eq('user_id', actor.id)
-                .eq('role', 'collaborator')
-                .maybeSingle();
-            if (byUserIdError) {
-                throw new Error(`Failed to fetch collaborator profile by user_id: ${byUserIdError.message}`);
-            }
-            profile = byUserId;
-        }
-        if (!profile && actor?.email) {
-            const { data: byEmail, error: byEmailError } = await this.supabase.getClient()
-                .from('user_profiles')
-                .select('collaborator_id, role')
-                .eq('email', actor.email)
-                .eq('role', 'collaborator')
-                .maybeSingle();
-            if (byEmailError) {
-                throw new Error(`Failed to fetch collaborator profile by email: ${byEmailError.message}`);
-            }
-            profile = byEmail;
-        }
-        if (!profile?.collaborator_id) {
-            throw new common_1.NotFoundException('Collaborator profile not found');
-        }
+        const profile = await this.requireActiveCollaboratorProfile(actor.id);
         const { data, error } = await this.supabase.getClient()
             .from('collaborators')
             .select('*')
@@ -181,7 +187,7 @@ let CollaboratorsService = class CollaboratorsService {
         return 'COL-' + (0, crypto_1.randomBytes)(8).toString('hex').toUpperCase();
     }
     async updateCollaborator(actor, collaboratorId, dto) {
-        await this.assertOwnerOrAdmin(actor, collaboratorId);
+        await this.assertOwner(actor, collaboratorId);
         const { data: collaborator, error: fetchError } = await this.supabase.getClient()
             .from('collaborators')
             .select('*')
@@ -190,10 +196,9 @@ let CollaboratorsService = class CollaboratorsService {
         if (fetchError || !collaborator) {
             throw new common_1.NotFoundException('Collaborator not found');
         }
-        const { collaborators_password: _password, ...safeDto } = dto;
         const { data, error } = await this.supabase.getClient()
             .from('collaborators')
-            .update(safeDto)
+            .update(dto)
             .eq('id', collaboratorId)
             .select()
             .single();
@@ -202,8 +207,7 @@ let CollaboratorsService = class CollaboratorsService {
         }
         return this.withoutPassword(data);
     }
-    async deleteCollaborator(actor, collaboratorId) {
-        await this.assertOwnerOrAdmin(actor, collaboratorId);
+    async deactivateCollaborator(actor, collaboratorId) {
         const { data: collaborator, error: fetchError } = await this.supabase.getClient()
             .from('collaborators')
             .select('*')
@@ -212,14 +216,70 @@ let CollaboratorsService = class CollaboratorsService {
         if (fetchError || !collaborator) {
             throw new common_1.NotFoundException('Collaborator not found');
         }
-        const { error } = await this.supabase.getClient()
+        const { data, error } = await this.supabase.getClient()
             .from('collaborators')
-            .delete()
-            .eq('id', collaboratorId);
+            .update({ collaborators_verified: false, collaborators_status: 'inactive' })
+            .eq('id', collaboratorId)
+            .select()
+            .single();
         if (error) {
-            throw new Error(`Failed to delete collaborator: ${error.message}`);
+            throw new Error(`Failed to deactivate collaborator: ${error.message}`);
         }
-        return { success: true };
+        await this.supabase.getClient().from('user_profiles')
+            .update({ user_profiles_status: 'inactive' })
+            .eq('collaborator_id', collaboratorId)
+            .eq('role', 'collaborator');
+        await this.audit.record(actor, 'collaborator.deactivated', 'collaborator', collaboratorId);
+        return this.withoutPassword(data);
+    }
+    async listMembers(userId) {
+        const profile = await this.requireActiveCollaboratorProfile(userId);
+        const { data: self, error: selfError } = await this.supabase.getClient().from('collaborators')
+            .select('merchant_system_id').eq('id', profile.collaborator_id).maybeSingle();
+        if (selfError || !self?.merchant_system_id) {
+            throw new common_1.BadRequestException('Collaborator is not assigned to a merchant team');
+        }
+        const { data, error } = await this.supabase.getClient().from('collaborators')
+            .select('id,collaborators_name,collaborators_phone,collaborators_email,collaborators_avatar_url,collaborators_registered_date,collaborators_verified,collaborators_status')
+            .eq('merchant_system_id', self.merchant_system_id)
+            .order('collaborators_registered_date', { ascending: false });
+        if (error)
+            throw new Error(`Failed to fetch collaborator members: ${error.message}`);
+        return data || [];
+    }
+    async createMember(userId, dto) {
+        const profile = await this.requireActiveCollaboratorProfile(userId);
+        const { data: self } = await this.supabase.getClient().from('collaborators')
+            .select('merchant_system_id').eq('id', profile.collaborator_id).maybeSingle();
+        if (!self?.merchant_system_id) {
+            throw new common_1.BadRequestException('Collaborator is not assigned to a merchant team');
+        }
+        await this.userProfilesService.assertIdentityAvailable(dto.collaborators_email);
+        const { collaborators_password, ...safeDto } = dto;
+        const client = this.supabase.getClient();
+        const { data, error } = await client.from('collaborators').insert({
+            ...safeDto,
+            merchant_system_id: self.merchant_system_id,
+            collaborators_code: this.generateCollaboratorCode(),
+            collaborators_password: null,
+            collaborators_registered_date: new Date().toISOString(),
+            collaborators_verified: false,
+            collaborators_status: 'pending',
+        }).select().single();
+        if (error)
+            throw new common_1.BadRequestException(`Failed to create member: ${error.message}`);
+        try {
+            await this.userProfilesService.createOrUpdate({
+                email: dto.collaborators_email,
+                role: 'collaborator', merchant_id: null, collaborator_id: data.id,
+                password: collaborators_password, status: 'pending',
+            });
+        }
+        catch (error) {
+            await client.from('collaborators').delete().eq('id', data.id);
+            throw error;
+        }
+        return this.withoutPassword(data);
     }
     async resolveByCode(code) {
         const { data: collaborator, error } = await this.supabase.getClient()
@@ -258,7 +318,7 @@ let CollaboratorsService = class CollaboratorsService {
         }
         return (data || []).map((row) => this.withoutPassword(row));
     }
-    async approve(id) {
+    async approve(actor, id) {
         const { data: collaborator, error: fetchError } = await this.supabase.getClient()
             .from('collaborators')
             .select('*')
@@ -312,8 +372,15 @@ let CollaboratorsService = class CollaboratorsService {
             }
             catch (err) {
                 console.error('Failed to create user profile:', err);
+                await this.supabase.getClient().from('collaborators').update({
+                    collaborators_verified: false,
+                    collaborators_status: 'pending',
+                    collaborators_qr_code: collaborator.collaborators_qr_code || null,
+                }).eq('id', id);
+                throw new Error('Collaborator approved but account activation failed');
             }
         }
+        await this.audit.record(actor, 'collaborator.approved', 'collaborator', id);
         return this.withoutPassword(data);
     }
     async resolveByQrToken(qrToken) {
@@ -333,7 +400,7 @@ let CollaboratorsService = class CollaboratorsService {
             verified: collaborator.collaborators_verified,
         };
     }
-    async reject(id) {
+    async reject(actor, id) {
         const { data, error } = await this.supabase.getClient()
             .from('collaborators')
             .update({
@@ -346,32 +413,30 @@ let CollaboratorsService = class CollaboratorsService {
         if (error || !data) {
             throw new common_1.NotFoundException('Failed to reject collaborator');
         }
-        return data;
+        await this.supabase.getClient().from('user_profiles')
+            .update({ user_profiles_status: 'blocked' })
+            .eq('collaborator_id', id)
+            .eq('role', 'collaborator');
+        await this.audit.record(actor, 'collaborator.rejected', 'collaborator', id);
+        return this.withoutPassword(data);
     }
-    async create(dto) {
-        const qrCode = (0, crypto_1.randomBytes)(16).toString('hex');
-        const { collaborators_password, ...restDto } = dto;
-        const { data, error } = await this.supabase.getClient()
-            .from('collaborators')
-            .insert({
-            ...restDto,
-            collaborators_password: null,
-            qr_code: qrCode,
-            collaborators_code: this.generateCollaboratorCode(),
-            collaborators_verified: false,
-            collaborators_status: 'pending',
-        })
-            .select()
-            .single();
-        if (error) {
-            throw new Error(`Failed to create collaborator: ${error.message}`);
+    async updateByAdmin(actor, id, dto) {
+        const before = await this.findOne(id);
+        if (dto.merchant_system_id) {
+            const { data: merchant } = await this.supabase.getClient().from('merchant_details')
+                .select('merchant_system_id').eq('merchant_system_id', dto.merchant_system_id).maybeSingle();
+            if (!merchant)
+                throw new common_1.BadRequestException('Assigned merchant does not exist');
         }
-        if (data.collaborators_email && collaborators_password) {
-            await this.userProfilesService.createOrUpdate({
-                email: data.collaborators_email, role: 'collaborator', merchant_id: null,
-                collaborator_id: data.id, password: collaborators_password, status: 'pending',
-            });
-        }
+        const { data, error } = await this.supabase.getClient().from('collaborators')
+            .update(dto).eq('id', id).select().single();
+        if (error || !data)
+            throw new common_1.NotFoundException('Failed to update collaborator');
+        await this.audit.record(actor, 'collaborator.updated', 'collaborator', id, {
+            changed_fields: Object.keys(dto),
+            previous_status: before.collaborators_status,
+            status: data.collaborators_status,
+        });
         return this.withoutPassword(data);
     }
     async findOne(id) {
@@ -382,19 +447,6 @@ let CollaboratorsService = class CollaboratorsService {
             .single();
         if (error || !data) {
             throw new common_1.NotFoundException('Collaborator not found');
-        }
-        return this.withoutPassword(data);
-    }
-    async update(id, dto) {
-        const { collaborators_password: _password, ...safeDto } = dto;
-        const { data, error } = await this.supabase.getClient()
-            .from('collaborators')
-            .update(safeDto)
-            .eq('id', id)
-            .select()
-            .single();
-        if (error || !data) {
-            throw new common_1.NotFoundException('Failed to update collaborator');
         }
         return this.withoutPassword(data);
     }
@@ -428,6 +480,7 @@ exports.CollaboratorsService = CollaboratorsService = __decorate([
     (0, common_1.Injectable)(),
     __param(1, (0, common_1.Inject)((0, common_1.forwardRef)(() => user_profiles_service_1.UserProfilesService))),
     __metadata("design:paramtypes", [supabase_service_1.SupabaseService,
-        user_profiles_service_1.UserProfilesService])
+        user_profiles_service_1.UserProfilesService,
+        audit_service_1.AuditService])
 ], CollaboratorsService);
 //# sourceMappingURL=collaborators.service.js.map

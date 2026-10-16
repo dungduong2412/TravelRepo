@@ -3,6 +3,7 @@
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { supabase } from '../../../lib/supabase';
+import { api } from '../../../lib/api';
 
 export default function MerchantDashboardLayout({
   children,
@@ -14,17 +15,21 @@ export default function MerchantDashboardLayout({
   const [user, setUser] = useState<any>(null);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }: any) => {
+    supabase.auth.getUser().then(async ({ data: { user } }: any) => {
       if (!user) {
         router.push('/login');
       } else {
-        setUser(user);
-        // Role-based protection - only merchants can access merchant routes
-        const userRole = localStorage.getItem('userRole');
-        if (userRole === 'collaborator') {
+        const profile = await api.get('/user-profiles/me').catch(() => null);
+        if (!profile || profile.user_profiles_status !== 'active') {
+          router.replace('/login');
+        } else if (profile.role === 'collaborator') {
           router.replace('/collaborator/dashboard/profile');
-        } else if (userRole === 'admin' || (!userRole && user.email)) {
-          router.replace('/admin');
+        } else if (profile.role === 'admin') {
+          router.replace('/admin/dashboard');
+        } else if (profile.role === 'merchant' && profile.merchant_id) {
+          setUser(user);
+        } else {
+          router.replace('/login');
         }
       }
     });
@@ -33,6 +38,7 @@ export default function MerchantDashboardLayout({
   const menuItems = [
     { label: 'Hồ Sơ', path: '/merchant/dashboard/profile', icon: '👤' },
     { label: 'Người Theo Dõi', path: '/merchant/dashboard/members', icon: '👥' },
+    { label: 'Giao Dịch & Hoa Hồng', path: '/merchant/dashboard/reports', icon: '📊' },
   ];
 
   const handleLogout = async () => {

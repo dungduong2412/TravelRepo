@@ -20,7 +20,6 @@ const admin_guard_1 = require("../../common/auth/admin.guard");
 const user_decorator_1 = require("../../common/auth/user.decorator");
 const zod_validation_pipe_1 = require("../../common/pipes/zod-validation.pipe");
 const user_profiles_dto_1 = require("./user-profiles.dto");
-const zod_1 = require("zod");
 let UserProfilesController = class UserProfilesController {
     constructor(userProfilesService) {
         this.userProfilesService = userProfilesService;
@@ -43,14 +42,23 @@ let UserProfilesController = class UserProfilesController {
         }
         return this.userProfilesService.trackLogin(actor.email);
     }
-    async createUser(dto) {
-        return this.userProfilesService.createOrUpdate({
+    async findById(id) {
+        return this.userProfilesService.findById(id);
+    }
+    async updateManagedProfile(id, actor, dto) {
+        return this.userProfilesService.updateManagedProfile(actor, id, dto);
+    }
+    async createUser(actor, dto) {
+        await this.userProfilesService.assertIdentityAvailable(dto.email);
+        const profile = await this.userProfilesService.createOrUpdate({
             email: dto.email,
             role: dto.role,
             merchant_id: dto.merchant_id || null,
             collaborator_id: dto.collaborator_id || null,
             password: dto.password,
         });
+        await this.userProfilesService.recordCreation(actor, profile);
+        return profile;
     }
 };
 exports.UserProfilesController = UserProfilesController;
@@ -83,14 +91,30 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], UserProfilesController.prototype, "trackLogin", null);
 __decorate([
+    (0, common_1.Get)(':id'),
+    (0, common_1.UseGuards)(admin_guard_1.AdminGuard),
+    __param(0, (0, common_1.Param)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], UserProfilesController.prototype, "findById", null);
+__decorate([
+    (0, common_1.Patch)(':id'),
+    (0, common_1.UseGuards)(admin_guard_1.AdminGuard),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, user_decorator_1.User)()),
+    __param(2, (0, common_1.Body)(new zod_validation_pipe_1.ZodValidationPipe(user_profiles_dto_1.UpdateManagedUserProfileSchema))),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object, Object]),
+    __metadata("design:returntype", Promise)
+], UserProfilesController.prototype, "updateManagedProfile", null);
+__decorate([
     (0, common_1.Post)('create'),
     (0, common_1.UseGuards)(admin_guard_1.AdminGuard),
-    __param(0, (0, common_1.Body)(new zod_validation_pipe_1.ZodValidationPipe(user_profiles_dto_1.CreateUserProfileSchema.extend({
-        password: zod_1.z.string().min(12)
-            .regex(/[a-z]/).regex(/[A-Z]/).regex(/\d/).regex(/[^A-Za-z0-9]/),
-    })))),
+    __param(0, (0, user_decorator_1.User)()),
+    __param(1, (0, common_1.Body)(new zod_validation_pipe_1.ZodValidationPipe(user_profiles_dto_1.CreateManagedUserProfileSchema))),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [Object, Object]),
     __metadata("design:returntype", Promise)
 ], UserProfilesController.prototype, "createUser", null);
 exports.UserProfilesController = UserProfilesController = __decorate([

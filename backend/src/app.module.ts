@@ -12,6 +12,7 @@ import { TransactionsModule } from './modules/transactions/transactions.module';
 import { CommissionsModule } from './modules/commissions/commissions.module';
 import { MediaModule } from './modules/media/media.module';
 import { HealthController } from './health.controller';
+import { AuditModule } from './modules/audit/audit.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { HealthController } from './health.controller';
     TransactionsModule,
     CommissionsModule,
     MediaModule,
+    AuditModule,
   ],
   controllers: [HealthController],
 })

@@ -16,6 +16,12 @@ import { Public } from '../../common/decorators/public.decorator';
 import {
   CreateCollaboratorSchema,
   CreateCollaboratorDto,
+  AdminCreateCollaboratorSchema,
+  AdminCreateCollaboratorDto,
+  CreateCollaboratorMemberSchema,
+  CreateCollaboratorMemberDto,
+  AdminUpdateCollaboratorSchema,
+  AdminUpdateCollaboratorDto,
   UpdateCollaboratorSchema,
   UpdateCollaboratorDto,
 } from './collaborators.dto';
@@ -41,6 +47,15 @@ export class CollaboratorsController {
     return this.service.listAll();
   }
 
+  @Post('admin')
+  @UseGuards(AdminGuard)
+  createByAdmin(
+    @User() actor: any,
+    @Body(new ZodValidationPipe(AdminCreateCollaboratorSchema)) dto: AdminCreateCollaboratorDto,
+  ) {
+    return this.service.createByAdmin(actor, dto);
+  }
+
   @Get('me')
   getMe(@User() actor: any) {
     return this.service.getMyCollaborator(actor);
@@ -51,6 +66,19 @@ export class CollaboratorsController {
     return this.service.getMyQrCode(actor);
   }
 
+  @Get('members')
+  listMembers(@User() actor: { id: string }) {
+    return this.service.listMembers(actor.id);
+  }
+
+  @Post('members')
+  createMember(
+    @User() actor: { id: string },
+    @Body(new ZodValidationPipe(CreateCollaboratorMemberSchema)) dto: CreateCollaboratorMemberDto,
+  ) {
+    return this.service.createMember(actor.id, dto);
+  }
+
   @Get('code/:code')
   @Public()
   resolveByCode(@Param('code') code: string) {
@@ -59,14 +87,24 @@ export class CollaboratorsController {
 
   @Post(':id/approve')
   @UseGuards(AdminGuard)
-  approve(@Param('id') id: string) {
-    return this.service.approve(id);
+  approve(@User() actor: any, @Param('id') id: string) {
+    return this.service.approve(actor, id);
   }
 
   @Post(':id/reject')
   @UseGuards(AdminGuard)
-  reject(@Param('id') id: string) {
-    return this.service.reject(id);
+  reject(@User() actor: any, @Param('id') id: string) {
+    return this.service.reject(actor, id);
+  }
+
+  @Patch(':id/admin')
+  @UseGuards(AdminGuard)
+  updateByAdmin(
+    @User() actor: any,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(AdminUpdateCollaboratorSchema)) dto: AdminUpdateCollaboratorDto,
+  ) {
+    return this.service.updateByAdmin(actor, id, dto);
   }
 
   @Patch(':id')
@@ -79,10 +117,11 @@ export class CollaboratorsController {
   }
 
   @Delete(':id')
+  @UseGuards(AdminGuard)
   remove(
     @User() actor: any,
     @Param('id') id: string,
   ) {
-    return this.service.deleteCollaborator(actor, id);
+    return this.service.deactivateCollaborator(actor, id);
   }
 }

@@ -31,6 +31,18 @@ let MerchantsController = class MerchantsController {
     async findVerified() {
         return this.service.findVerified();
     }
+    async listMembers(actor) {
+        return this.service.listMembers(actor.id);
+    }
+    async createMember(actor, dto) {
+        return this.service.createMember(actor.id, dto);
+    }
+    async createByAdmin(actor, dto) {
+        return this.service.createByAdmin(actor, dto);
+    }
+    async updateByAdmin(actor, id, dto) {
+        return this.service.updateByAdmin(actor, id, dto);
+    }
     async findById(actor, id) {
         return this.service.findByIdForActor(actor.id, id);
     }
@@ -40,26 +52,26 @@ let MerchantsController = class MerchantsController {
     async update(actor, id, dto) {
         return this.service.updateForActor(actor.id, id, dto);
     }
-    async approve(id) {
+    async approve(actor, id) {
         try {
-            return await this.service.approve(id);
+            return await this.service.approve(actor, id);
         }
         catch (error) {
             console.error('Approve merchant error:', error);
             throw error;
         }
     }
-    async reject(id) {
+    async reject(actor, id) {
         try {
-            return await this.service.reject(id);
+            return await this.service.reject(actor, id);
         }
         catch (error) {
             console.error('Reject merchant error:', error);
             throw error;
         }
     }
-    async delete(id) {
-        return this.service.delete(id);
+    async delete(actor, id) {
+        return this.service.deactivate(actor, id);
     }
 };
 exports.MerchantsController = MerchantsController;
@@ -77,6 +89,40 @@ __decorate([
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", Promise)
 ], MerchantsController.prototype, "findVerified", null);
+__decorate([
+    (0, common_1.Get)('members'),
+    __param(0, (0, user_decorator_1.User)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], MerchantsController.prototype, "listMembers", null);
+__decorate([
+    (0, common_1.Post)('members'),
+    __param(0, (0, user_decorator_1.User)()),
+    __param(1, (0, common_1.Body)(new zod_validation_pipe_1.ZodValidationPipe(merchants_dto_1.CreateMerchantMemberSchema))),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", Promise)
+], MerchantsController.prototype, "createMember", null);
+__decorate([
+    (0, common_1.Post)('admin'),
+    (0, common_1.UseGuards)(admin_guard_1.AdminGuard),
+    __param(0, (0, user_decorator_1.User)()),
+    __param(1, (0, common_1.Body)(new zod_validation_pipe_1.ZodValidationPipe(merchants_dto_1.AdminCreateMerchantSchema))),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", Promise)
+], MerchantsController.prototype, "createByAdmin", null);
+__decorate([
+    (0, common_1.Patch)(':id/admin'),
+    (0, common_1.UseGuards)(admin_guard_1.AdminGuard),
+    __param(0, (0, user_decorator_1.User)()),
+    __param(1, (0, common_1.Param)('id')),
+    __param(2, (0, common_1.Body)(new zod_validation_pipe_1.ZodValidationPipe(merchants_dto_1.AdminUpdateMerchantSchema))),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String, Object]),
+    __metadata("design:returntype", Promise)
+], MerchantsController.prototype, "updateByAdmin", null);
 __decorate([
     (0, common_1.Get)(':id'),
     __param(0, (0, user_decorator_1.User)()),
@@ -105,25 +151,28 @@ __decorate([
 __decorate([
     (0, common_1.Post)(':id/approve'),
     (0, common_1.UseGuards)(jwt_guard_1.JwtGuard, admin_guard_1.AdminGuard),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, user_decorator_1.User)()),
+    __param(1, (0, common_1.Param)('id')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
+    __metadata("design:paramtypes", [Object, String]),
     __metadata("design:returntype", Promise)
 ], MerchantsController.prototype, "approve", null);
 __decorate([
     (0, common_1.Post)(':id/reject'),
     (0, common_1.UseGuards)(jwt_guard_1.JwtGuard, admin_guard_1.AdminGuard),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, user_decorator_1.User)()),
+    __param(1, (0, common_1.Param)('id')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
+    __metadata("design:paramtypes", [Object, String]),
     __metadata("design:returntype", Promise)
 ], MerchantsController.prototype, "reject", null);
 __decorate([
     (0, common_1.Delete)(':id'),
     (0, common_1.UseGuards)(jwt_guard_1.JwtGuard, admin_guard_1.AdminGuard),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, user_decorator_1.User)()),
+    __param(1, (0, common_1.Param)('id')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
+    __metadata("design:paramtypes", [Object, String]),
     __metadata("design:returntype", Promise)
 ], MerchantsController.prototype, "delete", null);
 exports.MerchantsController = MerchantsController = __decorate([

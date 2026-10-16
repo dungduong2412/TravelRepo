@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { apiFetch } from '../../../../lib/api';
+import MediaManager from '../../../../components/MediaManager';
 
 export default function MerchantProfilePage() {
   const [loading, setLoading] = useState(true);
@@ -10,7 +11,6 @@ export default function MerchantProfilePage() {
   const [success, setSuccess] = useState(false);
   const [categories, setCategories] = useState<any[]>([]);
   const [merchant, setMerchant] = useState<any>(null);
-  const [avatarPreview, setAvatarPreview] = useState<string>('');
   
   const [formData, setFormData] = useState({
     merchant_name: '',
@@ -22,14 +22,8 @@ export default function MerchantProfilePage() {
     new_address_city: '',
     new_address_ward: '',
     new_address_line: '',
-    merchant_commission_type: 'percentage' as 'percentage' | 'fixed',
-    merchant_commission_value: '',
-    merchant_discount_type: 'percentage' as 'percentage' | 'fixed',
-    merchant_discount_value: '',
     owner_name: '',
-    owner_email: '',
     owner_phone: '',
-    merchant_avatar_url: '',
   });
 
   useEffect(() => {
@@ -73,20 +67,9 @@ export default function MerchantProfilePage() {
         new_address_city: data.new_address_city || '',
         new_address_ward: data.new_address_ward || '',
         new_address_line: data.new_address_line || '',
-        merchant_commission_type: data.merchant_commission_type || 'percentage',
-        merchant_commission_value: data.merchant_commission_value || '',
-        merchant_discount_type: data.merchant_discount_type || 'percentage',
-        merchant_discount_value: data.merchant_discount_value || '',
         owner_name: data.owner_name || '',
-        owner_email: data.owner_email || '',
         owner_phone: data.owner_phone || '',
-        merchant_avatar_url: data.merchant_avatar_url || '',
       });
-      
-      // Set avatar preview if exists
-      if (data.merchant_avatar_url) {
-        setAvatarPreview(data.merchant_avatar_url);
-      }
     } catch (err: any) {
       setError(err.message || 'Không thể tải thông tin');
     } finally {
@@ -97,32 +80,6 @@ export default function MerchantProfilePage() {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
-  };
-
-  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    // Check file size (max 10MB)
-    if (file.size > 10 * 1024 * 1024) {
-      setError('Ảnh quá lớn. Vui lòng chọn ảnh nhỏ hơn 10MB');
-      return;
-    }
-
-    // Check file type
-    if (!file.type.startsWith('image/')) {
-      setError('Vui lòng chọn file ảnh');
-      return;
-    }
-
-    // Convert to base64
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const base64String = reader.result as string;
-      setAvatarPreview(base64String);
-      setFormData(prev => ({ ...prev, merchant_avatar_url: base64String }));
-    };
-    reader.readAsDataURL(file);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -141,19 +98,9 @@ export default function MerchantProfilePage() {
       
       const { id } = JSON.parse(merchantData);
       
-      const payload = {
-        ...formData,
-        merchant_commission_value: formData.merchant_commission_value 
-          ? Number(formData.merchant_commission_value) 
-          : undefined,
-        merchant_discount_value: formData.merchant_discount_value 
-          ? Number(formData.merchant_discount_value) 
-          : undefined,
-      };
-      
       await apiFetch(`/merchants/${id}`, {
         method: 'PATCH',
-        body: JSON.stringify(payload),
+        body: JSON.stringify(formData),
       });
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);
@@ -205,35 +152,6 @@ export default function MerchantProfilePage() {
         <div style={styles.card}>
           <h2 style={styles.cardTitle}>Thông Tin Chủ Sở Hữu</h2>
           
-          {/* Avatar Upload Section */}
-          <div style={styles.avatarSection}>
-            <label style={styles.label}>Ảnh Đại Diện</label>
-            <div style={styles.avatarContainer}>
-              <div style={styles.avatarCircle}>
-                {avatarPreview ? (
-                  <img src={avatarPreview} alt="Avatar" style={styles.avatarImage} />
-                ) : (
-                  <div style={styles.avatarPlaceholder}>
-                    <span style={{ fontSize: '48px' }}>🏢</span>
-                  </div>
-                )}
-              </div>
-              <div style={styles.avatarUpload}>
-                <label htmlFor="merchant-avatar-upload" style={styles.uploadButton}>
-                  📷 Chọn Ảnh
-                </label>
-                <input
-                  id="merchant-avatar-upload"
-                  type="file"
-                  accept="image/*"
-                  onChange={handleAvatarChange}
-                  style={styles.fileInput}
-                />
-                <p style={styles.uploadHint}>Kích thước tối đa: 10MB</p>
-              </div>
-            </div>
-          </div>
-          
           <div style={styles.formGroup}>
             <label style={styles.label}>Họ và Tên Chủ Sở Hữu</label>
             <input
@@ -246,13 +164,7 @@ export default function MerchantProfilePage() {
 
           <div style={styles.formGroup}>
             <label style={styles.label}>Email Chủ Sở Hữu</label>
-            <input
-              name="owner_email"
-              type="email"
-              value={formData.owner_email}
-              onChange={handleChange}
-              style={styles.input}
-            />
+            <input value={merchant?.owner_email || ''} readOnly style={{ ...styles.input, background: '#f8fafc' }} />
           </div>
 
           <div style={styles.formGroup}>
@@ -377,81 +289,12 @@ export default function MerchantProfilePage() {
 
         <div style={styles.card}>
           <h2 style={styles.cardTitle}>Hoa Hồng & Giảm Giá</h2>
-          
-          <div style={styles.formGroup}>
-            <label style={styles.label}>Loại Hoa Hồng</label>
-            <div style={styles.radioGroup}>
-              <label style={styles.radioLabel}>
-                <input
-                  type="radio"
-                  name="merchant_commission_type"
-                  value="percentage"
-                  checked={formData.merchant_commission_type === 'percentage'}
-                  onChange={handleChange}
-                />
-                <span>Phần trăm (%)</span>
-              </label>
-              <label style={styles.radioLabel}>
-                <input
-                  type="radio"
-                  name="merchant_commission_type"
-                  value="fixed"
-                  checked={formData.merchant_commission_type === 'fixed'}
-                  onChange={handleChange}
-                />
-                <span>Cố định (VNĐ)</span>
-              </label>
-            </div>
-          </div>
-
-          <div style={styles.formGroup}>
-            <label style={styles.label}>Giá Trị Hoa Hồng</label>
-            <input
-              name="merchant_commission_value"
-              type="number"
-              value={formData.merchant_commission_value}
-              onChange={handleChange}
-              style={styles.input}
-            />
-          </div>
-
-          <div style={styles.formGroup}>
-            <label style={styles.label}>Loại Giảm Giá</label>
-            <div style={styles.radioGroup}>
-              <label style={styles.radioLabel}>
-                <input
-                  type="radio"
-                  name="merchant_discount_type"
-                  value="percentage"
-                  checked={formData.merchant_discount_type === 'percentage'}
-                  onChange={handleChange}
-                />
-                <span>Phần trăm (%)</span>
-              </label>
-              <label style={styles.radioLabel}>
-                <input
-                  type="radio"
-                  name="merchant_discount_type"
-                  value="fixed"
-                  checked={formData.merchant_discount_type === 'fixed'}
-                  onChange={handleChange}
-                />
-                <span>Cố định (VNĐ)</span>
-              </label>
-            </div>
-          </div>
-
-          <div style={styles.formGroup}>
-            <label style={styles.label}>Giá Trị Giảm Giá</label>
-            <input
-              name="merchant_discount_value"
-              type="number"
-              value={formData.merchant_discount_value}
-              onChange={handleChange}
-              style={styles.input}
-            />
-          </div>
+          <p style={{ color: '#64748b', margin: 0 }}>Các điều khoản này do Platform Admin quản trị.</p>
+          <p>Hoa hồng: {merchant?.merchant_commission_value ?? '-'} ({merchant?.merchant_commission_type || 'chưa cấu hình'})</p>
+          <p>Giảm giá: {merchant?.merchant_discount_value ?? '-'} ({merchant?.merchant_discount_type || 'chưa cấu hình'})</p>
         </div>
+
+        <MediaManager title="Hình ảnh doanh nghiệp" />
 
         {error && <div style={styles.error}>{error}</div>}
         {success && <div style={styles.success}>✓ Cập nhật thành công!</div>}

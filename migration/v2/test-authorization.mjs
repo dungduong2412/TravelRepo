@@ -129,7 +129,7 @@ if (backend) {
   assert('anonymous organization write denial', organizationWrite.status === 401, `HTTP ${organizationWrite.status}`);
   const ownMerchantUpdate = await fetch(`${backend}/merchants/${personas[1].entity}`, {
     method: 'PATCH', headers: { ...merchantHeaders, 'content-type': 'application/json' },
-    body: JSON.stringify({ merchants_status: 'active' }),
+    body: JSON.stringify({ merchant_description: 'Local authorization rehearsal' }),
   });
   assert('merchant own update', ownMerchantUpdate.status === 200, `HTTP ${ownMerchantUpdate.status}`);
   const ownMerchantRead = await fetch(`${backend}/merchants/${personas[1].entity}`, {
@@ -145,7 +145,7 @@ if (backend) {
     `HTTP ${foreignMerchantRead.status}`);
   const foreignMerchantUpdate = await fetch(`${backend}/merchants/${personas[1].entity}`, {
     method: 'PATCH', headers: { Authorization: `Bearer ${personas[2].token}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ merchants_status: 'active' }),
+    body: JSON.stringify({ merchant_description: 'cross-role write must fail' }),
   });
   assert('collaborator foreign merchant denial', foreignMerchantUpdate.status === 403, `HTTP ${foreignMerchantUpdate.status}`);
 }

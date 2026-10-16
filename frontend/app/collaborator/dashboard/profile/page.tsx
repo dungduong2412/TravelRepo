@@ -2,17 +2,15 @@
 
 import { useState, useEffect } from 'react';
 import { apiFetch } from '../../../../lib/api';
-import { useRouter } from 'next/navigation';
+import MediaManager from '../../../../components/MediaManager';
 
 export default function CollaboratorProfilePage() {
-  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   
   const [collaborator, setCollaborator] = useState<any>(null);
-  const [avatarPreview, setAvatarPreview] = useState<string>('');
   
   const [formData, setFormData] = useState({
     collaborators_name: '',
@@ -21,7 +19,6 @@ export default function CollaboratorProfilePage() {
     collaborators_bank_name: '',
     collaborators_bank_acc_name: '',
     collaborators_bank_acc_number: '',
-    collaborators_avatar_url: '',
   });
 
   useEffect(() => {
@@ -42,13 +39,7 @@ export default function CollaboratorProfilePage() {
         collaborators_bank_name: data.collaborators_bank_name || '',
         collaborators_bank_acc_name: data.collaborators_bank_acc_name || '',
         collaborators_bank_acc_number: data.collaborators_bank_acc_number || '',
-        collaborators_avatar_url: data.collaborators_avatar_url || '',
       });
-      
-      // Set avatar preview if exists
-      if (data.collaborators_avatar_url) {
-        setAvatarPreview(data.collaborators_avatar_url);
-      }
     } catch (err: any) {
       setError(err.message || 'Không thể tải thông tin');
     } finally {
@@ -61,32 +52,6 @@ export default function CollaboratorProfilePage() {
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    // Check file size (max 10MB)
-    if (file.size > 10 * 1024 * 1024) {
-      setError('Ảnh quá lớn. Vui lòng chọn ảnh nhỏ hơn 10MB');
-      return;
-    }
-
-    // Check file type
-    if (!file.type.startsWith('image/')) {
-      setError('Vui lòng chọn file ảnh');
-      return;
-    }
-
-    // Convert to base64
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const base64String = reader.result as string;
-      setAvatarPreview(base64String);
-      setFormData(prev => ({ ...prev, collaborators_avatar_url: base64String }));
-    };
-    reader.readAsDataURL(file);
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
@@ -94,16 +59,13 @@ export default function CollaboratorProfilePage() {
     setSuccess(false);
 
     try {
-      const collaboratorData = localStorage.getItem('collaborator');
-      if (!collaboratorData) {
+      if (!collaborator?.id) {
         setError('Không tìm thấy thông tin đăng nhập');
         setSaving(false);
         return;
       }
-      
-      const { id } = JSON.parse(collaboratorData);
-      
-      await apiFetch(`/collaborators/${id}`, {
+
+      await apiFetch(`/collaborators/${collaborator.id}`, {
         method: 'PATCH',
         body: JSON.stringify(formData),
       });
@@ -163,35 +125,6 @@ export default function CollaboratorProfilePage() {
         <div style={styles.card}>
           <h2 style={styles.cardTitle}>Thông Tin Cá Nhân</h2>
           
-          {/* Avatar Upload Section */}
-          <div style={styles.avatarSection}>
-            <label style={styles.label}>Ảnh Đại Diện</label>
-            <div style={styles.avatarContainer}>
-              <div style={styles.avatarCircle}>
-                {avatarPreview ? (
-                  <img src={avatarPreview} alt="Avatar" style={styles.avatarImage} />
-                ) : (
-                  <div style={styles.avatarPlaceholder}>
-                    <span style={{ fontSize: '48px' }}>👤</span>
-                  </div>
-                )}
-              </div>
-              <div style={styles.avatarUpload}>
-                <label htmlFor="avatar-upload" style={styles.uploadButton}>
-                  📷 Chọn Ảnh
-                </label>
-                <input
-                  id="avatar-upload"
-                  type="file"
-                  accept="image/*"
-                  onChange={handleAvatarChange}
-                  style={styles.fileInput}
-                />
-                <p style={styles.uploadHint}>Kích thước tối đa: 10MB</p>
-              </div>
-            </div>
-          </div>
-          
           <div style={styles.formGroup}>
             <label style={styles.label}>Họ và Tên</label>
             <input
@@ -226,6 +159,8 @@ export default function CollaboratorProfilePage() {
             />
           </div>
         </div>
+
+        <MediaManager title="Hình ảnh cộng tác viên" />
 
         <div style={styles.card}>
           <h2 style={styles.cardTitle}>Thông Tin Ngân Hàng</h2>

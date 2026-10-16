@@ -17,5 +17,7 @@ export declare class UserProfilesController {
     }>;
     getMyProfile(actor: any): Promise<any>;
     trackLogin(actor: any): Promise<any>;
-    createUser(dto: any): Promise<any>;
+    findById(id: string): Promise<any>;
+    updateManagedProfile(id: string, actor: any, dto: any): Promise<any>;
+    createUser(actor: any, dto: any): Promise<any>;
 }

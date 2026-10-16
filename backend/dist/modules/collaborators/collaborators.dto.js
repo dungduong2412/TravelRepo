@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.UpdateCollaboratorSchema = exports.CreateCollaboratorSchema = void 0;
+exports.CreateCollaboratorMemberSchema = exports.AdminUpdateCollaboratorSchema = exports.UpdateCollaboratorSchema = exports.AdminCreateCollaboratorSchema = exports.CreateCollaboratorSchema = void 0;
 const zod_1 = require("zod");
 const StrongPasswordSchema = zod_1.z.string().min(12)
     .regex(/[a-z]/, 'Password requires a lowercase letter')
@@ -8,20 +8,32 @@ const StrongPasswordSchema = zod_1.z.string().min(12)
     .regex(/\d/, 'Password requires a number')
     .regex(/[^A-Za-z0-9]/, 'Password requires a symbol');
 exports.CreateCollaboratorSchema = zod_1.z.object({
-    collaborators_name: zod_1.z.string().min(1),
-    collaborators_phone: zod_1.z.string().min(10).max(20),
+    collaborators_name: zod_1.z.string().min(1).max(200),
+    collaborators_phone: zod_1.z.string().min(7).max(20),
     collaborators_email: zod_1.z.string().email(),
-    collaborators_code: zod_1.z.string().optional(),
-    collaborators_verified: zod_1.z.boolean().optional(),
-    collaborators_rating: zod_1.z.number().optional(),
-    collaborators_bank_name: zod_1.z.string().optional(),
-    collaborators_bank_acc_name: zod_1.z.string().optional(),
-    collaborators_bank_acc_number: zod_1.z.string().optional(),
-    collaborators_registered_date: zod_1.z.string().optional(),
-    collaborators_remark_followup_action: zod_1.z.string().optional(),
+    collaborators_bank_name: zod_1.z.string().max(200).optional(),
+    collaborators_bank_acc_name: zod_1.z.string().max(200).optional(),
+    collaborators_bank_acc_number: zod_1.z.string().max(100).optional(),
     collaborators_password: StrongPasswordSchema,
-    collaborators_avatar_url: zod_1.z.string().url().optional(),
-    collaborators_qr_code: zod_1.z.string().optional(),
+}).strict();
+exports.AdminCreateCollaboratorSchema = exports.CreateCollaboratorSchema.omit({ collaborators_password: true }).extend({
+    merchant_system_id: zod_1.z.string().uuid().nullable().optional(),
 });
-exports.UpdateCollaboratorSchema = exports.CreateCollaboratorSchema.partial();
+exports.UpdateCollaboratorSchema = zod_1.z.object({
+    collaborators_name: zod_1.z.string().min(1).max(200).optional(),
+    collaborators_phone: zod_1.z.string().min(7).max(20).optional(),
+    collaborators_email: zod_1.z.string().email().optional(),
+    collaborators_bank_name: zod_1.z.string().max(200).nullable().optional(),
+    collaborators_bank_acc_name: zod_1.z.string().max(200).nullable().optional(),
+    collaborators_bank_acc_number: zod_1.z.string().max(100).nullable().optional(),
+    collaborators_remark_followup_action: zod_1.z.string().max(2000).nullable().optional(),
+}).strict();
+exports.AdminUpdateCollaboratorSchema = exports.UpdateCollaboratorSchema.extend({
+    merchant_system_id: zod_1.z.string().uuid().nullable().optional(),
+    collaborators_verified: zod_1.z.boolean().optional(),
+    collaborators_rating: zod_1.z.number().min(0).nullable().optional(),
+    collaborators_status: zod_1.z.enum(['pending', 'active', 'inactive', 'blocked']).optional(),
+    collaborators_actions: zod_1.z.string().max(1000).nullable().optional(),
+}).strict();
+exports.CreateCollaboratorMemberSchema = exports.CreateCollaboratorSchema;
 //# sourceMappingURL=collaborators.dto.js.map
