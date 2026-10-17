@@ -114,8 +114,8 @@ const collaboratorMemberCreate = await api('/collaborators/members', collaborato
 check('collaborator creates pending team member', collaboratorMemberCreate.status === 201 && collaboratorMemberCreate.json?.merchant_system_id === ids.merchantEntity && collaboratorMemberCreate.json?.collaborators_status === 'pending', `HTTP ${collaboratorMemberCreate.status}`);
 
 await upsert('referral_transactions', [
-  { id: ids.orphanTransaction, merchant_id: null, collaborator_id: ids.collaboratorEntity, legacy_status: 17, lifecycle_status: 'legacy-unmapped', payment_status: 'legacy-unverified', document_number: 'D6-ORPHAN', document_date_utc: '2026-10-16T12:00:00Z', document_total: '1000.0000', document_discount_amount: '100.0000', commission_percent: '5.0000', commission_amount: '50.0000', currency_code: 'VND' },
-  { id: ids.linkedTransaction, merchant_id: ids.merchantEntity, collaborator_id: ids.collaboratorEntity, legacy_status: 23, lifecycle_status: 'legacy-unmapped', payment_status: 'legacy-unverified', document_number: 'D6-LINKED', document_date_utc: '2026-10-16T13:00:00Z', document_total: '2000.0000', document_discount_amount: '200.0000', commission_percent: '5.0000', commission_amount: '100.0000', currency_code: 'VND' },
+  { id: ids.orphanTransaction, merchant_id: null, collaborator_id: ids.collaboratorEntity, legacy_status: 17, lifecycle_status: 'legacy-unmapped', payment_status: 'unverified', document_number: 'D6-ORPHAN', document_date_utc: '2026-10-16T12:00:00Z', document_total: '1000.0000', document_discount_amount: '100.0000', commission_percent: '5.0000', commission_amount: '50.0000', currency_code: 'VND' },
+  { id: ids.linkedTransaction, merchant_id: ids.merchantEntity, collaborator_id: ids.collaboratorEntity, legacy_status: 23, lifecycle_status: 'legacy-unmapped', payment_status: 'unverified', document_number: 'D6-LINKED', document_date_utc: '2026-10-16T13:00:00Z', document_total: '2000.0000', document_discount_amount: '200.0000', commission_percent: '5.0000', commission_amount: '100.0000', currency_code: 'VND' },
 ], 'id');
 const adminTransactions = await api('/transactions', adminToken);
 check('admin sees preserved orphan transaction', adminTransactions.status === 200 && adminTransactions.json.some((row) => row.id === ids.orphanTransaction && row.merchant_id === null && row.legacy_status === 17), `HTTP ${adminTransactions.status}`);
@@ -126,7 +126,7 @@ check('collaborator sees linked and orphan history', collaboratorTransactions.st
 
 const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
 const upload = await api('/media/upload', merchantToken, { method: 'POST', body: { filename: 'd6-proof.png', mime_type: 'image/png', size_bytes: png.length, base64_data: png.toString('base64'), is_hero: true } });
-check('merchant private media upload', upload.status === 201 && upload.json?.bucket_id === 'merchant-media' && upload.json?.merchant_id === ids.merchantEntity, `HTTP ${upload.status}`);
+check('merchant private media upload', upload.status === 201 && upload.json?.bucket_id === 'merchant-media' && upload.json?.merchant_id === ids.merchantEntity && upload.json?.transfer_status === 'verified', `HTTP ${upload.status}`);
 const ownMedia = await api('/media/me', merchantToken);
 check('merchant media listing ownership', ownMedia.status === 200 && ownMedia.json.some((row) => row.id === upload.json?.id), `HTTP ${ownMedia.status}`);
 const ownSigned = await api(`/media/${upload.json?.id}/signed-url`, merchantToken);

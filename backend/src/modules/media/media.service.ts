@@ -56,6 +56,21 @@ export class MediaService {
     return data;
   }
 
+  private async removeUploadedObject(
+    client: ReturnType<SupabaseService['getClient']>,
+    bucketId: 'merchant-media' | 'partner-media',
+    objectPath: string,
+  ) {
+    // A metadata failure must not leave an untracked private object. Retry the
+    // compensating delete once for transient Storage errors, then surface the
+    // cleanup failure instead of hiding a possible orphan.
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const { error } = await client.storage.from(bucketId).remove([objectPath]);
+      if (!error) return true;
+    }
+    return false;
+  }
+
   async findMine(userId: string) {
     const profile = await this.activeProfile(userId);
     let query = this.supabase.getClient().from('media_assets')
@@ -142,11 +157,23 @@ export class MediaService {
       size_bytes: bytes.length,
       is_hero: dto.is_hero || false,
       display_order: dto.display_order || 0,
-      transfer_status: 'completed',
+      transfer_status: 'verified',
     };
     const { data, error } = await client.from('media_assets').insert(record).select().single();
     if (error) {
-      await client.storage.from(bucketId).remove([objectPath]);
+      const removed = await this.removeUploadedObject(client, bucketId, objectPath);
+      if (!removed) {
+        // If Storage cleanup is unavailable, keep the object discoverable for
+        // reconciliation instead of leaving an untracked blob behind.
+        const { error: trackingError } = await client.from('media_assets').insert({
+          ...record,
+          transfer_status: 'failed',
+        });
+        if (trackingError) {
+          throw new InternalServerErrorException('Unable to persist media metadata; stored object requires reconciliation');
+        }
+        throw new InternalServerErrorException('Unable to persist verified media metadata; stored object is tracked as failed');
+      }
       throw new InternalServerErrorException('Unable to persist media metadata');
     }
     await this.audit.record({ id: userId, role: profile.role }, 'media.uploaded', 'media_asset', id, {

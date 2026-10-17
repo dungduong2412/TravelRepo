@@ -23,6 +23,7 @@ export declare class MediaService {
         signedUrl: string;
     }>;
     private activeProfile;
+    private removeUploadedObject;
     findMine(userId: string): Promise<{
         id: any;
         merchant_id: any;

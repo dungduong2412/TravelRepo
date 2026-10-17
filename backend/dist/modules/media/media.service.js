@@ -67,6 +67,14 @@ let MediaService = class MediaService {
         }
         return data;
     }
+    async removeUploadedObject(client, bucketId, objectPath) {
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+            const { error } = await client.storage.from(bucketId).remove([objectPath]);
+            if (!error)
+                return true;
+        }
+        return false;
+    }
     async findMine(userId) {
         const profile = await this.activeProfile(userId);
         let query = this.supabase.getClient().from('media_assets')
@@ -158,11 +166,21 @@ let MediaService = class MediaService {
             size_bytes: bytes.length,
             is_hero: dto.is_hero || false,
             display_order: dto.display_order || 0,
-            transfer_status: 'completed',
+            transfer_status: 'verified',
         };
         const { data, error } = await client.from('media_assets').insert(record).select().single();
         if (error) {
-            await client.storage.from(bucketId).remove([objectPath]);
+            const removed = await this.removeUploadedObject(client, bucketId, objectPath);
+            if (!removed) {
+                const { error: trackingError } = await client.from('media_assets').insert({
+                    ...record,
+                    transfer_status: 'failed',
+                });
+                if (trackingError) {
+                    throw new common_1.InternalServerErrorException('Unable to persist media metadata; stored object requires reconciliation');
+                }
+                throw new common_1.InternalServerErrorException('Unable to persist verified media metadata; stored object is tracked as failed');
+            }
             throw new common_1.InternalServerErrorException('Unable to persist media metadata');
         }
         await this.audit.record({ id: userId, role: profile.role }, 'media.uploaded', 'media_asset', id, {
