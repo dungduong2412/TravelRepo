@@ -6,6 +6,11 @@ const StrongPasswordSchema = z.string().min(12)
   .regex(/\d/, 'Password requires a number')
   .regex(/[^A-Za-z0-9]/, 'Password requires a symbol');
 
+const ExactNonNegativeDecimalSchema = z.union([
+  z.number().nonnegative(),
+  z.string().trim().regex(/^\d+(?:\.\d{1,4})?$/, 'Expected a non-negative decimal with up to four places'),
+]);
+
 export const MerchantSchema = z.object({
   id: z.string().uuid(),
   owner_email: z.string().email(),
@@ -66,10 +71,10 @@ export const UpdateMerchantSchema = z.object({
 
 export const AdminUpdateMerchantSchema = UpdateMerchantSchema.extend({
   merchant_commission_type: z.enum(['percentage', 'fixed']).nullable().optional(),
-  merchant_commission_value: z.number().min(0).nullable().optional(),
+  merchant_commission_value: ExactNonNegativeDecimalSchema.nullable().optional(),
   merchant_discount_type: z.enum(['percentage', 'fixed']).nullable().optional(),
-  merchant_discount_value: z.number().min(0).nullable().optional(),
-  merchant_priority: z.number().int().optional(),
+  merchant_discount_value: ExactNonNegativeDecimalSchema.nullable().optional(),
+  merchant_priority: z.number().int().nullable().optional(),
   merchant_verified: z.boolean().optional(),
   merchants_status: z.enum(['pending', 'active', 'inactive', 'blocked']).optional(),
   merchant_action: z.string().max(500).nullable().optional(),
@@ -77,6 +82,21 @@ export const AdminUpdateMerchantSchema = UpdateMerchantSchema.extend({
 
 export type UpdateMerchantDto = z.infer<typeof UpdateMerchantSchema>;
 export type AdminUpdateMerchantDto = z.infer<typeof AdminUpdateMerchantSchema>;
+
+export const MerchantDirectoryQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  page_size: z.coerce.number().int().min(1).max(100).default(25),
+  search: z.string().trim().max(200).optional(),
+  status: z.enum(['pending', 'active', 'inactive', 'blocked', 'unmapped']).optional(),
+  verified: z.enum(['true', 'false']).transform((value) => value === 'true').optional(),
+  sort: z.enum([
+    'merchant_registered_date', 'merchant_name', 'merchant_code',
+    'merchant_priority', 'merchant_commission_value', 'merchant_discount_value',
+  ]).default('merchant_registered_date'),
+  direction: z.enum(['asc', 'desc']).default('desc'),
+}).strict();
+
+export type MerchantDirectoryQuery = z.infer<typeof MerchantDirectoryQuerySchema>;
 
 export const CreateMerchantMemberSchema = z.object({
   collaborators_name: z.string().min(1).max(200),

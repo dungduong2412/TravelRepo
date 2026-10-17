@@ -6,6 +6,7 @@ import {
   AdminUpdateMerchantDto,
   CreateMerchantDto,
   CreateMerchantMemberDto,
+  MerchantDirectoryQuery,
   UpdateMerchantDto,
 } from './merchants.dto';
 import { UserProfilesService } from '../user-profiles/user-profiles.service';
@@ -44,6 +45,48 @@ export class MerchantsService {
     return (data || []).map((row) => this.withoutPassword(row));
   }
 
+  async findDirectory(filter: MerchantDirectoryQuery) {
+    const from = (filter.page - 1) * filter.page_size;
+    let query = this.supabase.getClient().from('merchant_details')
+      .select([
+        'merchant_system_id', 'merchant_code', 'merchant_name', 'merchant_description',
+        'merchant_phone', 'merchant_email', 'merchant_contact_phone', 'owner_name',
+        'owner_phone', 'owner_email', 'new_address_city', 'new_address_ward',
+        'new_address_line', 'merchant_commission_type', 'merchant_commission_value',
+        'merchant_discount_type', 'merchant_discount_value', 'merchant_priority',
+        'merchant_verified', 'merchants_status', 'merchant_registered_date',
+        'merchant_verified_date', 'merchant_last_update', 'merchant_action',
+        'legacy_restaurant_id', 'legacy_status', 'legacy_is_banned',
+        'legacy_min_commission', 'legacy_tax_code', 'legacy_rating',
+        'legacy_short_name', 'legacy_is_update_requesting',
+        'legacy_last_update_request_at',
+      ].join(','), { count: 'exact' });
+    if (filter.status === 'unmapped') query = query.is('merchants_status', null);
+    else if (filter.status) query = query.eq('merchants_status', filter.status);
+    if (filter.verified !== undefined) query = query.eq('merchant_verified', filter.verified);
+    if (filter.search) {
+      const term = filter.search.replace(/[,%()]/g, ' ').trim();
+      if (term) query = query.or([
+        `merchant_name.ilike.%${term}%`,
+        `merchant_code.ilike.%${term}%`,
+        `merchant_email.ilike.%${term}%`,
+        `owner_email.ilike.%${term}%`,
+        `merchant_phone.ilike.%${term}%`,
+      ].join(','));
+    }
+    const { data, error, count } = await query
+      .order(filter.sort, { ascending: filter.direction === 'asc', nullsFirst: false })
+      .range(from, from + filter.page_size - 1);
+    if (error) throw new Error(`Failed to fetch merchant directory: ${error.message}`);
+    return {
+      items: (data || []).map((row) => this.withoutPassword(row)),
+      page: filter.page,
+      page_size: filter.page_size,
+      total: count || 0,
+      page_count: Math.ceil((count || 0) / filter.page_size),
+    };
+  }
+
   async findById(id: string) {
     const { data, error } = await this.supabase.getClient()
       .from('merchant_details')
@@ -66,6 +109,31 @@ export class MerchantsService {
       throw new ForbiddenException('Merchant access denied');
     }
     return this.findById(id);
+  }
+
+  async operationalDetail(id: string) {
+    const client = this.supabase.getClient();
+    const [merchant, updateRequests, media, categoryLinks] = await Promise.all([
+      this.findById(id),
+      client.from('merchant_update_requests')
+        .select('id,legacy_request_id,legacy_status,requested_at,payload,created_at')
+        .eq('merchant_id', id).order('requested_at', { ascending: false }),
+      client.from('media_assets')
+        .select('id,legacy_image_id,legacy_merchant_image_id,original_filename,mime_type,size_bytes,is_hero,display_order,transfer_status,created_at')
+        .eq('merchant_id', id).order('display_order', { ascending: true }),
+      client.from('merchant_category_links')
+        .select('category_id,category:categories!merchant_category_links_category_id_fkey(id,category_name,category_name_vi)')
+        .eq('merchant_id', id),
+    ]);
+    if (updateRequests.error) throw new Error(`Failed to fetch merchant update history: ${updateRequests.error.message}`);
+    if (media.error) throw new Error(`Failed to fetch merchant media: ${media.error.message}`);
+    if (categoryLinks.error) throw new Error(`Failed to fetch merchant categories: ${categoryLinks.error.message}`);
+    return {
+      merchant,
+      update_requests: updateRequests.data || [],
+      media: media.data || [],
+      categories: categoryLinks.data || [],
+    };
   }
 
   async findByEmail(email: string) {

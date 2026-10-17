@@ -1,0 +1,45 @@
+import { z } from 'zod';
+export declare const TransactionReportQuerySchema: z.ZodObject<{
+    page: z.ZodDefault<z.ZodNumber>;
+    page_size: z.ZodDefault<z.ZodNumber>;
+    search: z.ZodOptional<z.ZodString>;
+    merchant_id: z.ZodOptional<z.ZodString>;
+    collaborator_id: z.ZodOptional<z.ZodString>;
+    legacy_status: z.ZodOptional<z.ZodUnion<[z.ZodNumber, z.ZodLiteral<"null">]>>;
+    lifecycle_status: z.ZodOptional<z.ZodString>;
+    payment_status: z.ZodOptional<z.ZodString>;
+    from: z.ZodOptional<z.ZodString>;
+    to: z.ZodOptional<z.ZodString>;
+    orphan_only: z.ZodDefault<z.ZodEffects<z.ZodEnum<["true", "false"]>, boolean, "true" | "false">>;
+    sort: z.ZodDefault<z.ZodEnum<["document_date_utc", "document_number", "document_total", "document_discount_amount", "commission_percent", "commission_amount", "legacy_status", "payment_status"]>>;
+    direction: z.ZodDefault<z.ZodEnum<["asc", "desc"]>>;
+}, "strict", z.ZodTypeAny, {
+    sort?: "legacy_status" | "payment_status" | "document_date_utc" | "document_number" | "document_total" | "document_discount_amount" | "commission_percent" | "commission_amount";
+    page?: number;
+    page_size?: number;
+    search?: string;
+    direction?: "asc" | "desc";
+    legacy_status?: number | "null";
+    merchant_id?: string;
+    collaborator_id?: string;
+    lifecycle_status?: string;
+    payment_status?: string;
+    from?: string;
+    to?: string;
+    orphan_only?: boolean;
+}, {
+    sort?: "legacy_status" | "payment_status" | "document_date_utc" | "document_number" | "document_total" | "document_discount_amount" | "commission_percent" | "commission_amount";
+    page?: number;
+    page_size?: number;
+    search?: string;
+    direction?: "asc" | "desc";
+    legacy_status?: number | "null";
+    merchant_id?: string;
+    collaborator_id?: string;
+    lifecycle_status?: string;
+    payment_status?: string;
+    from?: string;
+    to?: string;
+    orphan_only?: "true" | "false";
+}>;
+export type TransactionReportQuery = z.infer<typeof TransactionReportQuerySchema>;

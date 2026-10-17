@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Delete, Param, Body, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards } from '@nestjs/common';
 import { MerchantsService } from './merchants.service';
 import {
   AdminCreateMerchantDto,
@@ -11,6 +11,8 @@ import {
   UpdateMerchantDto,
   CreateMerchantSchema,
   UpdateMerchantSchema,
+  MerchantDirectoryQuery,
+  MerchantDirectoryQuerySchema,
 } from './merchants.dto';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { JwtGuard } from '../../common/auth/jwt.guard';
@@ -27,6 +29,14 @@ export class MerchantsController {
   @UseGuards(AdminGuard)
   async findAll() {
     return this.service.findAll();
+  }
+
+  @Get('admin-directory')
+  @UseGuards(AdminGuard)
+  async findDirectory(
+    @Query(new ZodValidationPipe(MerchantDirectoryQuerySchema)) query: MerchantDirectoryQuery,
+  ) {
+    return this.service.findDirectory(query);
   }
 
   @Get('verified')
@@ -55,6 +65,12 @@ export class MerchantsController {
     @Body(new ZodValidationPipe(AdminCreateMerchantSchema)) dto: AdminCreateMerchantDto,
   ) {
     return this.service.createByAdmin(actor, dto);
+  }
+
+  @Get(':id/operational-detail')
+  @UseGuards(AdminGuard)
+  async operationalDetail(@Param('id') id: string) {
+    return this.service.operationalDetail(id);
   }
 
   @Patch(':id/admin')

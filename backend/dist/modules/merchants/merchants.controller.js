@@ -28,6 +28,9 @@ let MerchantsController = class MerchantsController {
     async findAll() {
         return this.service.findAll();
     }
+    async findDirectory(query) {
+        return this.service.findDirectory(query);
+    }
     async findVerified() {
         return this.service.findVerified();
     }
@@ -39,6 +42,9 @@ let MerchantsController = class MerchantsController {
     }
     async createByAdmin(actor, dto) {
         return this.service.createByAdmin(actor, dto);
+    }
+    async operationalDetail(id) {
+        return this.service.operationalDetail(id);
     }
     async updateByAdmin(actor, id, dto) {
         return this.service.updateByAdmin(actor, id, dto);
@@ -83,6 +89,14 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], MerchantsController.prototype, "findAll", null);
 __decorate([
+    (0, common_1.Get)('admin-directory'),
+    (0, common_1.UseGuards)(admin_guard_1.AdminGuard),
+    __param(0, (0, common_1.Query)(new zod_validation_pipe_1.ZodValidationPipe(merchants_dto_1.MerchantDirectoryQuerySchema))),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], MerchantsController.prototype, "findDirectory", null);
+__decorate([
     (0, common_1.Get)('verified'),
     (0, public_decorator_1.Public)(),
     __metadata("design:type", Function),
@@ -113,6 +127,14 @@ __decorate([
     __metadata("design:paramtypes", [Object, Object]),
     __metadata("design:returntype", Promise)
 ], MerchantsController.prototype, "createByAdmin", null);
+__decorate([
+    (0, common_1.Get)(':id/operational-detail'),
+    (0, common_1.UseGuards)(admin_guard_1.AdminGuard),
+    __param(0, (0, common_1.Param)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], MerchantsController.prototype, "operationalDetail", null);
 __decorate([
     (0, common_1.Patch)(':id/admin'),
     (0, common_1.UseGuards)(admin_guard_1.AdminGuard),

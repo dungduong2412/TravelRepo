@@ -1,9 +1,18 @@
 import { MerchantsService } from './merchants.service';
-import { AdminCreateMerchantDto, AdminUpdateMerchantDto, CreateMerchantDto, CreateMerchantMemberDto, UpdateMerchantDto } from './merchants.dto';
+import { AdminCreateMerchantDto, AdminUpdateMerchantDto, CreateMerchantDto, CreateMerchantMemberDto, UpdateMerchantDto, MerchantDirectoryQuery } from './merchants.dto';
 export declare class MerchantsController {
     private readonly service;
     constructor(service: MerchantsService);
     findAll(): Promise<Omit<any, "owner_password">[]>;
+    findDirectory(query: MerchantDirectoryQuery): Promise<{
+        items: Omit<{
+            error: true;
+        } & "Received a generic string", "owner_password">[];
+        page: number;
+        page_size: number;
+        total: number;
+        page_count: number;
+    }>;
     findVerified(): Promise<Omit<any, "owner_password">[]>;
     listMembers(actor: {
         id: string;
@@ -21,6 +30,37 @@ export declare class MerchantsController {
         id: string;
     }, dto: CreateMerchantMemberDto): Promise<any>;
     createByAdmin(actor: any, dto: AdminCreateMerchantDto): Promise<Omit<any, "owner_password">>;
+    operationalDetail(id: string): Promise<{
+        merchant: Omit<any, "owner_password">;
+        update_requests: {
+            id: any;
+            legacy_request_id: any;
+            legacy_status: any;
+            requested_at: any;
+            payload: any;
+            created_at: any;
+        }[];
+        media: {
+            id: any;
+            legacy_image_id: any;
+            legacy_merchant_image_id: any;
+            original_filename: any;
+            mime_type: any;
+            size_bytes: any;
+            is_hero: any;
+            display_order: any;
+            transfer_status: any;
+            created_at: any;
+        }[];
+        categories: {
+            category_id: any;
+            category: {
+                id: any;
+                category_name: any;
+                category_name_vi: any;
+            }[];
+        }[];
+    }>;
     updateByAdmin(actor: any, id: string, dto: AdminUpdateMerchantDto): Promise<Omit<any, "owner_password">>;
     findById(actor: {
         id: string;

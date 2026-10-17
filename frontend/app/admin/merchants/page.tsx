@@ -1,283 +1,114 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { api } from '../../../lib/api';
 
-type MerchantFilter = 'all' | 'pending' | 'active';
-
-interface Merchant {
-  merchant_system_id: string;
-  merchant_code?: string | null;
-  merchant_name?: string | null;
-  merchant_description?: string | null;
-  merchant_phone?: string | null;
-  merchant_email?: string | null;
-  merchant_contact_phone?: string | null;
-  owner_email?: string | null;
-  new_address_city?: string | null;
-  new_address_ward?: string | null;
-  new_address_line?: string | null;
-  merchant_verified?: boolean;
-  merchants_status?: string | null;
-  merchant_registered_date?: string | null;
-}
-
-function merchantStatus(merchant: Merchant) {
-  return merchant.merchants_status?.toLowerCase() ||
-    (merchant.merchant_verified ? 'active' : 'pending');
-}
+type Merchant = {
+  merchant_system_id: string; merchant_code?: string | null; merchant_name?: string | null; merchant_description?: string | null;
+  merchant_phone?: string | null; merchant_email?: string | null; merchant_contact_phone?: string | null; owner_name?: string | null; owner_email?: string | null; owner_phone?: string | null;
+  new_address_city?: string | null; new_address_ward?: string | null; new_address_line?: string | null;
+  merchant_commission_type?: string | null; merchant_commission_value?: string | number | null; merchant_discount_type?: string | null; merchant_discount_value?: string | number | null;
+  merchant_priority?: number | null; merchant_verified?: boolean; merchants_status?: string | null; merchant_registered_date?: string | null; merchant_verified_date?: string | null; merchant_last_update?: string | null; merchant_action?: string | null;
+  legacy_restaurant_id?: string | null; legacy_status?: number | null; legacy_is_banned?: boolean | null; legacy_min_commission?: string | number | null; legacy_tax_code?: string | null; legacy_rating?: string | number | null; legacy_short_name?: string | null; legacy_is_update_requesting?: boolean | null; legacy_last_update_request_at?: string | null;
+};
+type Directory = { items: Merchant[]; page: number; page_size: number; total: number; page_count: number };
+type OperationalDetail = { merchant: Merchant; update_requests: Array<{ id: string; legacy_status?: number | null; requested_at?: string | null; payload?: Record<string, unknown> }>; media: Array<{ id: string; original_filename?: string | null; mime_type?: string | null; size_bytes?: number | null; is_hero?: boolean; display_order?: number; transfer_status?: string | null }>; categories: Array<{ category?: { category_name_vi?: string | null; category_name?: string | null } | null }> };
+type EditForm = { merchant_name: string; merchant_description: string; merchant_phone: string; merchant_email: string; merchant_contact_phone: string; owner_name: string; owner_phone: string; new_address_city: string; new_address_ward: string; new_address_line: string; merchant_commission_type: string; merchant_commission_value: string; merchant_discount_type: string; merchant_discount_value: string; merchant_priority: string; merchant_verified: boolean; merchants_status: string; merchant_action: string };
 
 export default function AdminMerchantsPage() {
-  const [items, setItems] = useState<Merchant[]>([]);
-  const [filter, setFilter] = useState<MerchantFilter>('all');
-  const [selected, setSelected] = useState<Merchant | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [actionId, setActionId] = useState<string | null>(null);
-  const [showCreate, setShowCreate] = useState(false);
+  const [directory, setDirectory] = useState<Directory | null>(null);
+  const [search, setSearch] = useState(''); const [appliedSearch, setAppliedSearch] = useState(''); const [status, setStatus] = useState(''); const [verified, setVerified] = useState('');
+  const [page, setPage] = useState(1); const [pageSize, setPageSize] = useState(25); const [sort, setSort] = useState('merchant_registered_date'); const [direction, setDirection] = useState<'asc' | 'desc'>('desc');
+  const [detail, setDetail] = useState<OperationalDetail | null>(null); const [editing, setEditing] = useState<EditForm | null>(null);
+  const [loading, setLoading] = useState(true); const [error, setError] = useState<string | null>(null); const [actionId, setActionId] = useState<string | null>(null); const [showCreate, setShowCreate] = useState(false);
   const [createForm, setCreateForm] = useState({ owner_email: '', merchant_name: '', merchant_email: '', merchant_phone: '' });
 
-  async function fetchMerchants() {
-    try {
-      setLoading(true);
-      setError(null);
-      setItems((await api.get('/merchants')) || []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to load merchants');
-    } finally {
-      setLoading(false);
-    }
+  const fetchDirectory = useCallback(async () => {
+    const params = new URLSearchParams({ page: String(page), page_size: String(pageSize), sort, direction });
+    if (appliedSearch) params.set('search', appliedSearch); if (status) params.set('status', status); if (verified) params.set('verified', verified);
+    try { setLoading(true); setError(null); setDirectory(await api.get(`/merchants/admin-directory?${params}`)); }
+    catch (err) { setError(message(err, 'Unable to load merchants')); } finally { setLoading(false); }
+  }, [appliedSearch, direction, page, pageSize, sort, status, verified]);
+  useEffect(() => { fetchDirectory(); }, [fetchDirectory]);
+
+  async function openDetail(merchant: Merchant) {
+    try { setError(null); setDetail(await api.get(`/merchants/${merchant.merchant_system_id}/operational-detail`)); }
+    catch (err) { setError(message(err, 'Unable to load merchant detail')); }
   }
-
-  useEffect(() => {
-    fetchMerchants();
-  }, []);
-
-  const visibleItems = useMemo(() => {
-    if (filter === 'all') return items;
-    return items.filter((merchant) => merchantStatus(merchant) === filter);
-  }, [filter, items]);
-
-  async function runAction(
-    merchant: Merchant,
-    action: 'approve' | 'reject' | 'deactivate',
-  ) {
+  async function runAction(merchant: Merchant, action: 'approve' | 'reject' | 'deactivate') {
     if (!confirm(`Are you sure you want to ${action} ${merchant.merchant_name || 'this merchant'}?`)) return;
-
-    try {
-      setActionId(merchant.merchant_system_id);
-      setError(null);
-      if (action === 'deactivate') {
-        await api.delete(`/merchants/${merchant.merchant_system_id}`);
-      } else {
-        await api.post(`/merchants/${merchant.merchant_system_id}/${action}`);
-      }
-      setSelected(null);
-      await fetchMerchants();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : `Unable to ${action} merchant`);
-    } finally {
-      setActionId(null);
-    }
+    try { setActionId(merchant.merchant_system_id); if (action === 'deactivate') await api.delete(`/merchants/${merchant.merchant_system_id}`); else await api.post(`/merchants/${merchant.merchant_system_id}/${action}`); setDetail(null); await fetchDirectory(); }
+    catch (err) { setError(message(err, `Unable to ${action} merchant`)); } finally { setActionId(null); }
   }
-
-  async function createMerchant(event: React.FormEvent) {
-    event.preventDefault();
+  async function createMerchant(event: FormEvent) {
+    event.preventDefault(); try { setError(null); await api.post('/merchants/admin', { ...createForm, merchant_email: createForm.merchant_email || undefined, merchant_phone: createForm.merchant_phone || undefined }); setCreateForm({ owner_email: '', merchant_name: '', merchant_email: '', merchant_phone: '' }); setShowCreate(false); await fetchDirectory(); }
+    catch (err) { setError(message(err, 'Unable to create merchant')); }
+  }
+  async function saveMerchant(event: FormEvent) {
+    event.preventDefault(); if (!detail || !editing) return;
+    const nullable = (value: string) => value.trim() === '' ? null : value.trim();
     try {
-      setError(null);
-      await api.post('/merchants/admin', {
-        owner_email: createForm.owner_email,
-        merchant_name: createForm.merchant_name,
-        merchant_email: createForm.merchant_email || undefined,
-        merchant_phone: createForm.merchant_phone || undefined,
+      setActionId(detail.merchant.merchant_system_id); setError(null);
+      await api.patch(`/merchants/${detail.merchant.merchant_system_id}/admin`, {
+        merchant_name: editing.merchant_name.trim(), merchant_description: nullable(editing.merchant_description), merchant_phone: nullable(editing.merchant_phone), merchant_email: nullable(editing.merchant_email), merchant_contact_phone: nullable(editing.merchant_contact_phone), owner_name: nullable(editing.owner_name), owner_phone: nullable(editing.owner_phone), new_address_city: nullable(editing.new_address_city), new_address_ward: nullable(editing.new_address_ward), new_address_line: nullable(editing.new_address_line),
+        merchant_commission_type: nullable(editing.merchant_commission_type), merchant_commission_value: nullable(editing.merchant_commission_value), merchant_discount_type: nullable(editing.merchant_discount_type), merchant_discount_value: nullable(editing.merchant_discount_value), merchant_priority: editing.merchant_priority.trim() === '' ? null : Number(editing.merchant_priority), merchant_verified: editing.merchant_verified, merchants_status: editing.merchants_status || undefined, merchant_action: nullable(editing.merchant_action),
       });
-      setCreateForm({ owner_email: '', merchant_name: '', merchant_email: '', merchant_phone: '' });
-      setShowCreate(false);
-      await fetchMerchants();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to create merchant');
-    }
+      setEditing(null); await fetchDirectory(); await openDetail(detail.merchant);
+    } catch (err) { setError(message(err, 'Unable to update merchant')); } finally { setActionId(null); }
   }
 
-  if (loading) return <div style={styles.state}>Loading merchants...</div>;
+  const items = directory?.items || [];
+  return <div style={styles.container}>
+    <div style={styles.header}><div><h2 style={styles.title}>Merchant Management</h2><p style={styles.subtitle}>{directory?.total ?? 0} merchant records · commercial values remain nullable unless sourced or explicitly entered</p></div><button type="button" onClick={() => setShowCreate(true)} style={styles.primaryButton}>Create merchant</button></div>
+    {error && <div style={styles.error} role="alert">{error}</div>}
+    <form style={styles.filters} onSubmit={(event) => { event.preventDefault(); setPage(1); setAppliedSearch(search); }}>
+      <label style={styles.label}>Search<input style={styles.input} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Name, original code, email or phone" /></label>
+      <label style={styles.label}>Status<select style={styles.input} value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }}><option value="">All</option><option value="pending">Pending</option><option value="active">Active</option><option value="inactive">Inactive</option><option value="blocked">Blocked</option><option value="unmapped">Unmapped legacy</option></select></label>
+      <label style={styles.label}>Verification<select style={styles.input} value={verified} onChange={(e) => { setVerified(e.target.value); setPage(1); }}><option value="">All</option><option value="true">Verified</option><option value="false">Not verified</option></select></label>
+      <label style={styles.label}>Sort<select style={styles.input} value={sort} onChange={(e) => setSort(e.target.value)}><option value="merchant_registered_date">Registration date</option><option value="merchant_name">Name</option><option value="merchant_code">Original code</option><option value="merchant_priority">Priority</option><option value="merchant_commission_value">Commission</option><option value="merchant_discount_value">Discount</option></select></label>
+      <button style={styles.secondaryButton} type="button" onClick={() => setDirection(direction === 'asc' ? 'desc' : 'asc')}>{direction === 'asc' ? 'Ascending ↑' : 'Descending ↓'}</button><button style={styles.primaryButton} type="submit">Apply</button>
+    </form>
 
-  return (
-    <div style={styles.container}>
-      <div style={styles.header}>
-        <div>
-          <h2 style={styles.title}>Merchant Management</h2>
-          <p style={styles.subtitle}>{items.length} merchants from the live merchant directory</p>
-        </div>
-        <div style={styles.filters}>
-          <button type="button" onClick={() => setShowCreate(true)} style={styles.createButton}>Create merchant</button>
-          {(['all', 'pending', 'active'] as MerchantFilter[]).map((value) => (
-            <button
-              key={value}
-              type="button"
-              onClick={() => setFilter(value)}
-              style={{ ...styles.filterButton, ...(filter === value ? styles.filterButtonActive : {}) }}
-            >
-              {value.charAt(0).toUpperCase() + value.slice(1)} ({
-                value === 'all'
-                  ? items.length
-                  : items.filter((merchant) => merchantStatus(merchant) === value).length
-              })
-            </button>
-          ))}
-        </div>
-      </div>
+    <div style={styles.tableWrapper}><table style={styles.table}><thead><tr><th style={styles.th}>Merchant</th><th style={styles.th}>Original code</th><th style={styles.th}>Commercial terms</th><th style={styles.th}>Priority</th><th style={styles.th}>Registered / verified</th><th style={styles.th}>Status</th><th style={styles.th}>Actions</th></tr></thead><tbody>{items.map((merchant) => {
+      const currentStatus = merchantStatus(merchant); return <tr key={merchant.merchant_system_id} style={styles.row}><td style={styles.td}><strong>{merchant.merchant_name || 'Unnamed merchant'}</strong><div style={styles.muted}>{merchant.owner_email || merchant.merchant_email || 'No email'}</div></td><td style={styles.td}>{merchant.merchant_code || '—'}</td><td style={styles.td}>Commission: {commercial(merchant.merchant_commission_type, merchant.merchant_commission_value)}<br />Discount: {commercial(merchant.merchant_discount_type, merchant.merchant_discount_value)}</td><td style={styles.td}>{merchant.merchant_priority ?? '—'}</td><td style={styles.td}>{formatDate(merchant.merchant_registered_date)}<br /><span style={styles.muted}>{merchant.merchant_verified_date ? `Verified ${formatDate(merchant.merchant_verified_date)}` : 'No verification date'}</span></td><td style={styles.td}><span style={{ ...styles.badge, ...statusStyle(currentStatus) }}>{currentStatus.toUpperCase()}</span><div style={styles.muted}>{merchant.merchant_verified ? 'Verified' : 'Not verified'} · source {merchant.legacy_status ?? 'null'}</div></td><td style={styles.td}><div style={styles.actions}><button onClick={() => openDetail(merchant)} style={styles.secondaryButton}>Details</button>{currentStatus === 'pending' && <><button disabled={actionId === merchant.merchant_system_id} onClick={() => runAction(merchant, 'approve')} style={styles.approveButton}>Approve</button><button disabled={actionId === merchant.merchant_system_id} onClick={() => runAction(merchant, 'reject')} style={styles.dangerButton}>Reject</button></>}{currentStatus === 'active' && <button disabled={actionId === merchant.merchant_system_id} onClick={() => runAction(merchant, 'deactivate')} style={styles.dangerButton}>Deactivate</button>}</div></td></tr>;
+    })}</tbody></table>{loading && <div style={styles.state}>Loading merchants…</div>}{!loading && !items.length && <div style={styles.state}>No merchants match the filters.</div>}</div>
+    <div style={styles.pagination}><span>Page {directory?.page || 1}/{Math.max(directory?.page_count || 1, 1)}</span><div style={styles.actions}><select style={styles.inputInline} value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}><option value={10}>10</option><option value={25}>25</option><option value={50}>50</option><option value={100}>100</option></select><button style={styles.secondaryButton} disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</button><button style={styles.secondaryButton} disabled={!directory || page >= directory.page_count} onClick={() => setPage(page + 1)}>Next</button></div></div>
 
-      {error && (
-        <div style={styles.error} role="alert">
-          <span>{error}</span>
-          <button type="button" onClick={fetchMerchants} style={styles.retryButton}>Retry</button>
-        </div>
-      )}
+    {detail && !editing && <div style={styles.overlay} onClick={() => setDetail(null)}><aside style={styles.drawer} onClick={(e) => e.stopPropagation()}><div style={styles.drawerHeader}><div><h3 style={styles.drawerTitle}>{detail.merchant.merchant_name || 'Unnamed merchant'}</h3><span style={{ ...styles.badge, ...statusStyle(merchantStatus(detail.merchant)) }}>{merchantStatus(detail.merchant).toUpperCase()}</span></div><div style={styles.actions}><button style={styles.primaryButton} onClick={() => setEditing(toEdit(detail.merchant))}>Edit</button><button style={styles.close} onClick={() => setDetail(null)}>×</button></div></div>
+      <Section title="Operational fields"><dl style={styles.details}><Detail label="Original merchant code" value={detail.merchant.merchant_code} /><Detail label="V2 system ID" value={detail.merchant.merchant_system_id} /><Detail label="Legacy restaurant ID" value={detail.merchant.legacy_restaurant_id} /><Detail label="Commission" value={commercial(detail.merchant.merchant_commission_type, detail.merchant.merchant_commission_value)} /><Detail label="Discount" value={commercial(detail.merchant.merchant_discount_type, detail.merchant.merchant_discount_value)} /><Detail label="Minimum commission (source)" value={value(detail.merchant.legacy_min_commission)} /><Detail label="Priority" value={value(detail.merchant.merchant_priority)} /><Detail label="Registered" value={formatDate(detail.merchant.merchant_registered_date)} /><Detail label="Verified" value={formatDate(detail.merchant.merchant_verified_date)} /><Detail label="Tax code" value={detail.merchant.legacy_tax_code} /><Detail label="Source rating" value={value(detail.merchant.legacy_rating)} /><Detail label="Categories" value={detail.categories.map((row) => row.category?.category_name_vi || row.category?.category_name).filter(Boolean).join(', ')} /></dl></Section>
+      <Section title={`Update-request history (${detail.update_requests.length})`}>{detail.update_requests.length ? detail.update_requests.map((request) => <div key={request.id} style={styles.historyItem}><strong>{formatDate(request.requested_at)}</strong><span>Source status: {request.legacy_status ?? 'null'}</span><span>Requested name: {value(request.payload?.Name)}</span><span>Requested commission: {value(request.payload?.CommissionPerc)}</span><span>Requested discount: {value(request.payload?.DiscountPerc)}</span></div>) : <p style={styles.muted}>No update requests.</p>}</Section>
+      <Section title={`Media (${detail.media.length})`}>{detail.media.length ? detail.media.map((asset) => <div key={asset.id} style={styles.historyItem}><strong>{asset.original_filename || asset.id}</strong><span>{asset.mime_type || 'unknown MIME'} · {fileSize(asset.size_bytes)}</span><span>{asset.is_hero ? 'Hero' : `Order ${asset.display_order ?? 0}`} · {asset.transfer_status || 'unknown'}</span></div>) : <p style={styles.muted}>No media linked to this merchant.</p>}</Section>
+      <Section title="Archived/source-only context"><dl style={styles.details}><Detail label="Source status" value={value(detail.merchant.legacy_status)} /><Detail label="Source banned flag" value={detail.merchant.legacy_is_banned === null || detail.merchant.legacy_is_banned === undefined ? '—' : String(detail.merchant.legacy_is_banned)} /><Detail label="Short name" value={detail.merchant.legacy_short_name} /><Detail label="Update requested" value={detail.merchant.legacy_is_update_requesting === null || detail.merchant.legacy_is_update_requesting === undefined ? '—' : String(detail.merchant.legacy_is_update_requesting)} /><Detail label="Last update request" value={formatDate(detail.merchant.legacy_last_update_request_at)} /></dl></Section>
+    </aside></div>}
 
-      <div style={styles.tableWrapper}>
-        <table style={styles.table}>
-          <thead>
-            <tr>
-              <th style={styles.th}>Merchant</th>
-              <th style={styles.th}>Code</th>
-              <th style={styles.th}>Contact</th>
-              <th style={styles.th}>Location</th>
-              <th style={styles.th}>Status</th>
-              <th style={styles.th}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {visibleItems.map((merchant) => {
-              const status = merchantStatus(merchant);
-              const isPending = status === 'pending';
-              const isActive = status === 'active';
-              return (
-                <tr key={merchant.merchant_system_id} style={styles.row}>
-                  <td style={styles.td}>
-                    <strong>{merchant.merchant_name || 'Unnamed merchant'}</strong>
-                    <div style={styles.muted}>{merchant.owner_email || merchant.merchant_email || 'No email'}</div>
-                  </td>
-                  <td style={styles.td}>{merchant.merchant_code || '—'}</td>
-                  <td style={styles.td}>{merchant.merchant_phone || merchant.merchant_contact_phone || '—'}</td>
-                  <td style={styles.td}>{merchant.new_address_city || '—'}</td>
-                  <td style={styles.td}>
-                    <span style={{ ...styles.badge, ...statusStyle(status) }}>{status.toUpperCase()}</span>
-                  </td>
-                  <td style={styles.td}>
-                    <div style={styles.actions}>
-                      <button type="button" onClick={() => setSelected(merchant)} style={styles.viewButton}>View</button>
-                      {isPending && (
-                        <>
-                          <button disabled={actionId === merchant.merchant_system_id} type="button" onClick={() => runAction(merchant, 'approve')} style={styles.approveButton}>Approve</button>
-                          <button disabled={actionId === merchant.merchant_system_id} type="button" onClick={() => runAction(merchant, 'reject')} style={styles.rejectButton}>Reject</button>
-                        </>
-                      )}
-                      {isActive && (
-                        <button disabled={actionId === merchant.merchant_system_id} type="button" onClick={() => runAction(merchant, 'deactivate')} style={styles.rejectButton}>Deactivate</button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        {visibleItems.length === 0 && <div style={styles.state}>No {filter === 'all' ? '' : `${filter} `}merchants found.</div>}
-      </div>
+    {detail && editing && <div style={styles.overlay} onClick={() => setEditing(null)}><form style={styles.drawer} onSubmit={saveMerchant} onClick={(e) => e.stopPropagation()}><div style={styles.drawerHeader}><div><h3 style={styles.drawerTitle}>Edit {detail.merchant.merchant_code || 'merchant'}</h3><p style={styles.muted}>Original IDs, source statuses and historical requests are read-only.</p></div><button type="button" style={styles.close} onClick={() => setEditing(null)}>×</button></div><div style={styles.formGrid}>
+      <Field label="Merchant name" required value={editing.merchant_name} onChange={(v) => setEditing({ ...editing, merchant_name: v })} /><Field label="Owner name" value={editing.owner_name} onChange={(v) => setEditing({ ...editing, owner_name: v })} /><Field label="Merchant email" type="email" value={editing.merchant_email} onChange={(v) => setEditing({ ...editing, merchant_email: v })} /><Field label="Merchant phone" value={editing.merchant_phone} onChange={(v) => setEditing({ ...editing, merchant_phone: v })} /><Field label="Contact phone" value={editing.merchant_contact_phone} onChange={(v) => setEditing({ ...editing, merchant_contact_phone: v })} /><Field label="Owner phone" value={editing.owner_phone} onChange={(v) => setEditing({ ...editing, owner_phone: v })} />
+      <SelectField label="Commission type" value={editing.merchant_commission_type} onChange={(v) => setEditing({ ...editing, merchant_commission_type: v })} /><Field label="Commission value (blank preserves null)" inputMode="decimal" value={editing.merchant_commission_value} onChange={(v) => setEditing({ ...editing, merchant_commission_value: v })} /><SelectField label="Discount type" value={editing.merchant_discount_type} onChange={(v) => setEditing({ ...editing, merchant_discount_type: v })} /><Field label="Discount value (blank preserves null)" inputMode="decimal" value={editing.merchant_discount_value} onChange={(v) => setEditing({ ...editing, merchant_discount_value: v })} /><Field label="Priority" type="number" value={editing.merchant_priority} onChange={(v) => setEditing({ ...editing, merchant_priority: v })} />
+      <label style={styles.label}>Status<select style={styles.input} value={editing.merchants_status} onChange={(e) => setEditing({ ...editing, merchants_status: e.target.value })}><option value="">Unmapped / preserve null</option><option value="pending">Pending</option><option value="active">Active</option><option value="inactive">Inactive</option><option value="blocked">Blocked</option></select></label><label style={styles.checkbox}><input type="checkbox" checked={editing.merchant_verified} onChange={(e) => setEditing({ ...editing, merchant_verified: e.target.checked })} /> Verified</label>
+      <Field label="City / Province" value={editing.new_address_city} onChange={(v) => setEditing({ ...editing, new_address_city: v })} /><Field label="Ward" value={editing.new_address_ward} onChange={(v) => setEditing({ ...editing, new_address_ward: v })} /><Field label="Address" value={editing.new_address_line} onChange={(v) => setEditing({ ...editing, new_address_line: v })} /><Field label="Admin action note" value={editing.merchant_action} onChange={(v) => setEditing({ ...editing, merchant_action: v })} /><label style={{ ...styles.label, gridColumn: '1 / -1' }}>Description<textarea style={{ ...styles.input, minHeight: 100 }} value={editing.merchant_description} onChange={(e) => setEditing({ ...editing, merchant_description: e.target.value })} /></label>
+    </div><button disabled={actionId === detail.merchant.merchant_system_id} style={styles.primaryButton} type="submit">Save governed changes</button></form></div>}
 
-      {selected && (
-        <div style={styles.modalOverlay} onClick={() => setSelected(null)}>
-          <section style={styles.modal} onClick={(event) => event.stopPropagation()} aria-label="Merchant details">
-            <div style={styles.modalHeader}>
-              <div>
-                <h3 style={styles.modalTitle}>{selected.merchant_name || 'Unnamed merchant'}</h3>
-                <span style={{ ...styles.badge, ...statusStyle(merchantStatus(selected)) }}>{merchantStatus(selected).toUpperCase()}</span>
-              </div>
-              <button type="button" onClick={() => setSelected(null)} style={styles.closeButton} aria-label="Close">×</button>
-            </div>
-            <dl style={styles.details}>
-              <Detail label="System ID" value={selected.merchant_system_id} />
-              <Detail label="Merchant code" value={selected.merchant_code} />
-              <Detail label="Owner email" value={selected.owner_email} />
-              <Detail label="Merchant email" value={selected.merchant_email} />
-              <Detail label="Phone" value={selected.merchant_phone || selected.merchant_contact_phone} />
-              <Detail label="Address" value={[selected.new_address_line, selected.new_address_ward, selected.new_address_city].filter(Boolean).join(', ')} />
-              <Detail label="Registered" value={formatDate(selected.merchant_registered_date)} />
-              <Detail label="Description" value={selected.merchant_description} />
-            </dl>
-          </section>
-        </div>
-      )}
-
-      {showCreate && (
-        <div style={styles.modalOverlay} onClick={() => setShowCreate(false)}>
-          <form style={styles.modal} onSubmit={createMerchant} onClick={(event) => event.stopPropagation()}>
-            <div style={styles.modalHeader}><h3 style={styles.modalTitle}>Create pending merchant</h3><button type="button" onClick={() => setShowCreate(false)} style={styles.closeButton}>×</button></div>
-            <label style={styles.detailLabel}>Merchant name<input required value={createForm.merchant_name} onChange={(e) => setCreateForm({ ...createForm, merchant_name: e.target.value })} style={styles.input} /></label>
-            <label style={styles.detailLabel}>Owner email<input required type="email" value={createForm.owner_email} onChange={(e) => setCreateForm({ ...createForm, owner_email: e.target.value })} style={styles.input} /></label>
-            <label style={styles.detailLabel}>Business email<input type="email" value={createForm.merchant_email} onChange={(e) => setCreateForm({ ...createForm, merchant_email: e.target.value })} style={styles.input} /></label>
-            <label style={styles.detailLabel}>Business phone<input value={createForm.merchant_phone} onChange={(e) => setCreateForm({ ...createForm, merchant_phone: e.target.value })} style={styles.input} /></label>
-            <p style={styles.muted}>This creates a pending business record only. Account assignment and activation remain separate governed actions.</p>
-            <button type="submit" style={styles.approveButton}>Create pending merchant</button>
-          </form>
-        </div>
-      )}
-    </div>
-  );
+    {showCreate && <div style={styles.overlay} onClick={() => setShowCreate(false)}><form style={styles.modal} onSubmit={createMerchant} onClick={(e) => e.stopPropagation()}><div style={styles.drawerHeader}><h3 style={styles.drawerTitle}>Create pending merchant</h3><button type="button" style={styles.close} onClick={() => setShowCreate(false)}>×</button></div><Field label="Merchant name" required value={createForm.merchant_name} onChange={(v) => setCreateForm({ ...createForm, merchant_name: v })} /><Field label="Owner email" required type="email" value={createForm.owner_email} onChange={(v) => setCreateForm({ ...createForm, owner_email: v })} /><Field label="Business email" type="email" value={createForm.merchant_email} onChange={(v) => setCreateForm({ ...createForm, merchant_email: v })} /><Field label="Business phone" value={createForm.merchant_phone} onChange={(v) => setCreateForm({ ...createForm, merchant_phone: v })} /><p style={styles.muted}>Commercial rates remain null until explicitly entered. Account assignment and activation remain separate governed actions.</p><button style={styles.primaryButton} type="submit">Create pending merchant</button></form></div>}
+  </div>;
 }
 
-function Detail({ label, value }: { label: string; value?: string | null }) {
-  return (
-    <div style={styles.detailRow}>
-      <dt style={styles.detailLabel}>{label}</dt>
-      <dd style={styles.detailValue}>{value || '—'}</dd>
-    </div>
-  );
-}
-
-function formatDate(value?: string | null) {
-  if (!value) return '—';
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
-}
-
-function statusStyle(status: string): React.CSSProperties {
-  if (status === 'active') return { backgroundColor: '#d1fae5', color: '#065f46' };
-  if (status === 'pending') return { backgroundColor: '#fef3c7', color: '#92400e' };
-  return { backgroundColor: '#fee2e2', color: '#991b1b' };
-}
+function toEdit(m: Merchant): EditForm { return { merchant_name: m.merchant_name || '', merchant_description: m.merchant_description || '', merchant_phone: m.merchant_phone || '', merchant_email: m.merchant_email || '', merchant_contact_phone: m.merchant_contact_phone || '', owner_name: m.owner_name || '', owner_phone: m.owner_phone || '', new_address_city: m.new_address_city || '', new_address_ward: m.new_address_ward || '', new_address_line: m.new_address_line || '', merchant_commission_type: m.merchant_commission_type || '', merchant_commission_value: m.merchant_commission_value === null || m.merchant_commission_value === undefined ? '' : String(m.merchant_commission_value), merchant_discount_type: m.merchant_discount_type || '', merchant_discount_value: m.merchant_discount_value === null || m.merchant_discount_value === undefined ? '' : String(m.merchant_discount_value), merchant_priority: m.merchant_priority === null || m.merchant_priority === undefined ? '' : String(m.merchant_priority), merchant_verified: Boolean(m.merchant_verified), merchants_status: m.merchants_status || '', merchant_action: m.merchant_action || '' }; }
+function Field({ label, value: current, onChange, type = 'text', required = false, inputMode }: { label: string; value: string; onChange: (value: string) => void; type?: string; required?: boolean; inputMode?: 'decimal' }) { return <label style={styles.label}>{label}<input style={styles.input} type={type} required={required} inputMode={inputMode} value={current} onChange={(e) => onChange(e.target.value)} /></label>; }
+function SelectField({ label, value: current, onChange }: { label: string; value: string; onChange: (value: string) => void }) { return <label style={styles.label}>{label}<select style={styles.input} value={current} onChange={(e) => onChange(e.target.value)}><option value="">Not set</option><option value="percentage">Percentage</option><option value="fixed">Fixed amount</option></select></label>; }
+function Section({ title, children }: { title: string; children: React.ReactNode }) { return <section style={styles.section}><h4 style={styles.sectionTitle}>{title}</h4>{children}</section>; }
+function Detail({ label, value: current }: { label: string; value?: string | null }) { return <div style={styles.detailRow}><dt style={styles.detailLabel}>{label}</dt><dd style={styles.detailValue}>{current || '—'}</dd></div>; }
+function merchantStatus(m: Merchant) { return m.merchants_status?.toLowerCase() || 'unmapped'; }
+function statusStyle(status: string): React.CSSProperties { if (status === 'active') return { background: '#d1fae5', color: '#065f46' }; if (status === 'pending') return { background: '#fef3c7', color: '#92400e' }; return { background: '#fee2e2', color: '#991b1b' }; }
+function commercial(type?: string | null, amount?: string | number | null) { if (amount === null || amount === undefined || amount === '') return 'Not set'; return type === 'percentage' ? `${amount}%` : type === 'fixed' ? `${amount} VND` : `${amount} (${type || 'type unknown'})`; }
+function formatDate(input?: string | null) { if (!input) return '—'; const parsed = new Date(input); return Number.isNaN(parsed.getTime()) ? input : parsed.toLocaleString('vi-VN'); }
+function value(input: unknown) { return input === null || input === undefined || input === '' ? '—' : String(input); }
+function fileSize(bytes?: number | null) { if (bytes === null || bytes === undefined) return 'unknown size'; return bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KB`; }
+function message(error: unknown, fallback: string) { return error instanceof Error ? error.message : fallback; }
 
 const styles: Record<string, React.CSSProperties> = {
-  container: { maxWidth: 1400 },
-  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap', marginBottom: 24 },
-  title: { margin: 0, color: '#111827', fontSize: 24 },
-  subtitle: { color: '#6b7280', margin: '6px 0 0' },
-  filters: { display: 'flex', gap: 8, flexWrap: 'wrap' },
-  filterButton: { border: 0, borderRadius: 999, padding: '9px 14px', cursor: 'pointer', color: '#374151', background: '#e5e7eb' },
-  filterButtonActive: { color: '#fff', background: '#2563eb' },
-  createButton: { border: 0, borderRadius: 999, padding: '9px 14px', cursor: 'pointer', color: '#fff', background: '#0f766e' },
-  error: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, color: '#991b1b', background: '#fee2e2', borderRadius: 8, padding: 14, marginBottom: 16 },
-  retryButton: { border: 0, borderRadius: 6, padding: '7px 12px', cursor: 'pointer' },
-  tableWrapper: { overflow: 'auto', background: '#fff', borderRadius: 8, boxShadow: '0 1px 3px rgba(0,0,0,.1)' },
-  table: { width: '100%', borderCollapse: 'collapse' },
-  th: { padding: '12px 14px', textAlign: 'left', color: '#374151', background: '#f9fafb', whiteSpace: 'nowrap' },
-  row: { borderTop: '1px solid #e5e7eb' },
-  td: { padding: '14px', color: '#111827', verticalAlign: 'top' },
-  muted: { color: '#6b7280', fontSize: 13, marginTop: 4 },
-  badge: { display: 'inline-block', padding: '4px 9px', borderRadius: 999, fontSize: 12, fontWeight: 700 },
-  actions: { display: 'flex', gap: 6, flexWrap: 'wrap' },
-  viewButton: { border: 0, borderRadius: 6, padding: '7px 10px', cursor: 'pointer', background: '#e5e7eb', color: '#111827' },
-  approveButton: { border: 0, borderRadius: 6, padding: '7px 10px', cursor: 'pointer', background: '#16a34a', color: '#fff' },
-  rejectButton: { border: 0, borderRadius: 6, padding: '7px 10px', cursor: 'pointer', background: '#dc2626', color: '#fff' },
-  state: { padding: 40, textAlign: 'center', color: '#6b7280' },
-  modalOverlay: { position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, background: 'rgba(0,0,0,.5)' },
-  modal: { width: '100%', maxWidth: 620, maxHeight: '85vh', overflow: 'auto', borderRadius: 10, padding: 24, background: '#fff' },
-  modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, marginBottom: 20 },
-  modalTitle: { margin: '0 0 8px', color: '#111827', fontSize: 22 },
-  closeButton: { border: 0, background: 'transparent', color: '#4b5563', cursor: 'pointer', fontSize: 28, lineHeight: 1 },
-  details: { margin: 0, display: 'grid', gap: 10 },
-  detailRow: { display: 'grid', gridTemplateColumns: '140px 1fr', gap: 14, paddingBottom: 10, borderBottom: '1px solid #e5e7eb' },
-  detailLabel: { color: '#6b7280', fontWeight: 600 },
-  detailValue: { margin: 0, color: '#111827', overflowWrap: 'anywhere' },
-  input: { display: 'block', width: '100%', boxSizing: 'border-box', margin: '6px 0 14px', padding: 10, border: '1px solid #cbd5e1', borderRadius: 6 },
+  container: { maxWidth: 1500, display: 'grid', gap: 16 }, header: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }, title: { margin: 0, color: '#0f172a', fontSize: 25 }, subtitle: { color: '#64748b', margin: '6px 0 0' }, error: { color: '#991b1b', background: '#fee2e2', borderRadius: 10, padding: 14 },
+  filters: { display: 'grid', gridTemplateColumns: 'minmax(220px,2fr) repeat(3,minmax(150px,1fr)) auto auto', alignItems: 'end', gap: 10, padding: 16, border: '1px solid #e2e8f0', borderRadius: 12, background: '#fff' }, label: { display: 'block', color: '#475569', fontSize: 12, fontWeight: 700 }, input: { display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 6, padding: '9px 10px', border: '1px solid #cbd5e1', borderRadius: 8, background: '#fff' }, inputInline: { padding: '8px 9px', border: '1px solid #cbd5e1', borderRadius: 8, background: '#fff' }, checkbox: { display: 'flex', alignItems: 'center', gap: 8, minHeight: 38, color: '#334155', fontSize: 13 },
+  primaryButton: { border: 0, borderRadius: 8, padding: '9px 13px', cursor: 'pointer', color: '#fff', background: '#0f766e' }, secondaryButton: { border: '1px solid #cbd5e1', borderRadius: 8, padding: '8px 11px', cursor: 'pointer', color: '#334155', background: '#fff' }, approveButton: { border: 0, borderRadius: 8, padding: '8px 11px', cursor: 'pointer', color: '#fff', background: '#16a34a' }, dangerButton: { border: 0, borderRadius: 8, padding: '8px 11px', cursor: 'pointer', color: '#fff', background: '#dc2626' },
+  tableWrapper: { overflow: 'auto', background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12 }, table: { width: '100%', borderCollapse: 'collapse', fontSize: 13 }, th: { padding: 12, textAlign: 'left', color: '#475569', background: '#f8fafc', whiteSpace: 'nowrap' }, row: { borderTop: '1px solid #e2e8f0' }, td: { padding: 12, verticalAlign: 'top', minWidth: 105 }, muted: { color: '#64748b', fontSize: 12, marginTop: 4 }, badge: { display: 'inline-block', padding: '4px 9px', borderRadius: 999, fontSize: 11, fontWeight: 750 }, actions: { display: 'flex', gap: 7, flexWrap: 'wrap', alignItems: 'center' }, state: { padding: 36, textAlign: 'center', color: '#64748b' }, pagination: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, color: '#64748b', fontSize: 13 },
+  overlay: { position: 'fixed', inset: 0, zIndex: 60, display: 'flex', justifyContent: 'flex-end', background: 'rgba(15,23,42,.48)' }, drawer: { width: 'min(680px,100%)', height: '100%', overflow: 'auto', boxSizing: 'border-box', padding: 24, background: '#fff', boxShadow: '-12px 0 32px rgba(15,23,42,.18)' }, modal: { width: 'min(560px,calc(100% - 32px))', maxHeight: '90vh', overflow: 'auto', alignSelf: 'center', margin: 'auto', borderRadius: 14, padding: 24, background: '#fff' }, drawerHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, marginBottom: 20 }, drawerTitle: { margin: '0 0 8px', fontSize: 22 }, close: { border: 0, background: 'transparent', color: '#475569', fontSize: 28, lineHeight: 1, cursor: 'pointer' }, section: { marginTop: 22, paddingTop: 18, borderTop: '1px solid #e2e8f0' }, sectionTitle: { margin: '0 0 12px', color: '#0f172a' }, details: { margin: 0, display: 'grid', gap: 9 }, detailRow: { display: 'grid', gridTemplateColumns: '180px 1fr', gap: 12, paddingBottom: 8 }, detailLabel: { color: '#64748b', fontWeight: 650 }, detailValue: { margin: 0, overflowWrap: 'anywhere' }, historyItem: { display: 'grid', gap: 3, padding: 12, marginBottom: 8, border: '1px solid #e2e8f0', borderRadius: 9, color: '#334155', fontSize: 13 }, formGrid: { display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 12, marginBottom: 20 },
 };

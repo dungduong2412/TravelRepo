@@ -209,7 +209,7 @@ async function main() {
   }], 'id');
 
   const [existingMerchants, existingCollaborators, existingCategories] = await Promise.all([
-    target.select('merchant_details', 'select=merchant_system_id,legacy_restaurant_id,legacy_tenant_id,merchant_code,merchant_email,merchant_phone,merchant_name,owner_email,owner_phone'),
+    target.select('merchant_details', 'select=merchant_system_id,legacy_restaurant_id,legacy_tenant_id,merchant_code,merchant_email,merchant_phone,merchant_name,owner_email,owner_phone,merchants_status'),
     target.select('collaborators', 'select=id,legacy_middleman_id,legacy_tenant_id,collaborators_code,collaborators_email,collaborators_phone,collaborators_name'),
     target.select('categories', 'select=id,legacy_category_id,legacy_tenant_id,category_name,category_name_vi,category_icon,is_active,display_order')
   ]);
@@ -221,6 +221,7 @@ async function main() {
       ['Email', 'merchant_email', norm], ['Email', 'owner_email', norm],
       ['Phone', 'merchant_phone', digits], ['Phone', 'owner_phone', digits]
     ], 'merchant_system_id', 'legacy_restaurant_id');
+    const existingTarget = existingMerchants.find((merchant) => lower(merchant.merchant_system_id) === lower(targetId));
     merchantId.set(lower(r.Id), targetId);
     return {
       merchant_system_id: targetId, merchant_code: r.Code, merchant_name: r.Name,
@@ -233,7 +234,9 @@ async function main() {
       owner_email: r.Email, owner_password: null, merchant_description: r.Description,
       merchant_contact_phone: r.ContactPhone, new_address_city: r.Province,
       new_address_ward: r.Ward, new_address_line: r.Address,
-      merchants_status: String(r.Status), legacy_restaurant_id: lower(r.Id),
+      // Source numeric status remains in legacy_status. Do not reinterpret it as
+      // the V2 operational lifecycle; preserve any governed pre-existing state.
+      merchants_status: existingTarget?.merchants_status ?? null, legacy_restaurant_id: lower(r.Id),
       legacy_tenant_id: lower(r.TenantId), legacy_status: r.Status,
       legacy_is_banned: r.IsBanned, legacy_min_commission: r.MinCommission,
       legacy_tax_code: r.TaxCode, legacy_geo_position: r.GeoPosition,
