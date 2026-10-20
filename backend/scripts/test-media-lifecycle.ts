@@ -6,9 +6,11 @@ type MediaRow = Record<string, any>;
 class FakeSupabaseClient {
   readonly objects = new Map<string, Buffer>();
   readonly mediaRows: MediaRow[] = [];
+  readonly approvalRows: MediaRow[] = [];
   readonly removeAttempts: string[] = [];
   failUploadOnce = false;
   failInsertOnce = false;
+  failRequestInsertOnce = false;
   failRemoveCount = 0;
 
   storage = {
@@ -75,6 +77,28 @@ class FakeSupabaseClient {
           };
           return result;
         },
+        delete: () => {
+          let id: string | undefined;
+          const chain: any = { eq: (column: string, value: unknown) => { if (column === 'id') id = String(value); return chain; }, then: (resolve: (value: any) => unknown) => { const index = this.mediaRows.findIndex((row) => row.id === id); if (index >= 0) this.mediaRows.splice(index, 1); return Promise.resolve({ error: null }).then(resolve); } };
+          return chain;
+        },
+        update: (patch: MediaRow) => {
+          let id: string | undefined;
+          const chain: any = { eq: (column: string, value: unknown) => { if (column === 'id') id = String(value); return chain; }, then: (resolve: (value: any) => unknown) => { const row = this.mediaRows.find((candidate) => candidate.id === id); if (row) Object.assign(row, patch); return Promise.resolve({ error: null }).then(resolve); } };
+          return chain;
+        },
+      };
+    }
+    if (table === 'media_approval_requests') {
+      return {
+        insert: (row: MediaRow) => ({
+          select: () => ({ single: async () => {
+            if (this.failRequestInsertOnce) { this.failRequestInsertOnce = false; return { data: null, error: new Error('synthetic request failure') }; }
+            const saved = { id: `approval-${this.approvalRows.length + 1}`, status: 'pending', ...row };
+            this.approvalRows.push(saved);
+            return { data: saved, error: null };
+          } }),
+        }),
       };
     }
     throw new Error(`Unexpected fake table: ${table}`);
@@ -94,13 +118,17 @@ async function main() {
     mime_type: 'image/png' as const,
     size_bytes: png.length,
     base64_data: png.toString('base64'),
-    is_hero: true,
+    action: 'add' as const,
+    slot: 'main' as const,
+    direct_publish: false,
   };
   const controls: Array<{ name: string; status: 'PASS' }> = [];
   const pass = (name: string) => controls.push({ name, status: 'PASS' });
 
   const first = await service.upload('merchant-user', dto);
   assert.equal(first.transfer_status, 'verified');
+  assert.equal(first.publication_status, 'pending');
+  assert.equal(first.approval_request.status, 'pending');
   assert.equal(first.bucket_id, 'merchant-media');
   assert.equal(first.size_bytes, png.length);
   assert.equal(first.sha256_hex.length, 64);
@@ -143,6 +171,12 @@ async function main() {
   assert.equal(client.mediaRows.length, beforeUploadFailure.rows + 1);
   pass('retry after transient Storage failure succeeds exactly once');
 
+  client.failRequestInsertOnce = true;
+  const beforeRequestFailure = { objects: client.objects.size, rows: client.mediaRows.length };
+  await assert.rejects(() => service.upload('merchant-user', dto), /Unable to create media approval request/);
+  assert.deepEqual({ objects: client.objects.size, rows: client.mediaRows.length }, beforeRequestFailure);
+  pass('approval-request failure removes uploaded object and pending metadata');
+
   client.failInsertOnce = true;
   client.failRemoveCount = 1;
   const beforeMetadataFailure = { objects: client.objects.size, rows: client.mediaRows.length };
@@ -167,6 +201,7 @@ async function main() {
   assert.equal(client.mediaRows.length, rowsBeforeTrackedFailure + 1);
   const failedRow = client.mediaRows.at(-1);
   assert.equal(failedRow?.transfer_status, 'failed');
+  assert.equal(failedRow?.publication_status, 'failed');
   assert(client.objects.has(`${failedRow?.bucket_id}/${failedRow?.object_path}`));
   pass('persistent cleanup failure keeps the object linked to failed metadata for reconciliation');
 

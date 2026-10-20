@@ -125,8 +125,8 @@ const collaboratorTransactions = await api('/transactions/me', collaboratorToken
 check('collaborator sees linked and orphan history', collaboratorTransactions.status === 200 && [ids.orphanTransaction, ids.linkedTransaction].every((id) => collaboratorTransactions.json.some((row) => row.id === id)), `HTTP ${collaboratorTransactions.status}`);
 
 const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
-const upload = await api('/media/upload', merchantToken, { method: 'POST', body: { filename: 'd6-proof.png', mime_type: 'image/png', size_bytes: png.length, base64_data: png.toString('base64'), is_hero: true } });
-check('merchant private media upload', upload.status === 201 && upload.json?.bucket_id === 'merchant-media' && upload.json?.merchant_id === ids.merchantEntity && upload.json?.transfer_status === 'verified', `HTTP ${upload.status}`);
+const upload = await api('/media/upload', merchantToken, { method: 'POST', body: { filename: 'd6-proof.png', mime_type: 'image/png', size_bytes: png.length, base64_data: png.toString('base64'), action: 'add', slot: 'main' } });
+check('merchant private media proposal', upload.status === 201 && upload.json?.bucket_id === 'merchant-media' && upload.json?.merchant_id === ids.merchantEntity && upload.json?.transfer_status === 'verified' && upload.json?.publication_status === 'pending', `HTTP ${upload.status}`);
 const ownMedia = await api('/media/me', merchantToken);
 check('merchant media listing ownership', ownMedia.status === 200 && ownMedia.json.some((row) => row.id === upload.json?.id), `HTTP ${ownMedia.status}`);
 const ownSigned = await api(`/media/${upload.json?.id}/signed-url`, merchantToken);
@@ -137,6 +137,7 @@ const invalidMedia = await api('/media/upload', merchantToken, { method: 'POST',
 check('media byte-signature denial', invalidMedia.status === 400, `HTTP ${invalidMedia.status}`);
 
 await raw(`/storage/v1/object/${encodeURIComponent(upload.json?.bucket_id)}/${upload.json?.object_path}`, { method: 'DELETE' });
+if (upload.json?.approval_request?.id) await raw(`/rest/v1/media_approval_requests?id=eq.${upload.json.approval_request.id}`, { method: 'DELETE' });
 await raw(`/rest/v1/media_assets?id=eq.${upload.json?.id}`, { method: 'DELETE' });
 await raw(`/rest/v1/referral_transactions?id=in.(${ids.orphanTransaction},${ids.linkedTransaction})`, { method: 'DELETE' });
 const authUsers = await raw('/auth/v1/admin/users?page=1&per_page=1000');

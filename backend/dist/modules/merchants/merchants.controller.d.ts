@@ -39,6 +39,12 @@ export declare class MerchantsController {
             requested_at: any;
             payload: any;
             created_at: any;
+            request_status: any;
+            request_source: any;
+            requested_by: any;
+            decided_by: any;
+            decided_at: any;
+            decision_reason: any;
         }[];
         media: {
             id: any;
@@ -50,6 +56,12 @@ export declare class MerchantsController {
             is_hero: any;
             display_order: any;
             transfer_status: any;
+            publication_status: any;
+            publication_version: any;
+            effective_from: any;
+            effective_until: any;
+            approved_by: any;
+            approved_at: any;
             created_at: any;
         }[];
         categories: {
@@ -64,7 +76,9 @@ export declare class MerchantsController {
     updateByAdmin(actor: any, id: string, dto: AdminUpdateMerchantDto): Promise<Omit<any, "owner_password">>;
     findById(actor: {
         id: string;
-    }, id: string): Promise<Omit<any, "owner_password">>;
+    }, id: string): Promise<{
+        category_ids: any[];
+    }>;
     create(dto: CreateMerchantDto): Promise<Omit<any, "owner_password">>;
     update(actor: {
         id: string;

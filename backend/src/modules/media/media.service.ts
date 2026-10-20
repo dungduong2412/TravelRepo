@@ -1,7 +1,12 @@
 import { BadRequestException, ForbiddenException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { SupabaseService } from '../../infrastructure/supabase/supabase.service';
 import { createHash, randomUUID } from 'crypto';
-import { MAX_MEDIA_BYTES, UploadMediaDto } from './media.dto';
+import {
+  MAX_MEDIA_BYTES,
+  MediaApprovalQuery,
+  MediaChangeRequestDto,
+  UploadMediaDto,
+} from './media.dto';
 import { AuditService } from '../audit/audit.service';
 
 export function hasExpectedImageSignature(bytes: Buffer, mimeType: string) {
@@ -20,7 +25,7 @@ export class MediaService {
 
   async findAll() {
     const { data, error } = await this.supabase.getClient().from('media_assets')
-      .select('id,merchant_id,collaborator_id,bucket_id,object_path,mime_type,size_bytes,is_hero,display_order,transfer_status');
+      .select('id,merchant_id,collaborator_id,bucket_id,object_path,mime_type,size_bytes,is_hero,display_order,transfer_status,publication_status,publication_version,uploaded_by,approved_by,approved_at,effective_from,effective_until');
     if (error) throw new InternalServerErrorException('Unable to load media');
     return data;
   }
@@ -74,7 +79,7 @@ export class MediaService {
   async findMine(userId: string) {
     const profile = await this.activeProfile(userId);
     let query = this.supabase.getClient().from('media_assets')
-      .select('id,merchant_id,collaborator_id,bucket_id,object_path,original_filename,mime_type,size_bytes,is_hero,display_order,transfer_status,created_at')
+      .select('id,merchant_id,collaborator_id,bucket_id,object_path,original_filename,mime_type,size_bytes,sha256_hex,is_hero,display_order,transfer_status,publication_status,publication_version,created_at,approval_requests:media_approval_requests!media_approval_requests_proposed_media_id_fkey(id,action,slot,status,requested_at,decided_at,decision_reason,target_media_id,requested_display_order)')
       .order('created_at', { ascending: false });
     if (profile.role === 'merchant' && profile.merchant_id) query = query.eq('merchant_id', profile.merchant_id);
     else if (profile.role === 'collaborator' && profile.collaborator_id) query = query.eq('collaborator_id', profile.collaborator_id);
@@ -82,6 +87,23 @@ export class MediaService {
     const { data, error } = await query;
     if (error) throw new InternalServerErrorException('Unable to load media');
     return data || [];
+  }
+
+  private async ownedTarget(userId: string, mediaId: string) {
+    const client = this.supabase.getClient();
+    const profile = await this.activeProfile(userId);
+    const { data: media, error } = await client.from('media_assets')
+      .select('id,merchant_id,collaborator_id,bucket_id,object_path,is_hero,display_order,publication_status,publication_version')
+      .eq('id', mediaId).maybeSingle();
+    if (error || !media) throw new NotFoundException('Target media not found');
+    const owns = profile.role === 'admin' ||
+      (profile.role === 'merchant' && profile.merchant_id === media.merchant_id) ||
+      (profile.role === 'collaborator' && profile.collaborator_id === media.collaborator_id);
+    if (!owns) throw new ForbiddenException('Media target is outside the assigned owner');
+    if (!['legacy_effective', 'preexisting_effective', 'approved'].includes(media.publication_status)) {
+      throw new BadRequestException('Only effective media can be changed');
+    }
+    return { profile, media };
   }
 
   async upload(userId: string, dto: UploadMediaDto) {
@@ -122,6 +144,17 @@ export class MediaService {
     } else {
       throw new ForbiddenException('Media upload is not assigned');
     }
+    if (dto.direct_publish && profile.role !== 'admin') {
+      throw new ForbiddenException('Only Platform Admin can directly publish media');
+    }
+
+    let targetMedia: Awaited<ReturnType<MediaService['ownedTarget']>>['media'] | null = null;
+    if (dto.action === 'replace' && dto.target_media_id) {
+      targetMedia = (await this.ownedTarget(userId, dto.target_media_id)).media;
+      if (targetMedia.merchant_id !== merchantId || targetMedia.collaborator_id !== collaboratorId) {
+        throw new ForbiddenException('Replacement target owner mismatch');
+      }
+    }
 
     let bytes: Buffer;
     try {
@@ -155,9 +188,11 @@ export class MediaService {
       mime_type: dto.mime_type,
       sha256_hex: createHash('sha256').update(bytes).digest('hex'),
       size_bytes: bytes.length,
-      is_hero: dto.is_hero || false,
+      uploaded_by: userId,
+      is_hero: false,
       display_order: dto.display_order || 0,
       transfer_status: 'verified',
+      publication_status: 'pending',
     };
     const { data, error } = await client.from('media_assets').insert(record).select().single();
     if (error) {
@@ -168,6 +203,7 @@ export class MediaService {
         const { error: trackingError } = await client.from('media_assets').insert({
           ...record,
           transfer_status: 'failed',
+          publication_status: 'failed',
         });
         if (trackingError) {
           throw new InternalServerErrorException('Unable to persist media metadata; stored object requires reconciliation');
@@ -176,14 +212,136 @@ export class MediaService {
       }
       throw new InternalServerErrorException('Unable to persist media metadata');
     }
-    await this.audit.record({ id: userId, role: profile.role }, 'media.uploaded', 'media_asset', id, {
+
+    const { data: approvalRequest, error: requestError } = await client.from('media_approval_requests').insert({
+      owner_type: merchantId ? 'merchant' : 'collaborator',
+      merchant_id: merchantId,
+      collaborator_id: collaboratorId,
+      action: dto.action,
+      slot: dto.slot,
+      proposed_media_id: id,
+      target_media_id: targetMedia?.id || null,
+      requested_display_order: dto.display_order ?? (dto.slot === 'main' ? 0 : null),
+      expected_target_version: targetMedia?.publication_version ?? null,
+      requested_by: userId,
+    }).select().single();
+    if (requestError || !approvalRequest) {
+      const removed = await this.removeUploadedObject(client, bucketId, objectPath);
+      if (removed) {
+        await client.from('media_assets').delete().eq('id', id).eq('publication_status', 'pending');
+      } else {
+        await client.from('media_assets').update({ transfer_status: 'failed', publication_status: 'failed' }).eq('id', id);
+        throw new InternalServerErrorException('Unable to create approval request; stored object is tracked as failed');
+      }
+      throw new InternalServerErrorException('Unable to create media approval request');
+    }
+
+    await this.audit.record({ id: userId, role: profile.role }, 'media.proposed', 'media_asset', id, {
       merchant_id: merchantId,
       collaborator_id: collaboratorId,
       mime_type: dto.mime_type,
       size_bytes: bytes.length,
       sha256_hex: record.sha256_hex,
+      approval_request_id: approvalRequest.id,
+      action: dto.action,
+      slot: dto.slot,
+    });
+    if (dto.direct_publish) {
+      const decision = await this.approve(userId, approvalRequest.id, 'Direct Platform Admin publication');
+      const { data: published } = await client.from('media_assets').select('*').eq('id', id).single();
+      return { ...published, approval_request: decision };
+    }
+    return { ...data, approval_request: approvalRequest };
+  }
+
+  async requestChange(userId: string, dto: MediaChangeRequestDto) {
+    const { profile, media } = await this.ownedTarget(userId, dto.target_media_id);
+    const { data, error } = await this.supabase.getClient().from('media_approval_requests').insert({
+      owner_type: media.merchant_id ? 'merchant' : 'collaborator',
+      merchant_id: media.merchant_id,
+      collaborator_id: media.collaborator_id,
+      action: dto.action,
+      slot: media.is_hero ? 'main' : 'gallery',
+      proposed_media_id: null,
+      target_media_id: media.id,
+      requested_display_order: dto.display_order ?? null,
+      expected_target_version: media.publication_version,
+      requested_by: userId,
+    }).select().single();
+    if (error || !data) throw new BadRequestException('Unable to create media change request');
+    await this.audit.record({ id: userId, role: profile.role }, 'media.change_requested', 'media_approval_request', data.id, {
+      action: dto.action, target_media_id: media.id, requested_display_order: dto.display_order,
     });
     return data;
+  }
+
+  async cancel(userId: string, requestId: string) {
+    const client = this.supabase.getClient();
+    const { data: request } = await client.from('media_approval_requests')
+      .select('id,proposed_media_id,proposed:media_assets!media_approval_requests_proposed_media_id_fkey(bucket_id,object_path)')
+      .eq('id', requestId).maybeSingle();
+    const { data, error } = await client.rpc('cancel_media_request', {
+      p_request_id: requestId, p_actor_user_id: userId,
+    });
+    if (error) throw new BadRequestException(error.message);
+    let object_removed: boolean | null = null;
+    const proposed: any = Array.isArray(request?.proposed) ? request?.proposed[0] : request?.proposed;
+    if (proposed?.bucket_id && proposed?.object_path) {
+      object_removed = await this.removeUploadedObject(client, proposed.bucket_id, proposed.object_path);
+    }
+    return { request: data, object_removed };
+  }
+
+  async approve(userId: string, requestId: string, reason?: string) {
+    const { data, error } = await this.supabase.getClient().rpc('approve_media_request', {
+      p_request_id: requestId, p_actor_user_id: userId, p_reason: reason || null,
+    });
+    if (error) throw new BadRequestException(error.message);
+    return data;
+  }
+
+  async reject(userId: string, requestId: string, reason?: string) {
+    if (!reason?.trim()) throw new BadRequestException('Rejection reason is required');
+    const { data, error } = await this.supabase.getClient().rpc('reject_media_request', {
+      p_request_id: requestId, p_actor_user_id: userId, p_reason: reason.trim(),
+    });
+    if (error) throw new BadRequestException(error.message);
+    return data;
+  }
+
+  async approvalQueue(filter: MediaApprovalQuery) {
+    const from = (filter.page - 1) * filter.page_size;
+    let query = this.supabase.getClient().from('media_approval_requests').select([
+      'id,owner_type,merchant_id,collaborator_id,action,slot,status,requested_display_order,expected_target_version,requested_by,requested_at,decided_by,decided_at,decision_reason',
+      'merchant:merchant_details!media_approval_requests_merchant_id_fkey(merchant_system_id,merchant_code,merchant_name)',
+      'collaborator:collaborators!media_approval_requests_collaborator_id_fkey(id,collaborators_code,collaborators_name)',
+      'proposed:media_assets!media_approval_requests_proposed_media_id_fkey(id,original_filename,mime_type,size_bytes,sha256_hex,bucket_id,object_path,publication_status)',
+      'target:media_assets!media_approval_requests_target_media_id_fkey(id,original_filename,mime_type,size_bytes,sha256_hex,bucket_id,object_path,is_hero,display_order,publication_status,publication_version)',
+    ].join(','), { count: 'exact' }).eq('status', filter.status);
+    if (filter.owner_type) query = query.eq('owner_type', filter.owner_type);
+    const { data, error, count } = await query.order('requested_at', { ascending: true })
+      .range(from, from + filter.page_size - 1);
+    if (error) throw new InternalServerErrorException('Unable to load media approvals');
+    return { items: data || [], page: filter.page, page_size: filter.page_size, total: count || 0,
+      page_count: Math.ceil((count || 0) / filter.page_size) };
+  }
+
+  async findEffective(ownerType: string, ownerId: string) {
+    if (!['merchant', 'collaborator'].includes(ownerType) || !/^[0-9a-f-]{36}$/i.test(ownerId)) {
+      throw new BadRequestException('Invalid media owner');
+    }
+    const client = this.supabase.getClient();
+    const query = client.from('media_assets').select('id,bucket_id,object_path,original_filename,mime_type,size_bytes,sha256_hex,is_hero,display_order,publication_status,effective_from')
+      .eq(ownerType === 'merchant' ? 'merchant_id' : 'collaborator_id', ownerId)
+      .in('publication_status', ['legacy_effective', 'preexisting_effective', 'approved'])
+      .eq('transfer_status', 'verified').order('is_hero', { ascending: false }).order('display_order');
+    const { data, error } = await query;
+    if (error) throw new InternalServerErrorException('Unable to load approved media');
+    return Promise.all((data || []).map(async (asset) => {
+      const { data: signed, error: signedError } = await client.storage.from(asset.bucket_id).createSignedUrl(asset.object_path, 300);
+      if (signedError) throw new InternalServerErrorException('Unable to sign approved media');
+      return { ...asset, signed_url: signed.signedUrl, expires_in: 300 };
+    }));
   }
 
   async upsertImported(rows: Record<string, unknown>[]) {

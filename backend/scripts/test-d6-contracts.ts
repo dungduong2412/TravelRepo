@@ -2,16 +2,24 @@ import assert from 'node:assert/strict';
 import { AdminUpdateMerchantSchema, CreateMerchantMemberSchema, UpdateMerchantSchema } from '../src/modules/merchants/merchants.dto';
 import { AdminUpdateCollaboratorSchema, UpdateCollaboratorSchema } from '../src/modules/collaborators/collaborators.dto';
 import { UpdateManagedUserProfileSchema } from '../src/modules/user-profiles/user-profiles.dto';
-import { UploadMediaSchema } from '../src/modules/media/media.dto';
+import { MediaChangeRequestSchema, UploadMediaSchema } from '../src/modules/media/media.dto';
 import { hasExpectedImageSignature } from '../src/modules/media/media.service';
 
 const uuidA = '11111111-1111-4111-8111-111111111111';
 const uuidB = '22222222-2222-4222-8222-222222222222';
+const uuidC = '33333333-3333-4333-8333-333333333333';
+const uuidD = '44444444-4444-4444-8444-444444444444';
 
 assert.equal(UpdateMerchantSchema.safeParse({ merchant_name: 'Safe edit', owner_phone: '0900000000' }).success, true);
 assert.equal(UpdateMerchantSchema.safeParse({ merchant_verified: true }).success, false);
 assert.equal(UpdateMerchantSchema.safeParse({ merchants_status: 'active' }).success, false);
 assert.equal(AdminUpdateMerchantSchema.safeParse({ merchant_verified: true, merchants_status: 'active' }).success, true);
+assert.equal(UpdateMerchantSchema.safeParse({ category_ids: [] }).success, true);
+assert.equal(UpdateMerchantSchema.safeParse({ category_ids: [uuidA] }).success, true);
+assert.equal(UpdateMerchantSchema.safeParse({ category_ids: [uuidA, uuidB] }).success, true);
+assert.equal(UpdateMerchantSchema.safeParse({ category_ids: [uuidA, uuidB, uuidC] }).success, true);
+assert.equal(UpdateMerchantSchema.safeParse({ category_ids: [uuidA, uuidB, uuidC, uuidD] }).success, false);
+assert.equal(UpdateMerchantSchema.safeParse({ category_ids: [uuidA, uuidA] }).success, false);
 
 assert.equal(UpdateCollaboratorSchema.safeParse({ collaborators_name: 'Safe edit' }).success, true);
 assert.equal(UpdateCollaboratorSchema.safeParse({ collaborators_verified: true }).success, false);
@@ -33,7 +41,9 @@ assert.equal(hasExpectedImageSignature(jpeg, 'image/jpeg'), true);
 assert.equal(hasExpectedImageSignature(webp, 'image/webp'), true);
 assert.equal(hasExpectedImageSignature(png, 'image/jpeg'), false);
 assert.equal(UploadMediaSchema.safeParse({ filename: 'a.png', mime_type: 'image/png', size_bytes: png.length, base64_data: png.toString('base64') }).success, true);
+assert.equal(UploadMediaSchema.safeParse({ filename: 'a.png', mime_type: 'image/png', size_bytes: png.length, base64_data: png.toString('base64'), action: 'replace' }).success, false);
+assert.equal(MediaChangeRequestSchema.safeParse({ action: 'reorder', target_media_id: uuidA, display_order: 2 }).success, true);
 assert.equal(UploadMediaSchema.safeParse({ filename: 'a.gif', mime_type: 'image/gif', size_bytes: 4, base64_data: 'R0lG' }).success, false);
 assert.equal(UploadMediaSchema.safeParse({ filename: 'a.png', mime_type: 'image/png', size_bytes: png.length, base64_data: 'not base64!' }).success, false);
 
-console.log('D6 contract tests: PASS (20 assertions)');
+console.log('D6 contract tests: PASS (28 assertions)');

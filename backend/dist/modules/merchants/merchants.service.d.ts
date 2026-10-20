@@ -20,7 +20,9 @@ export declare class MerchantsService {
         page_count: number;
     }>;
     findById(id: string): Promise<Omit<any, "owner_password">>;
-    findByIdForActor(userId: string, id: string): Promise<Omit<any, "owner_password">>;
+    findByIdForActor(userId: string, id: string): Promise<{
+        category_ids: any[];
+    }>;
     operationalDetail(id: string): Promise<{
         merchant: Omit<any, "owner_password">;
         update_requests: {
@@ -30,6 +32,12 @@ export declare class MerchantsService {
             requested_at: any;
             payload: any;
             created_at: any;
+            request_status: any;
+            request_source: any;
+            requested_by: any;
+            decided_by: any;
+            decided_at: any;
+            decision_reason: any;
         }[];
         media: {
             id: any;
@@ -41,6 +49,12 @@ export declare class MerchantsService {
             is_hero: any;
             display_order: any;
             transfer_status: any;
+            publication_status: any;
+            publication_version: any;
+            effective_from: any;
+            effective_until: any;
+            approved_by: any;
+            approved_at: any;
             created_at: any;
         }[];
         categories: {

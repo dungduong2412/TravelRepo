@@ -49,7 +49,9 @@ let MerchantsService = class MerchantsService {
             .select([
             'merchant_system_id', 'merchant_code', 'merchant_name', 'merchant_description',
             'merchant_phone', 'merchant_email', 'merchant_contact_phone', 'owner_name',
-            'owner_phone', 'owner_email', 'new_address_city', 'new_address_ward',
+            'owner_phone', 'owner_email', 'owner_tax_code', 'merchant_description_format',
+            'new_address_country', 'new_address_province', 'new_address_district',
+            'new_address_city', 'new_address_ward',
             'new_address_line', 'merchant_commission_type', 'merchant_commission_value',
             'merchant_discount_type', 'merchant_discount_value', 'merchant_priority',
             'merchant_verified', 'merchants_status', 'merchant_registered_date',
@@ -107,17 +109,23 @@ let MerchantsService = class MerchantsService {
             (profile.role !== 'admin' && !(profile.role === 'merchant' && profile.merchant_id === id))) {
             throw new common_1.ForbiddenException('Merchant access denied');
         }
-        return this.findById(id);
+        const [merchant, links] = await Promise.all([
+            this.findById(id),
+            this.supabase.getClient().from('merchant_category_links').select('category_id').eq('merchant_id', id),
+        ]);
+        if (links.error)
+            throw new Error(`Failed to fetch merchant categories: ${links.error.message}`);
+        return { ...merchant, category_ids: (links.data || []).map((row) => row.category_id) };
     }
     async operationalDetail(id) {
         const client = this.supabase.getClient();
         const [merchant, updateRequests, media, categoryLinks] = await Promise.all([
             this.findById(id),
             client.from('merchant_update_requests')
-                .select('id,legacy_request_id,legacy_status,requested_at,payload,created_at')
+                .select('id,legacy_request_id,legacy_status,requested_at,payload,created_at,request_status,request_source,requested_by,decided_by,decided_at,decision_reason')
                 .eq('merchant_id', id).order('requested_at', { ascending: false }),
             client.from('media_assets')
-                .select('id,legacy_image_id,legacy_merchant_image_id,original_filename,mime_type,size_bytes,is_hero,display_order,transfer_status,created_at')
+                .select('id,legacy_image_id,legacy_merchant_image_id,original_filename,mime_type,size_bytes,is_hero,display_order,transfer_status,publication_status,publication_version,effective_from,effective_until,approved_by,approved_at,created_at')
                 .eq('merchant_id', id).order('display_order', { ascending: true }),
             client.from('merchant_category_links')
                 .select('category_id,category:categories!merchant_category_links_category_id_fkey(id,category_name,category_name_vi)')
@@ -221,9 +229,13 @@ let MerchantsService = class MerchantsService {
         return this.withoutPassword(data);
     }
     async update(id, dto) {
+        const { category_ids: _categoryIds, ...merchantFields } = dto;
+        if (Object.keys(merchantFields).length === 0) {
+            return this.findById(id);
+        }
         const { data, error } = await this.supabase.getClient()
             .from('merchant_details')
-            .update(dto)
+            .update(merchantFields)
             .eq('merchant_system_id', id)
             .select()
             .single();
@@ -239,11 +251,31 @@ let MerchantsService = class MerchantsService {
             !(profile.role === 'merchant' && profile.merchant_id === id)) {
             throw new common_1.ForbiddenException('Merchant update access denied');
         }
-        return this.update(id, dto);
+        let updated = await this.update(id, dto);
+        if (dto.category_ids) {
+            const { error } = await this.supabase.getClient().rpc('set_merchant_categories', {
+                p_merchant_id: id, p_actor_user_id: userId, p_category_ids: dto.category_ids,
+            });
+            if (error)
+                throw new common_1.BadRequestException(error.message);
+            updated = await this.findById(id);
+        }
+        await this.audit.record({ id: userId, role: 'merchant' }, 'merchant.profile_updated', 'merchant', id, {
+            changed_fields: Object.keys(dto),
+        });
+        return updated;
     }
     async updateByAdmin(actor, id, dto) {
         const before = await this.findById(id);
-        const updated = await this.update(id, dto);
+        let updated = await this.update(id, dto);
+        if (dto.category_ids) {
+            const { error } = await this.supabase.getClient().rpc('set_merchant_categories', {
+                p_merchant_id: id, p_actor_user_id: actor.id, p_category_ids: dto.category_ids,
+            });
+            if (error)
+                throw new common_1.BadRequestException(error.message);
+            updated = await this.findById(id);
+        }
         await this.audit.record(actor, 'merchant.updated', 'merchant', id, {
             changed_fields: Object.keys(dto),
             previous_status: before.merchants_status,

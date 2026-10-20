@@ -17,13 +17,18 @@ export default function MerchantProfilePage() {
     merchant_email: '',
     merchant_phone: '',
     merchant_description: '',
-    merchant_category: '',
+    merchant_description_format: 'plain_text',
+    category_ids: [] as string[],
     merchant_contact_phone: '',
     new_address_city: '',
     new_address_ward: '',
     new_address_line: '',
     owner_name: '',
     owner_phone: '',
+    owner_tax_code: '',
+    new_address_country: '',
+    new_address_province: '',
+    new_address_district: '',
   });
 
   useEffect(() => {
@@ -62,13 +67,18 @@ export default function MerchantProfilePage() {
         merchant_email: data.merchant_email || '',
         merchant_phone: data.merchant_phone || '',
         merchant_description: data.merchant_description || '',
-        merchant_category: data.merchant_category || '',
+        merchant_description_format: data.merchant_description_format || 'plain_text',
+        category_ids: data.category_ids || [],
         merchant_contact_phone: data.merchant_contact_phone || '',
         new_address_city: data.new_address_city || '',
         new_address_ward: data.new_address_ward || '',
         new_address_line: data.new_address_line || '',
         owner_name: data.owner_name || '',
         owner_phone: data.owner_phone || '',
+        owner_tax_code: data.owner_tax_code || '',
+        new_address_country: data.new_address_country || '',
+        new_address_province: data.new_address_province || '',
+        new_address_district: data.new_address_district || '',
       });
     } catch (err: any) {
       setError(err.message || 'Không thể tải thông tin');
@@ -97,11 +107,15 @@ export default function MerchantProfilePage() {
       }
       
       const { id } = JSON.parse(merchantData);
-      
+      const payload: Record<string, unknown> = { ...formData };
+      if (sameCategoryIds(formData.category_ids, merchant?.category_ids || [])) {
+        delete payload.category_ids;
+      }
       await apiFetch(`/merchants/${id}`, {
         method: 'PATCH',
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       });
+      await fetchProfile();
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);
     } catch (err: any) {
@@ -176,6 +190,12 @@ export default function MerchantProfilePage() {
               style={styles.input}
             />
           </div>
+
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Mã Số Thuế Chủ Sở Hữu</label>
+            <input name="owner_tax_code" value={formData.owner_tax_code} onChange={handleChange} style={styles.input} />
+            {merchant?.legacy_tax_code && <small style={styles.hint}>Mã lịch sử V1 (chỉ đọc): {merchant.legacy_tax_code}</small>}
+          </div>
         </div>
 
         <div style={styles.card}>
@@ -192,23 +212,14 @@ export default function MerchantProfilePage() {
             />
           </div>
 
-          <div style={styles.formGroup}>
-            <label style={styles.label}>Danh Mục</label>
-            <select
-              name="merchant_category"
-              value={formData.merchant_category}
-              onChange={handleChange}
-              style={styles.input}
-              required
-            >
-              <option value="">-- Chọn danh mục --</option>
-              {categories.map(cat => (
-                <option key={cat.id} value={cat.id}>
-                  {cat.category_name_vi}
-                </option>
-              ))}
-            </select>
-          </div>
+          <fieldset style={styles.categoryFieldset}>
+            <legend style={styles.label}>Danh Mục ({formData.category_ids.length}/3)</legend>
+            <small style={styles.hint}>Chọn tối đa 3 danh mục. Hồ sơ lịch sử có nhiều hơn 3 danh mục được giữ nguyên cho đến khi bạn chủ động thay đổi lựa chọn.</small>
+            {categories.map(cat => {
+              const checked = formData.category_ids.includes(cat.id);
+              return <label key={cat.id} style={styles.categoryOption}><input type="checkbox" checked={checked} disabled={!checked && formData.category_ids.length >= 3} onChange={(event) => setFormData((previous) => ({ ...previous, category_ids: event.target.checked ? [...previous.category_ids, cat.id] : previous.category_ids.filter((id) => id !== cat.id) }))} /> {cat.category_name_vi || cat.category_name}</label>;
+            })}
+          </fieldset>
 
           <div style={styles.formGroup}>
             <label style={styles.label}>Email</label>
@@ -243,6 +254,7 @@ export default function MerchantProfilePage() {
 
           <div style={styles.formGroup}>
             <label style={styles.label}>Mô Tả</label>
+            <select name="merchant_description_format" value={formData.merchant_description_format} onChange={handleChange} style={{ ...styles.input, marginBottom: 8 }}><option value="plain_text">Văn bản thuần</option><option value="markdown">Markdown định dạng</option></select>
             <textarea
               name="merchant_description"
               value={formData.merchant_description}
@@ -255,9 +267,13 @@ export default function MerchantProfilePage() {
 
         <div style={styles.card}>
           <h2 style={styles.cardTitle}>Địa Chỉ</h2>
+
+          <div style={styles.formGroup}><label style={styles.label}>Quốc Gia</label><input name="new_address_country" value={formData.new_address_country} onChange={handleChange} style={styles.input} /></div>
+          <div style={styles.formGroup}><label style={styles.label}>Tỉnh / Thành Phố</label><input name="new_address_province" value={formData.new_address_province} onChange={handleChange} style={styles.input} /></div>
+          <div style={styles.formGroup}><label style={styles.label}>Quận / Huyện</label><input name="new_address_district" value={formData.new_address_district} onChange={handleChange} style={styles.input} /></div>
           
           <div style={styles.formGroup}>
-            <label style={styles.label}>Thành Phố/Tỉnh</label>
+            <label style={styles.label}>Thành Phố (trường V2 hiện có)</label>
             <input
               name="new_address_city"
               value={formData.new_address_city}
@@ -267,7 +283,7 @@ export default function MerchantProfilePage() {
           </div>
 
           <div style={styles.formGroup}>
-            <label style={styles.label}>Quận/Huyện</label>
+            <label style={styles.label}>Phường / Xã</label>
             <input
               name="new_address_ward"
               value={formData.new_address_ward}
@@ -305,6 +321,11 @@ export default function MerchantProfilePage() {
       </form>
     </div>
   );
+}
+
+function sameCategoryIds(left: string[], right: string[]) {
+  const sortedRight = [...right].sort();
+  return left.length === sortedRight.length && [...left].sort().every((id, index) => id === sortedRight[index]);
 }
 
 const styles: Record<string, React.CSSProperties> = {
@@ -440,6 +461,9 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#374151',
     marginBottom: '6px',
   },
+  hint: { display: 'block', color: '#64748b', marginTop: '6px' },
+  categoryFieldset: { border: '1px solid #d1d5db', borderRadius: '8px', padding: '12px', marginBottom: '16px' },
+  categoryOption: { display: 'inline-flex', alignItems: 'center', gap: '6px', margin: '5px 16px 5px 0', fontSize: '14px', color: '#374151' },
   input: {
     width: '100%',
     padding: '10px 12px',

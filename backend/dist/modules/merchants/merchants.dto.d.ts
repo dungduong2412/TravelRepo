@@ -145,15 +145,21 @@ export type AdminCreateMerchantDto = z.infer<typeof AdminCreateMerchantSchema>;
 export declare const UpdateMerchantSchema: z.ZodObject<{
     merchant_name: z.ZodOptional<z.ZodString>;
     merchant_description: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    merchant_description_format: z.ZodOptional<z.ZodEnum<["plain_text", "markdown"]>>;
     merchant_phone: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     merchant_email: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     merchant_contact_phone: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     merchant_category: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     owner_name: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     owner_phone: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    owner_tax_code: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    new_address_country: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    new_address_province: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    new_address_district: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     new_address_city: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     new_address_ward: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     new_address_line: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    category_ids: z.ZodOptional<z.ZodEffects<z.ZodArray<z.ZodString, "many">, string[], string[]>>;
 }, "strict", z.ZodTypeAny, {
     merchant_name?: string;
     merchant_description?: string;
@@ -162,10 +168,16 @@ export declare const UpdateMerchantSchema: z.ZodObject<{
     merchant_contact_phone?: string;
     owner_name?: string;
     owner_phone?: string;
+    owner_tax_code?: string;
+    merchant_description_format?: "plain_text" | "markdown";
+    new_address_country?: string;
+    new_address_province?: string;
+    new_address_district?: string;
     new_address_city?: string;
     new_address_ward?: string;
     new_address_line?: string;
     merchant_category?: string;
+    category_ids?: string[];
 }, {
     merchant_name?: string;
     merchant_description?: string;
@@ -174,23 +186,35 @@ export declare const UpdateMerchantSchema: z.ZodObject<{
     merchant_contact_phone?: string;
     owner_name?: string;
     owner_phone?: string;
+    owner_tax_code?: string;
+    merchant_description_format?: "plain_text" | "markdown";
+    new_address_country?: string;
+    new_address_province?: string;
+    new_address_district?: string;
     new_address_city?: string;
     new_address_ward?: string;
     new_address_line?: string;
     merchant_category?: string;
+    category_ids?: string[];
 }>;
 export declare const AdminUpdateMerchantSchema: z.ZodObject<{
     merchant_name: z.ZodOptional<z.ZodString>;
     merchant_description: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    merchant_description_format: z.ZodOptional<z.ZodEnum<["plain_text", "markdown"]>>;
     merchant_phone: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     merchant_email: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     merchant_contact_phone: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     merchant_category: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     owner_name: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     owner_phone: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    owner_tax_code: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    new_address_country: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    new_address_province: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    new_address_district: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     new_address_city: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     new_address_ward: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     new_address_line: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    category_ids: z.ZodOptional<z.ZodEffects<z.ZodArray<z.ZodString, "many">, string[], string[]>>;
 } & {
     merchant_commission_type: z.ZodOptional<z.ZodNullable<z.ZodEnum<["percentage", "fixed"]>>>;
     merchant_commission_value: z.ZodOptional<z.ZodNullable<z.ZodUnion<[z.ZodNumber, z.ZodString]>>>;
@@ -211,6 +235,11 @@ export declare const AdminUpdateMerchantSchema: z.ZodObject<{
     merchant_contact_phone?: string;
     owner_name?: string;
     owner_phone?: string;
+    owner_tax_code?: string;
+    merchant_description_format?: "plain_text" | "markdown";
+    new_address_country?: string;
+    new_address_province?: string;
+    new_address_district?: string;
     new_address_city?: string;
     new_address_ward?: string;
     new_address_line?: string;
@@ -220,6 +249,7 @@ export declare const AdminUpdateMerchantSchema: z.ZodObject<{
     merchants_status?: "pending" | "active" | "inactive" | "blocked";
     merchant_action?: string;
     merchant_category?: string;
+    category_ids?: string[];
 }, {
     merchant_name?: string;
     merchant_priority?: number;
@@ -231,6 +261,11 @@ export declare const AdminUpdateMerchantSchema: z.ZodObject<{
     merchant_contact_phone?: string;
     owner_name?: string;
     owner_phone?: string;
+    owner_tax_code?: string;
+    merchant_description_format?: "plain_text" | "markdown";
+    new_address_country?: string;
+    new_address_province?: string;
+    new_address_district?: string;
     new_address_city?: string;
     new_address_ward?: string;
     new_address_line?: string;
@@ -240,6 +275,7 @@ export declare const AdminUpdateMerchantSchema: z.ZodObject<{
     merchants_status?: "pending" | "active" | "inactive" | "blocked";
     merchant_action?: string;
     merchant_category?: string;
+    category_ids?: string[];
 }>;
 export type UpdateMerchantDto = z.infer<typeof UpdateMerchantSchema>;
 export type AdminUpdateMerchantDto = z.infer<typeof AdminUpdateMerchantSchema>;

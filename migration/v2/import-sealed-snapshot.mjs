@@ -293,7 +293,7 @@ async function main() {
   await target.upsert('categories', categoryRows, 'id');
   await target.upsert('merchant_category_links', categoryLinks.map((r) => ({
     merchant_id: merchantId.get(lower(r.ResId)), category_id: categoryId.get(lower(r.ResCatId)),
-    legacy_tenant_id: lower(r.TenantId)
+    legacy_tenant_id: lower(r.TenantId), association_source: 'v1_import'
   })), 'merchant_id,category_id');
 
   const transactionRows = transactions.map((r) => ({
@@ -441,7 +441,9 @@ async function main() {
         bucket_id: bucket, object_path: objectPath, original_filename: media.source_name,
         mime_type: media.detected_mime, sha256_hex: media.sha256, size_bytes: Number(media.bytes),
         is_hero: merchantImage?.IsHero || false, display_order: merchantImage?.Order || 0,
-        transfer_status: 'verified', legacy_merchant_image_id: merchantImage ? lower(merchantImage.Id) : null,
+        transfer_status: 'verified', publication_status: 'legacy_effective',
+        approved_by: null, approved_at: null,
+        legacy_merchant_image_id: merchantImage ? lower(merchantImage.Id) : null,
         legacy_blob_database: media.database, legacy_blob_name: media.source_name }], 'id');
       mediaImported += 1;
     }

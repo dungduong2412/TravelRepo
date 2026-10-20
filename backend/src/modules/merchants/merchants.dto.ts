@@ -11,6 +11,12 @@ const ExactNonNegativeDecimalSchema = z.union([
   z.string().trim().regex(/^\d+(?:\.\d{1,4})?$/, 'Expected a non-negative decimal with up to four places'),
 ]);
 
+const MerchantCategoryIdsSchema = z.array(z.string().uuid())
+  .max(3, 'A merchant may have at most 3 categories')
+  .refine((ids) => new Set(ids).size === ids.length, {
+    message: 'Merchant categories must be distinct',
+  });
+
 export const MerchantSchema = z.object({
   id: z.string().uuid(),
   owner_email: z.string().email(),
@@ -57,16 +63,22 @@ export type AdminCreateMerchantDto = z.infer<typeof AdminCreateMerchantSchema>;
 
 export const UpdateMerchantSchema = z.object({
   merchant_name: z.string().min(1).max(200).optional(),
-  merchant_description: z.string().max(4000).nullable().optional(),
+  merchant_description: z.string().max(20000).nullable().optional(),
+  merchant_description_format: z.enum(['plain_text', 'markdown']).optional(),
   merchant_phone: z.string().min(7).max(20).nullable().optional(),
   merchant_email: z.string().email().nullable().optional(),
   merchant_contact_phone: z.string().max(20).nullable().optional(),
   merchant_category: z.string().max(200).nullable().optional(),
   owner_name: z.string().max(200).nullable().optional(),
   owner_phone: z.string().max(20).nullable().optional(),
+  owner_tax_code: z.string().max(100).nullable().optional(),
+  new_address_country: z.string().max(200).nullable().optional(),
+  new_address_province: z.string().max(200).nullable().optional(),
+  new_address_district: z.string().max(200).nullable().optional(),
   new_address_city: z.string().max(200).nullable().optional(),
   new_address_ward: z.string().max(200).nullable().optional(),
   new_address_line: z.string().max(1000).nullable().optional(),
+  category_ids: MerchantCategoryIdsSchema.optional(),
 }).strict();
 
 export const AdminUpdateMerchantSchema = UpdateMerchantSchema.extend({
