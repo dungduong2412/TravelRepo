@@ -11,14 +11,14 @@ const ExactNonNegativeDecimalSchema = z.union([
   z.string().trim().regex(/^\d+(?:\.\d{1,4})?$/, 'Expected a non-negative decimal with up to four places'),
 ]);
 
-const MerchantCategoryIdsSchema = z.array(z.string().uuid())
+const MerchantCategoryIdsSchema = z.array(z.guid())
   .max(3, 'A merchant may have at most 3 categories')
   .refine((ids) => new Set(ids).size === ids.length, {
     message: 'Merchant categories must be distinct',
   });
 
 export const MerchantSchema = z.object({
-  id: z.string().uuid(),
+  id: z.guid(),
   owner_email: z.string().email(),
   owner_password: z.string(),
   business_name: z.string(),

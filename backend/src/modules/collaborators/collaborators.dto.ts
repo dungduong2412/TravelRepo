@@ -19,7 +19,7 @@ export const CreateCollaboratorSchema = z.object({
 export type CreateCollaboratorDto = z.infer<typeof CreateCollaboratorSchema>;
 
 export const AdminCreateCollaboratorSchema = CreateCollaboratorSchema.omit({ collaborators_password: true }).extend({
-  merchant_system_id: z.string().uuid().nullable().optional(),
+  merchant_system_id: z.guid().nullable().optional(),
 });
 export type AdminCreateCollaboratorDto = z.infer<typeof AdminCreateCollaboratorSchema>;
 
@@ -36,7 +36,7 @@ export const UpdateCollaboratorSchema = z.object({
 export type UpdateCollaboratorDto = z.infer<typeof UpdateCollaboratorSchema>;
 
 export const AdminUpdateCollaboratorSchema = UpdateCollaboratorSchema.extend({
-  merchant_system_id: z.string().uuid().nullable().optional(),
+  merchant_system_id: z.guid().nullable().optional(),
   collaborators_verified: z.boolean().optional(),
   collaborators_rating: z.number().min(0).nullable().optional(),
   collaborators_status: z.enum(['pending', 'active', 'inactive', 'blocked']).optional(),

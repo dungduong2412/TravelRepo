@@ -137,6 +137,16 @@ class SupabaseTarget {
 }
 
 function chooseExisting(source, targets, fields, idField, legacyIdField) {
+  // A restart must prefer the exact destination identity only when that row is
+  // demonstrably owned by this source record and tenant. Fuzzy email/phone
+  // matches can legitimately identify other V1 rows and must not make an
+  // already-imported row ambiguous on a retry.
+  const primaryCollision = targets.find((target) => lower(target[idField]) === lower(source.Id));
+  if (primaryCollision &&
+      lower(primaryCollision[legacyIdField]) === lower(source.Id) &&
+      lower(primaryCollision.legacy_tenant_id) === TENANT) {
+    return primaryCollision[idField];
+  }
   const candidates = new Map();
   for (const [sourceField, targetField, normalize] of fields) {
     const value = normalize(source[sourceField]);
@@ -144,7 +154,6 @@ function chooseExisting(source, targets, fields, idField, legacyIdField) {
     const matches = targets.filter((target) => normalize(target[targetField]) === value);
     for (const match of matches) candidates.set(match[idField], match);
   }
-  const primaryCollision = targets.find((target) => lower(target[idField]) === lower(source.Id));
   if (primaryCollision) candidates.set(primaryCollision[idField], primaryCollision);
   if (candidates.size > 1) throw new Error(`ambiguous existing match for ${source.Id}`);
   if (candidates.size === 1) {

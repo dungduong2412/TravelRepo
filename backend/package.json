@@ -27,7 +27,7 @@
     "qrcode": "^1.5.4",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
-    "zod": "^3.22.0"
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
@@ -38,5 +38,9 @@
     "ts-node": "^10.9.0",
     "typescript-eslint": "^8.71.2",
     "typescript": "^6.0.3"
+  },
+  "overrides": {
+    "body-parser": "2.4.0",
+    "multer": "2.5.0"
   }
 }

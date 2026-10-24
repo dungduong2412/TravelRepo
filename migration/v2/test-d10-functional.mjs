@@ -61,7 +61,9 @@ const scaleRows = Array.from({ length: 1005 }, (_, index) => ({
 }));
 for (let offset = 0; offset < scaleRows.length; offset += 250) await upsertTransactions(scaleRows.slice(offset, offset + 250));
 
-const report = await api('/transactions/report?page=1&page_size=25', adminToken);
+// Scope synthetic assertions so the regression remains valid against a full
+// rehearsal containing the sealed V1 transaction history.
+const report = await api('/transactions/report?search=D10-&page=1&page_size=25', adminToken);
 check('admin paginated financial report', report.status === 200 && report.json?.total === 1008 && report.json?.items?.length === 25, `HTTP ${report.status}; total ${report.json?.total}`);
 check('full filtered exact totals beyond 1000 rows', report.json?.summary?.transaction_count === 1008 && report.json?.summary?.document_total === '1605.3234' && report.json?.summary?.document_discount_amount === '60.1311' && report.json?.summary?.commission_amount === '30.0162', JSON.stringify(report.json?.summary));
 
@@ -71,14 +73,14 @@ check('merchant and collaborator names/codes replace UUID presentation', detail.
 check('null source status is preserved without invention', detailRow?.legacy_status === null && detail.json?.summary?.source_statuses?.null === 1, `legacy_status ${detailRow?.legacy_status}`);
 check('discount and commission rates/amounts preserved', String(detailRow?.document_discount_percent) === '10.1' && String(detailRow?.document_discount_amount) === '10.1111' && String(detailRow?.commission_percent) === '5' && String(detailRow?.commission_amount) === '5.0062', 'exact stored values returned');
 
-const orphan = await api('/transactions/report?orphan_only=true&page=1&page_size=10', adminToken);
+const orphan = await api('/transactions/report?orphan_only=true&search=D10-ORPHAN&page=1&page_size=10', adminToken);
 check('historical orphan is preserved without invented merchant', orphan.status === 200 && orphan.json?.total === 1 && orphan.json?.items?.[0]?.merchant_id === null, `HTTP ${orphan.status}; total ${orphan.json?.total}`);
 const nullStatus = await api('/transactions/report?legacy_status=null&page=1&page_size=10', adminToken);
 check('null source-status filter', nullStatus.status === 200 && nullStatus.json?.total === 1, `HTTP ${nullStatus.status}`);
 
-const merchantReport = await api('/transactions/me/report?page=1&page_size=10', merchantToken);
+const merchantReport = await api('/transactions/me/report?search=D10-&page=1&page_size=10', merchantToken);
 check('merchant report ownership excludes orphan', merchantReport.status === 200 && merchantReport.json?.total === 1007 && !merchantReport.json?.items?.some((row) => row.id === ids.orphan), `HTTP ${merchantReport.status}; total ${merchantReport.json?.total}`);
-const collaboratorReport = await api('/transactions/me/report?page=1&page_size=10', collaboratorToken);
+const collaboratorReport = await api('/transactions/me/report?search=D10-&page=1&page_size=10', collaboratorToken);
 check('collaborator report ownership includes linked orphan', collaboratorReport.status === 200 && collaboratorReport.json?.total === 1008, `HTTP ${collaboratorReport.status}; total ${collaboratorReport.json?.total}`);
 const merchantAdminReport = await api('/transactions/report?page=1&page_size=10', merchantToken);
 check('merchant denied admin financial report', merchantAdminReport.status === 403, `HTTP ${merchantAdminReport.status}`);

@@ -14,7 +14,8 @@ for migration in \
   20261011155725_vno_v1_advisor_repairs.sql \
   20261013090000_vno_phase_d2_import_readiness.sql \
   20261014080000_vno_phase_d2_fk_indexes.sql \
-  20261016140546_vno_phase_d6_functional_parity.sql
+  20261016140546_vno_phase_d6_functional_parity.sql \
+  20261018021253_vno_phase_d10b_media_approval.sql
 do
   install -m 0600 "$repo_root/supabase/migrations/$migration" \
     "$rehearsal_root/supabase/migrations/$migration"
