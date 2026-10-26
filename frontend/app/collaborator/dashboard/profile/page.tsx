@@ -65,9 +65,11 @@ export default function CollaboratorProfilePage() {
         return;
       }
 
+      const editableProfile: Partial<typeof formData> = { ...formData };
+      delete editableProfile.collaborators_email;
       await apiFetch(`/collaborators/${collaborator.id}`, {
         method: 'PATCH',
-        body: JSON.stringify(formData),
+        body: JSON.stringify(editableProfile),
       });
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);
@@ -153,10 +155,10 @@ export default function CollaboratorProfilePage() {
               name="collaborators_email"
               type="email"
               value={formData.collaborators_email}
-              onChange={handleChange}
-              style={styles.input}
-              required
+              readOnly
+              style={{ ...styles.input, background: '#f8fafc' }}
             />
+            <small style={styles.hint}>Email đăng nhập được xác minh bởi Supabase Auth và không đổi trực tiếp tại hồ sơ.</small>
           </div>
         </div>
 
@@ -339,6 +341,12 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 500,
     color: '#374151',
     marginBottom: '6px',
+  },
+  hint: {
+    display: 'block',
+    marginTop: '6px',
+    color: '#64748b',
+    fontSize: '12px',
   },
   input: {
     width: '100%',

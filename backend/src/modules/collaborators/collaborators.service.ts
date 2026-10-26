@@ -170,13 +170,14 @@ export class CollaboratorsService {
       throw new ForbiddenException('Collaborator must be verified to access QR code');
     }
 
-    if (!collaborator.collaborators_qr_code) {
-      throw new NotFoundException('QR code not generated yet. Please contact admin.');
-    }
+    const payload = collaborator.collaborators_code;
+    const qrCodeImage = await this.generateCodeImage(payload, 360);
 
     return {
-      qr_code: collaborator.collaborators_qr_code,
-      qr_code_image: collaborator.collaborators_qr_code,
+      qr_code: qrCodeImage,
+      qr_code_image: qrCodeImage,
+      qr_payload: payload,
+      qr_payload_format: 'collaborator_code',
       code: collaborator.collaborators_code,
       collaborator_code: collaborator.collaborators_code,
       name: collaborator.collaborators_name,
@@ -188,6 +189,33 @@ export class CollaboratorsService {
 
   private generateCollaboratorCode(): string {
     return 'COL-' + randomBytes(8).toString('hex').toUpperCase();
+  }
+
+  private async generateCodeImage(code: string, width = 300) {
+    try {
+      return await QRCode.toDataURL(code, {
+        errorCorrectionLevel: 'H',
+        type: 'image/png',
+        width,
+        margin: 1,
+      });
+    } catch {
+      throw new Error('Failed to generate QR code');
+    }
+  }
+
+  private collaboratorCodeFromPayload(payload: string) {
+    const trimmed = payload.trim();
+    try {
+      const parsed = new URL(trimmed);
+      const segments = parsed.pathname.split('/').filter(Boolean);
+      if (segments.length >= 2 && segments[segments.length - 2] === 'c') {
+        return decodeURIComponent(segments[segments.length - 1] || '').trim();
+      }
+    } catch {
+      // V1 and imported V2 QR codes contain the collaborator code directly.
+    }
+    return trimmed;
   }
 
   async updateCollaborator(
@@ -356,28 +384,9 @@ export class CollaboratorsService {
       throw new NotFoundException('Collaborator not found');
     }
 
-    // Generate QR code with collaborator information
-    const qrData = {
-      code: collaborator.collaborators_code,
-      name: collaborator.collaborators_name,
-      phone: collaborator.collaborators_phone,
-      email: collaborator.collaborators_email,
-      type: 'collaborator',
-    };
-
-    let qrCodeBase64: string;
-    try {
-      // Generate QR code as base64 data URL
-      qrCodeBase64 = await QRCode.toDataURL(JSON.stringify(qrData), {
-        errorCorrectionLevel: 'H',
-        type: 'image/png',
-        width: 300,
-        margin: 1,
-      });
-    } catch (qrError) {
-      console.error('Failed to generate QR code:', qrError);
-      throw new Error('Failed to generate QR code');
-    }
+    // V1 identifies collaborators by the stable RestaurantMiddleman.Code. QR
+    // payloads therefore contain only that code: never email, phone or bank data.
+    const qrCodeBase64 = await this.generateCodeImage(collaborator.collaborators_code);
 
     // Update collaborator with verified status and QR code
     const { data, error } = await this.supabase.getClient()
@@ -424,22 +433,40 @@ export class CollaboratorsService {
   }
 
   async resolveByQrToken(qrToken: string) {
-    const { data: collaborator, error } = await this.supabase.getClient()
-      .from('collaborators')
-      .select('*')
-      .eq('collaborators_qr_code', qrToken)
-      .eq('collaborators_verified', true)
-      .single();
+    return this.resolveByCode(this.collaboratorCodeFromPayload(qrToken));
+  }
 
-    if (error || !collaborator) {
-      throw new NotFoundException('Invalid or unverified QR token');
+  async resolveQrForMerchant(userId: string, payload: string) {
+    const { data: profile, error: profileError } = await this.supabase.getClient()
+      .from('user_profiles')
+      .select('role,user_profiles_status,merchant_id')
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (profileError || !profile || profile.role !== 'merchant' ||
+        profile.user_profiles_status !== 'active' || !profile.merchant_id) {
+      throw new ForbiddenException('Active merchant access required');
     }
 
+    const code = this.collaboratorCodeFromPayload(payload);
+    const { data: collaborator, error } = await this.supabase.getClient()
+      .from('collaborators')
+      .select('id,collaborators_code,collaborators_name,collaborators_verified,collaborators_status,merchant_system_id')
+      .eq('collaborators_code', code)
+      .eq('collaborators_verified', true)
+      .maybeSingle();
+    if (error || !collaborator) throw new NotFoundException('Invalid or unverified collaborator code');
+
     return {
-      collaboratorId: collaborator.id,
-      displayName: collaborator.collaborators_name,
-      code: collaborator.collaborators_code,
+      collaborator_id: collaborator.id,
+      collaborator_code: collaborator.collaborators_code,
+      collaborator_name: collaborator.collaborators_name,
       verified: collaborator.collaborators_verified,
+      status: collaborator.collaborators_status,
+      association: collaborator.merchant_system_id === profile.merchant_id
+        ? 'assigned_to_this_merchant'
+        : collaborator.merchant_system_id ? 'assigned_elsewhere' : 'unassigned',
+      idempotent: true,
+      financial_action_created: false,
     };
   }
 
@@ -508,17 +535,8 @@ export class CollaboratorsService {
       throw new ForbiddenException('Collaborator must be verified to generate QR code');
     }
 
-    // QR code data contains only the collaborator code for scanning
-    const qrData = collaborator.collaborators_code;
-
     try {
-      // Generate QR code as base64 PNG
-      const qrCodeBase64 = await QRCode.toDataURL(qrData, {
-        errorCorrectionLevel: 'H',
-        type: 'image/png',
-        width: 400,
-        margin: 1,
-      });
+      const qrCodeBase64 = await this.generateCodeImage(collaborator.collaborators_code, 400);
 
       return {
         qr_code_image: qrCodeBase64,

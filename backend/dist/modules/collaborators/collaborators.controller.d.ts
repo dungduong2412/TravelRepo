@@ -8,8 +8,10 @@ export declare class CollaboratorsController {
     createByAdmin(actor: any, dto: AdminCreateCollaboratorDto): Promise<Omit<any, "collaborators_password">>;
     getMe(actor: any): Promise<Omit<any, "collaborators_password">>;
     getMyQrCode(actor: any): Promise<{
-        qr_code: any;
-        qr_code_image: any;
+        qr_code: string;
+        qr_code_image: string;
+        qr_payload: any;
+        qr_payload_format: string;
         code: any;
         collaborator_code: any;
         name: any;

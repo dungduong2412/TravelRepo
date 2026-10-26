@@ -1,7 +1,8 @@
 import { z } from 'zod';
+import { PostgresUuidSchema } from '../../common/validation/postgres-uuid';
 
 export const CategorySchema = z.object({
-  id: z.guid(),
+  id: PostgresUuidSchema,
   category_name: z.string(),
   category_name_vi: z.string(),
   category_description: z.string().nullable().optional(),

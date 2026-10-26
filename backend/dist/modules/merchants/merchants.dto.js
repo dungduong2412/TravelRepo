@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CreateMerchantMemberSchema = exports.MerchantDirectoryQuerySchema = exports.AdminUpdateMerchantSchema = exports.UpdateMerchantSchema = exports.AdminCreateMerchantSchema = exports.CreateMerchantSchema = exports.MerchantSchema = void 0;
 const zod_1 = require("zod");
+const postgres_uuid_1 = require("../../common/validation/postgres-uuid");
 const StrongPasswordSchema = zod_1.z.string().min(12)
     .regex(/[a-z]/, 'Password requires a lowercase letter')
     .regex(/[A-Z]/, 'Password requires an uppercase letter')
@@ -11,13 +12,13 @@ const ExactNonNegativeDecimalSchema = zod_1.z.union([
     zod_1.z.number().nonnegative(),
     zod_1.z.string().trim().regex(/^\d+(?:\.\d{1,4})?$/, 'Expected a non-negative decimal with up to four places'),
 ]);
-const MerchantCategoryIdsSchema = zod_1.z.array(zod_1.z.string().uuid())
+const MerchantCategoryIdsSchema = zod_1.z.array(postgres_uuid_1.PostgresUuidSchema)
     .max(3, 'A merchant may have at most 3 categories')
     .refine((ids) => new Set(ids).size === ids.length, {
     message: 'Merchant categories must be distinct',
 });
 exports.MerchantSchema = zod_1.z.object({
-    id: zod_1.z.string().uuid(),
+    id: postgres_uuid_1.PostgresUuidSchema,
     owner_email: zod_1.z.string().email(),
     owner_password: zod_1.z.string(),
     business_name: zod_1.z.string(),

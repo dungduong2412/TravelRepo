@@ -49,18 +49,9 @@ export default function MerchantProfilePage() {
     try {
       setLoading(true);
       
-      // Get merchant ID from localStorage
-      const merchantData = localStorage.getItem('merchant');
-      if (!merchantData) {
-        setError('Không tìm thấy thông tin đăng nhập. Vui lòng đăng nhập lại.');
-        setLoading(false);
-        return;
-      }
-      
-      const { id } = JSON.parse(merchantData);
-      
-      // Fetch merchant profile
-      const data = await apiFetch(`/merchants/${id}`);
+      const profile = await apiFetch('/user-profiles/me');
+      if (!profile?.merchant_id) throw new Error('Tài khoản chưa được liên kết nhà cung cấp');
+      const data = await apiFetch(`/merchants/${profile.merchant_id}`);
       setMerchant(data);
       setFormData({
         merchant_name: data.merchant_name || '',
@@ -99,19 +90,12 @@ export default function MerchantProfilePage() {
     setSuccess(false);
 
     try {
-      const merchantData = localStorage.getItem('merchant');
-      if (!merchantData) {
-        setError('Không tìm thấy thông tin đăng nhập');
-        setSaving(false);
-        return;
-      }
-      
-      const { id } = JSON.parse(merchantData);
+      if (!merchant?.merchant_system_id) throw new Error('Không tìm thấy hồ sơ nhà cung cấp');
       const payload: Record<string, unknown> = { ...formData };
       if (sameCategoryIds(formData.category_ids, merchant?.category_ids || [])) {
         delete payload.category_ids;
       }
-      await apiFetch(`/merchants/${id}`, {
+      await apiFetch(`/merchants/${merchant.merchant_system_id}`, {
         method: 'PATCH',
         body: JSON.stringify(payload),
       });

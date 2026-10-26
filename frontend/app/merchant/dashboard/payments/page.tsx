@@ -1,0 +1,2 @@
+import FinancialHistory from '../../../../components/FinancialHistory';
+export default function MerchantPaymentsPage() { return <div><h1 className="text-2xl font-bold sm:text-3xl">Thanh toán & hoa hồng</h1><div className="my-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">Màn hình này chỉ báo cáo dữ liệu đã lưu. Trạng thái nguồn, trạng thái thanh toán V2 và hoa hồng được hiển thị riêng biệt; không có thao tác quyết toán hoặc chi trả.</div><FinancialHistory /></div>; }

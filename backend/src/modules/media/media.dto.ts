@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { PostgresUuidSchema } from '../../common/validation/postgres-uuid';
 
 export const ALLOWED_MEDIA_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const;
 export const MAX_MEDIA_BYTES = 5 * 1024 * 1024;
@@ -8,8 +9,8 @@ export const UploadMediaSchema = z.object({
   mime_type: z.enum(ALLOWED_MEDIA_MIME_TYPES),
   size_bytes: z.number().int().positive().max(MAX_MEDIA_BYTES),
   base64_data: z.string().min(4).max(8 * 1024 * 1024).regex(/^[A-Za-z0-9+/]+={0,2}$/, 'Invalid base64 payload'),
-  merchant_id: z.guid().optional(),
-  collaborator_id: z.guid().optional(),
+  merchant_id: PostgresUuidSchema.optional(),
+  collaborator_id: PostgresUuidSchema.optional(),
   action: z.enum(['add', 'replace']).default('add'),
   slot: z.enum(['main', 'gallery']).default('gallery'),
   target_media_id: z.string().uuid().optional(),

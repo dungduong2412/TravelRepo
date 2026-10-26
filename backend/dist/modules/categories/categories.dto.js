@@ -2,8 +2,9 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.UpdateCategorySchema = exports.CreateCategorySchema = exports.CategorySchema = void 0;
 const zod_1 = require("zod");
+const postgres_uuid_1 = require("../../common/validation/postgres-uuid");
 exports.CategorySchema = zod_1.z.object({
-    id: zod_1.z.string().uuid(),
+    id: postgres_uuid_1.PostgresUuidSchema,
     category_name: zod_1.z.string(),
     category_name_vi: zod_1.z.string(),
     category_description: zod_1.z.string().nullable().optional(),

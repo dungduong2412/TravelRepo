@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { PostgresUuidSchema } from '../../common/validation/postgres-uuid';
 
 const OptionalText = z.string().trim().max(200).optional();
 
@@ -6,8 +7,8 @@ export const TransactionReportQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   page_size: z.coerce.number().int().min(1).max(100).default(25),
   search: OptionalText,
-  merchant_id: z.guid().optional(),
-  collaborator_id: z.guid().optional(),
+  merchant_id: PostgresUuidSchema.optional(),
+  collaborator_id: PostgresUuidSchema.optional(),
   legacy_status: z.union([z.coerce.number().int(), z.literal('null')]).optional(),
   lifecycle_status: OptionalText,
   payment_status: OptionalText,

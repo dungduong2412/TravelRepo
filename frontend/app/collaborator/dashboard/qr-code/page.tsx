@@ -67,7 +67,7 @@ export default function CollaboratorQRCodePage() {
         <div style={styles.header}>
           <h1 style={styles.title}>Mã QR Cộng Tác Viên</h1>
           <p style={styles.subtitle}>
-            Chia sẻ mã QR này với các Merchant để xác minh danh tính của bạn
+            Mã QR chỉ chứa mã cộng tác viên, không chứa email, điện thoại hay thông tin ngân hàng.
           </p>
         </div>
 
@@ -104,14 +104,7 @@ export default function CollaboratorQRCodePage() {
               <span style={styles.infoLabel}>Tên:</span>
               <span style={styles.infoValue}>{qrData?.collaborator_name}</span>
             </div>
-            <div style={styles.infoRow}>
-              <span style={styles.infoLabel}>Điện Thoại:</span>
-              <span style={styles.infoValue}>{qrData?.collaborator_phone}</span>
-            </div>
-            <div style={styles.infoRow}>
-              <span style={styles.infoLabel}>Tổ Chức:</span>
-              <span style={styles.infoValue}>{qrData?.organization_name}</span>
-            </div>
+            <div style={styles.infoRow}><span style={styles.infoLabel}>Nội dung QR:</span><span style={styles.infoValue}>{qrData?.qr_payload}</span></div>
           </div>
 
           {/* Download Button */}
@@ -125,13 +118,13 @@ export default function CollaboratorQRCodePage() {
             <h3 style={styles.instructionsTitle}>Cách sử dụng:</h3>
             <ul style={styles.instructionsList}>
               <li style={styles.instructionItem}>
-                Hiển thị mã QR này cho merchant khi check-in
+                Hiển thị mã QR này cho merchant để xác minh mã giới thiệu
               </li>
               <li style={styles.instructionItem}>
                 Merchant sẽ quét mã để xác minh danh tính của bạn
               </li>
               <li style={styles.instructionItem}>
-                Giữ mã QR này an toàn và không chia sẻ công khai
+                Quét mã không tự tạo giao dịch, thanh toán hoặc hoa hồng
               </li>
               <li style={styles.instructionItem}>
                 Tải xuống một bản sao để truy cập ngoại tuyến
@@ -225,7 +218,7 @@ const styles: Record<string, React.CSSProperties> = {
     backgroundColor: 'white',
     borderRadius: '8px',
     boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
-    padding: '32px',
+    padding: 'clamp(16px, 5vw, 32px)',
   },
   badgeContainer: {
     display: 'flex',
@@ -259,8 +252,9 @@ const styles: Record<string, React.CSSProperties> = {
     border: '4px solid #f3f4f6',
   },
   qrImage: {
-    width: '256px',
-    height: '256px',
+    width: 'min(256px, 100%)',
+    height: 'auto',
+    aspectRatio: '1',
     objectFit: 'contain' as const,
   },
   infoSection: {
@@ -280,6 +274,8 @@ const styles: Record<string, React.CSSProperties> = {
   infoValue: {
     fontWeight: '600',
     fontSize: '16px',
+    overflowWrap: 'anywhere',
+    textAlign: 'right',
   },
   downloadButton: {
     width: '100%',

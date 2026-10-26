@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { PostgresUuidSchema } from '../../common/validation/postgres-uuid';
 
 const StrongPasswordSchema = z.string().min(12)
   .regex(/[a-z]/, 'Password requires a lowercase letter')
@@ -11,14 +12,14 @@ const ExactNonNegativeDecimalSchema = z.union([
   z.string().trim().regex(/^\d+(?:\.\d{1,4})?$/, 'Expected a non-negative decimal with up to four places'),
 ]);
 
-const MerchantCategoryIdsSchema = z.array(z.guid())
+const MerchantCategoryIdsSchema = z.array(PostgresUuidSchema)
   .max(3, 'A merchant may have at most 3 categories')
   .refine((ids) => new Set(ids).size === ids.length, {
     message: 'Merchant categories must be distinct',
   });
 
 export const MerchantSchema = z.object({
-  id: z.guid(),
+  id: PostgresUuidSchema,
   owner_email: z.string().email(),
   owner_password: z.string(),
   business_name: z.string(),

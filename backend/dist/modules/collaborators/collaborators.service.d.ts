@@ -14,8 +14,10 @@ export declare class CollaboratorsService {
     private requireActiveCollaboratorProfile;
     getMyCollaborator(actor: any): Promise<Omit<any, "collaborators_password">>;
     getMyQrCode(actor: any): Promise<{
-        qr_code: any;
-        qr_code_image: any;
+        qr_code: string;
+        qr_code_image: string;
+        qr_payload: any;
+        qr_payload_format: string;
         code: any;
         collaborator_code: any;
         name: any;
@@ -24,6 +26,8 @@ export declare class CollaboratorsService {
         verified: any;
     }>;
     private generateCollaboratorCode;
+    private generateCodeImage;
+    private collaboratorCodeFromPayload;
     updateCollaborator(actor: any, collaboratorId: string, dto: UpdateCollaboratorDto): Promise<Omit<any, "collaborators_password">>;
     deactivateCollaborator(actor: AuditActor, collaboratorId: string): Promise<Omit<any, "collaborators_password">>;
     listMembers(userId: string): Promise<{
@@ -49,8 +53,18 @@ export declare class CollaboratorsService {
     resolveByQrToken(qrToken: string): Promise<{
         collaboratorId: any;
         displayName: any;
-        code: any;
+        rating: any;
         verified: any;
+    }>;
+    resolveQrForMerchant(userId: string, payload: string): Promise<{
+        collaborator_id: any;
+        collaborator_code: any;
+        collaborator_name: any;
+        verified: any;
+        status: any;
+        association: string;
+        idempotent: boolean;
+        financial_action_created: boolean;
     }>;
     reject(actor: AuditActor, id: string): Promise<Omit<any, "collaborators_password">>;
     updateByAdmin(actor: AuditActor, id: string, dto: AdminUpdateCollaboratorDto): Promise<Omit<any, "collaborators_password">>;

@@ -5,7 +5,7 @@ export declare class QrController {
     resolve(qrToken: string): Promise<{
         collaboratorId: any;
         displayName: any;
-        code: any;
+        rating: any;
         verified: any;
     }>;
 }

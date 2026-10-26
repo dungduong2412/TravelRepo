@@ -9,27 +9,7 @@ export declare const CategorySchema: z.ZodObject<{
     display_order: z.ZodNumber;
     created_at: z.ZodString;
     updated_at: z.ZodString;
-}, "strip", z.ZodTypeAny, {
-    id?: string;
-    display_order?: number;
-    is_active?: boolean;
-    category_name?: string;
-    category_name_vi?: string;
-    category_description?: string;
-    category_icon?: string;
-    created_at?: string;
-    updated_at?: string;
-}, {
-    id?: string;
-    display_order?: number;
-    is_active?: boolean;
-    category_name?: string;
-    category_name_vi?: string;
-    category_description?: string;
-    category_icon?: string;
-    created_at?: string;
-    updated_at?: string;
-}>;
+}, z.core.$strip>;
 export type CategoryDto = z.infer<typeof CategorySchema>;
 export declare const CreateCategorySchema: z.ZodObject<{
     category_name: z.ZodString;
@@ -38,21 +18,7 @@ export declare const CreateCategorySchema: z.ZodObject<{
     category_icon: z.ZodOptional<z.ZodString>;
     is_active: z.ZodOptional<z.ZodBoolean>;
     display_order: z.ZodOptional<z.ZodNumber>;
-}, "strip", z.ZodTypeAny, {
-    display_order?: number;
-    is_active?: boolean;
-    category_name?: string;
-    category_name_vi?: string;
-    category_description?: string;
-    category_icon?: string;
-}, {
-    display_order?: number;
-    is_active?: boolean;
-    category_name?: string;
-    category_name_vi?: string;
-    category_description?: string;
-    category_icon?: string;
-}>;
+}, z.core.$strip>;
 export type CreateCategoryDto = z.infer<typeof CreateCategorySchema>;
 export declare const UpdateCategorySchema: z.ZodObject<{
     category_name: z.ZodOptional<z.ZodString>;
@@ -61,19 +27,5 @@ export declare const UpdateCategorySchema: z.ZodObject<{
     category_icon: z.ZodOptional<z.ZodString>;
     is_active: z.ZodOptional<z.ZodBoolean>;
     display_order: z.ZodOptional<z.ZodNumber>;
-}, "strip", z.ZodTypeAny, {
-    display_order?: number;
-    is_active?: boolean;
-    category_name?: string;
-    category_name_vi?: string;
-    category_description?: string;
-    category_icon?: string;
-}, {
-    display_order?: number;
-    is_active?: boolean;
-    category_name?: string;
-    category_name_vi?: string;
-    category_description?: string;
-    category_icon?: string;
-}>;
+}, z.core.$strip>;
 export type UpdateCategoryDto = z.infer<typeof UpdateCategorySchema>;
