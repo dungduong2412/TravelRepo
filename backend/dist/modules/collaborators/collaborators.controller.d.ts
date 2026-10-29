@@ -4,6 +4,9 @@ export declare class CollaboratorsController {
     private readonly service;
     constructor(service: CollaboratorsService);
     create(actor: any, dto: CreateCollaboratorDto): Promise<Omit<any, "collaborators_password">>;
+    resubmit(actor: {
+        id: string;
+    }, id: string): Promise<Omit<any, "collaborators_password">>;
     listAll(): Promise<Omit<any, "collaborators_password">[]>;
     createByAdmin(actor: any, dto: AdminCreateCollaboratorDto): Promise<Omit<any, "collaborators_password">>;
     getMe(actor: any): Promise<Omit<any, "collaborators_password">>;

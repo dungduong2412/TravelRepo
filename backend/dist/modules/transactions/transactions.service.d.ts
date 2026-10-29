@@ -1,5 +1,5 @@
 import { SupabaseService } from '../../infrastructure/supabase/supabase.service';
-import { TransactionReportQuery } from './transactions.dto';
+import { CreateUatSimulationTransaction, TransactionReportQuery } from './transactions.dto';
 export declare class TransactionsService {
     private readonly supabase;
     constructor(supabase: SupabaseService);
@@ -25,6 +25,7 @@ export declare class TransactionsService {
             payment_statuses: Record<string, number>;
             lifecycle_statuses: Record<string, number>;
             source_statuses: Record<string, number>;
+            record_kinds: Record<string, number>;
         };
     }>;
     reportForActor(userId: string, filter: TransactionReportQuery): Promise<{
@@ -43,6 +44,7 @@ export declare class TransactionsService {
             payment_statuses: Record<string, number>;
             lifecycle_statuses: Record<string, number>;
             source_statuses: Record<string, number>;
+            record_kinds: Record<string, number>;
         };
     }>;
     findForActor(userId: string): Promise<({
@@ -51,5 +53,11 @@ export declare class TransactionsService {
     findAll(): Promise<({
         error: true;
     } & "Received a generic string")[]>;
+    createUatSimulation(userId: string, dto: CreateUatSimulationTransaction): Promise<{
+        record_kind: string;
+        lifecycle_status: string;
+        payment_status: string;
+        external_settlement_enabled: boolean;
+    }>;
     upsertImported(rows: Record<string, unknown>[]): Promise<void>;
 }

@@ -3,11 +3,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.CreateCollaboratorMemberSchema = exports.AdminUpdateCollaboratorSchema = exports.UpdateCollaboratorSchema = exports.AdminCreateCollaboratorSchema = exports.CreateCollaboratorSchema = void 0;
 const zod_1 = require("zod");
 const postgres_uuid_1 = require("../../common/validation/postgres-uuid");
-const StrongPasswordSchema = zod_1.z.string().min(12)
-    .regex(/[a-z]/, 'Password requires a lowercase letter')
-    .regex(/[A-Z]/, 'Password requires an uppercase letter')
-    .regex(/\d/, 'Password requires a number')
-    .regex(/[^A-Za-z0-9]/, 'Password requires a symbol');
 exports.CreateCollaboratorSchema = zod_1.z.object({
     collaborators_name: zod_1.z.string().min(1).max(200),
     collaborators_phone: zod_1.z.string().min(7).max(20),
@@ -15,9 +10,8 @@ exports.CreateCollaboratorSchema = zod_1.z.object({
     collaborators_bank_name: zod_1.z.string().max(200).optional(),
     collaborators_bank_acc_name: zod_1.z.string().max(200).optional(),
     collaborators_bank_acc_number: zod_1.z.string().max(100).optional(),
-    collaborators_password: StrongPasswordSchema,
 }).strict();
-exports.AdminCreateCollaboratorSchema = exports.CreateCollaboratorSchema.omit({ collaborators_password: true }).extend({
+exports.AdminCreateCollaboratorSchema = exports.CreateCollaboratorSchema.extend({
     merchant_system_id: postgres_uuid_1.PostgresUuidSchema.nullable().optional(),
 });
 exports.UpdateCollaboratorSchema = zod_1.z.object({

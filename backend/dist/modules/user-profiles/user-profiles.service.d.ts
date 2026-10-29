@@ -9,6 +9,11 @@ export declare class UserProfilesService {
     findByEmail(email: string): Promise<any>;
     findById(id: string): Promise<any>;
     assertIdentityAvailable(email: string): Promise<void>;
+    requireVerifiedSignupIdentity(userId: string, expectedEmail: string): Promise<{
+        userId: string;
+        email: string;
+    }>;
+    assertLinkedAuthEmailConfirmed(userId: string): Promise<import("@supabase/auth-js").User>;
     updateManagedProfile(actor: AuditActor, id: string, dto: UpdateManagedUserProfileDto): Promise<any>;
     private assertBusinessAssignment;
     createOrUpdate(dto: CreateUserProfileDto & {

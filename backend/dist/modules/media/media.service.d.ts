@@ -29,7 +29,7 @@ export declare class MediaService {
         expires_in: number;
         signedUrl: string;
     }>;
-    private activeProfile;
+    private ownerProfile;
     private removeUploadedObject;
     findMine(userId: string): Promise<{
         id: any;

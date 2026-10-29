@@ -1,7 +1,11 @@
 "use client";
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { apiFetch } from '../../../lib/api';
+import { signUp, supabase } from '../../../lib/supabase';
+
+const DRAFT_KEY = 'vno-collaborator-onboarding-draft';
 
 export default function CollaboratorOnboardPage() {
   const router = useRouter();
@@ -12,15 +16,36 @@ export default function CollaboratorOnboardPage() {
     password: '',
     confirmPassword: '',
     bankName: '',
+    bankAccountName: '',
     bankAccountNumber: '',
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+  const [hasVerifiedSession, setHasVerifiedSession] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      const draft = JSON.parse(sessionStorage.getItem(DRAFT_KEY) || 'null');
+      if (draft) setFormData((current) => ({ ...current, ...draft, password: '', confirmPassword: '' }));
+    } catch { /* Invalid local draft is ignored. */ }
+    supabase.auth.getSession().then(({ data }) => setHasVerifiedSession(Boolean(data.session?.user?.email_confirmed_at)));
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      setHasVerifiedSession(Boolean(session?.user?.email_confirmed_at));
+      if (session?.user?.email) setFormData((current) => ({ ...current, email: session.user.email || current.email }));
+    });
+    return () => data.subscription.unsubscribe();
+  }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData(prev => {
+      const next = { ...prev, [name]: value };
+      const { password: _password, confirmPassword: _confirmPassword, ...safe } = next;
+      sessionStorage.setItem(DRAFT_KEY, JSON.stringify(safe));
+      return next;
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -48,13 +73,13 @@ export default function CollaboratorOnboardPage() {
       errors.email = 'Email không hợp lệ';
     }
 
-    if (!formData.password) {
+    if (!hasVerifiedSession && !formData.password) {
       errors.password = 'Mật khẩu là bắt buộc';
-    } else if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{12,}$/.test(formData.password)) {
+    } else if (!hasVerifiedSession && !/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{12,}$/.test(formData.password)) {
       errors.password = 'Mật khẩu phải có ít nhất 12 ký tự, gồm chữ hoa, chữ thường, số và ký tự đặc biệt';
     }
 
-    if (formData.password !== formData.confirmPassword) {
+    if (!hasVerifiedSession && formData.password !== formData.confirmPassword) {
       errors.confirmPassword = 'Mật khẩu xác nhận không khớp';
     }
 
@@ -65,29 +90,36 @@ export default function CollaboratorOnboardPage() {
     }
 
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3100';
+      if (!hasVerifiedSession) {
+        const data = await signUp(
+          formData.email,
+          formData.password,
+          'collaborator',
+          `${window.location.origin}/collaborator/onboard?confirmed=1`,
+        );
+        if (!data.session) {
+          setNotice('Kiểm tra email để xác nhận địa chỉ. Sau khi xác nhận, quay lại trang này để hoàn tất hồ sơ.');
+          setIsSubmitting(false);
+          return;
+        }
+        setHasVerifiedSession(Boolean(data.user?.email_confirmed_at));
+      }
 
       const payload = {
         collaborators_name: formData.fullName,
         collaborators_phone: formData.phone,
         collaborators_email: formData.email,
-        collaborators_password: formData.password,
         collaborators_bank_name: formData.bankName || undefined,
+        collaborators_bank_acc_name: formData.bankAccountName || undefined,
         collaborators_bank_acc_number: formData.bankAccountNumber || undefined,
       };
 
-      const response = await fetch(`${apiUrl}/collaborators`, {
+      await apiFetch('/collaborators', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
         body: JSON.stringify(payload),
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to create collaborator');
-      }
+      sessionStorage.removeItem(DRAFT_KEY);
 
       // Redirect to success page
       router.push('/success?type=collaborator');
@@ -102,6 +134,7 @@ export default function CollaboratorOnboardPage() {
       <div style={styles.formContainer}>
         <h1 style={styles.title}>Đăng Ký Cộng Tác Viên</h1>
         <p style={styles.subtitle}>Tham gia với vai trò hướng dẫn viên du lịch và bắt đầu nhận hoa hồng</p>
+        <p style={styles.hint}>Email phải được Supabase xác nhận trước khi hồ sơ được tạo. Quyền hoạt động và ảnh đại diện được Admin duyệt riêng.</p>
 
         <form onSubmit={handleSubmit} style={styles.form}>
           <div style={styles.formGroup}>
@@ -153,6 +186,7 @@ export default function CollaboratorOnboardPage() {
               required
               value={formData.email}
               onChange={handleChange}
+              readOnly={hasVerifiedSession}
               style={styles.input}
               placeholder="email.cua.ban@example.com"
             />
@@ -161,7 +195,7 @@ export default function CollaboratorOnboardPage() {
             )}
           </div>
 
-          <div style={styles.formGroup}>
+          {!hasVerifiedSession && <><div style={styles.formGroup}>
             <label htmlFor="password" style={styles.label}>
               Mật Khẩu *
             </label>
@@ -173,7 +207,7 @@ export default function CollaboratorOnboardPage() {
               value={formData.password}
               onChange={handleChange}
               style={styles.input}
-              placeholder="Ít nhất 6 ký tự"
+              placeholder="Ít nhất 12 ký tự"
             />
             {validationErrors.password && (
               <span style={styles.errorText}>{validationErrors.password}</span>
@@ -197,7 +231,7 @@ export default function CollaboratorOnboardPage() {
             {validationErrors.confirmPassword && (
               <span style={styles.errorText}>{validationErrors.confirmPassword}</span>
             )}
-          </div>
+          </div></>}
 
           <div style={styles.formGroup}>
             <label htmlFor="bankName" style={styles.label}>
@@ -229,11 +263,17 @@ export default function CollaboratorOnboardPage() {
             />
           </div>
 
+          <div style={styles.formGroup}>
+            <label htmlFor="bankAccountName" style={styles.label}>Tên Chủ Tài Khoản</label>
+            <input id="bankAccountName" name="bankAccountName" type="text" value={formData.bankAccountName} onChange={handleChange} style={styles.input} autoComplete="off" />
+          </div>
+
           {error && (
             <div style={styles.errorBox}>
               {error}
             </div>
           )}
+          {notice && <div style={{ ...styles.errorBox, background: '#ecfdf5', color: '#065f46' }}>{notice}</div>}
 
           <div style={styles.buttonGroup}>
             <button
@@ -249,7 +289,7 @@ export default function CollaboratorOnboardPage() {
               style={styles.primaryButton}
               disabled={isSubmitting}
             >
-              {isSubmitting ? 'Đang gửi...' : 'Gửi Đơn Đăng Ký'}
+              {isSubmitting ? 'Đang gửi...' : hasVerifiedSession ? 'Gửi Hồ Sơ Để Duyệt' : 'Xác Nhận Email'}
             </button>
           </div>
         </form>

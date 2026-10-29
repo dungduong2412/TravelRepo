@@ -12,6 +12,7 @@ export const TransactionReportQuerySchema = z.object({
   legacy_status: z.union([z.coerce.number().int(), z.literal('null')]).optional(),
   lifecycle_status: OptionalText,
   payment_status: OptionalText,
+  record_kind: z.enum(['v1_import', 'uat_simulation']).optional(),
   from: z.string().datetime({ offset: true }).optional(),
   to: z.string().datetime({ offset: true }).optional(),
   orphan_only: z.enum(['true', 'false']).transform((value) => value === 'true').default(false),
@@ -24,3 +25,11 @@ export const TransactionReportQuerySchema = z.object({
 }).strict();
 
 export type TransactionReportQuery = z.infer<typeof TransactionReportQuerySchema>;
+
+export const CreateUatSimulationTransactionSchema = z.object({
+  collaborator_code: z.string().trim().min(1).max(100),
+  gross_amount: z.string().trim().regex(/^\d{1,14}(?:\.\d{1,4})?$/, 'Gross amount must use at most four decimal places'),
+  idempotency_key: PostgresUuidSchema,
+}).strict();
+
+export type CreateUatSimulationTransaction = z.infer<typeof CreateUatSimulationTransactionSchema>;

@@ -1,5 +1,5 @@
 import { TransactionsService } from './transactions.service';
-import { TransactionReportQuery } from './transactions.dto';
+import { CreateUatSimulationTransaction, TransactionReportQuery } from './transactions.dto';
 export declare class TransactionsController {
     private readonly service;
     constructor(service: TransactionsService);
@@ -21,6 +21,7 @@ export declare class TransactionsController {
             payment_statuses: Record<string, number>;
             lifecycle_statuses: Record<string, number>;
             source_statuses: Record<string, number>;
+            record_kinds: Record<string, number>;
         };
     }>;
     report(query: TransactionReportQuery): Promise<{
@@ -39,6 +40,7 @@ export declare class TransactionsController {
             payment_statuses: Record<string, number>;
             lifecycle_statuses: Record<string, number>;
             source_statuses: Record<string, number>;
+            record_kinds: Record<string, number>;
         };
     }>;
     findMine(actor: {
@@ -46,6 +48,14 @@ export declare class TransactionsController {
     }): Promise<({
         error: true;
     } & "Received a generic string")[]>;
+    createSimulation(actor: {
+        id: string;
+    }, dto: CreateUatSimulationTransaction): Promise<{
+        record_kind: string;
+        lifecycle_status: string;
+        payment_status: string;
+        external_settlement_enabled: boolean;
+    }>;
     findAll(): Promise<({
         error: true;
     } & "Received a generic string")[]>;

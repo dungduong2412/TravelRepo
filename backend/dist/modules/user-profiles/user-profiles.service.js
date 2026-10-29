@@ -12,7 +12,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.UserProfilesService = void 0;
 const common_1 = require("@nestjs/common");
 const supabase_service_1 = require("../../infrastructure/supabase/supabase.service");
-const crypto_1 = require("crypto");
 const audit_service_1 = require("../audit/audit.service");
 let UserProfilesService = class UserProfilesService {
     constructor(supabase, audit) {
@@ -67,6 +66,38 @@ let UserProfilesService = class UserProfilesService {
                 return;
         }
         throw new common_1.InternalServerErrorException('Unable to verify account availability');
+    }
+    async requireVerifiedSignupIdentity(userId, expectedEmail) {
+        const client = this.supabase.getClient();
+        const { data, error } = await client.auth.admin.getUserById(userId);
+        const authUser = data.user;
+        if (error || !authUser || !authUser.email) {
+            throw new common_1.BadRequestException('Verified signup identity is unavailable');
+        }
+        if (!authUser.email_confirmed_at) {
+            throw new common_1.BadRequestException('Email confirmation is required before submitting an application');
+        }
+        if (authUser.email.trim().toLowerCase() !== expectedEmail.trim().toLowerCase()) {
+            throw new common_1.BadRequestException('Application email must match the verified Auth email');
+        }
+        const normalizedEmail = expectedEmail.trim().toLowerCase();
+        const [{ data: byUser, error: userError }, { data: byEmail, error: emailError }] = await Promise.all([
+            client.from('user_profiles').select('id').eq('user_id', userId).maybeSingle(),
+            client.from('user_profiles').select('id').eq('email', normalizedEmail).maybeSingle(),
+        ]);
+        if (userError || emailError)
+            throw new common_1.InternalServerErrorException('Unable to verify application identity');
+        if (byUser || byEmail) {
+            throw new common_1.BadRequestException('An application already exists for this verified identity');
+        }
+        return { userId: authUser.id, email: authUser.email.trim().toLowerCase() };
+    }
+    async assertLinkedAuthEmailConfirmed(userId) {
+        const { data, error } = await this.supabase.getClient().auth.admin.getUserById(userId);
+        if (error || !data.user?.email_confirmed_at) {
+            throw new common_1.BadRequestException('Linked Auth email is not confirmed');
+        }
+        return data.user;
     }
     async updateManagedProfile(actor, id, dto) {
         const existing = await this.findById(id);
@@ -205,21 +236,7 @@ let UserProfilesService = class UserProfilesService {
                     userId = existingAuthUser.id;
                 }
                 else {
-                    const password = dto.password || `${(0, crypto_1.randomBytes)(24).toString('base64url')}Aa1!`;
-                    const { data: newAuthUser, error: authError } = await this.supabase.getClient().auth.admin.createUser({
-                        email: dto.email,
-                        password: password,
-                        email_confirm: true,
-                        app_metadata: {
-                            role: dto.role,
-                            account_status: dto.status || 'active',
-                            password_reset_required: !dto.password,
-                        },
-                    });
-                    if (authError || !newAuthUser.user) {
-                        throw new Error(`Failed to create auth user: ${authError?.message || 'Unknown error'}`);
-                    }
-                    userId = newAuthUser.user.id;
+                    throw new common_1.BadRequestException('A verified Supabase Auth signup or separately approved invitation is required');
                 }
             }
             const { data, error } = await this.supabase.getClient()
@@ -323,25 +340,11 @@ let UserProfilesService = class UserProfilesService {
                     else {
                         const { data: authUser } = await this.supabase.getClient().auth.admin.listUsers();
                         const existingAuthUser = authUser?.users?.find((u) => u.email === merchant.owner_email);
-                        let userId;
-                        if (existingAuthUser) {
-                            userId = existingAuthUser.id;
-                            console.log(`Auth user already exists for ${merchant.owner_email}`);
+                        if (!existingAuthUser?.email_confirmed_at) {
+                            throw new Error('A separately verified or invited Supabase Auth user is required before profile backfill');
                         }
-                        else {
-                            const password = `${(0, crypto_1.randomBytes)(24).toString('base64url')}Aa1!`;
-                            const { data: newAuthUser, error: authError } = await this.supabase.getClient().auth.admin.createUser({
-                                email: merchant.owner_email,
-                                password: password,
-                                email_confirm: true,
-                                app_metadata: { role: 'merchant', password_reset_required: true },
-                            });
-                            if (authError || !newAuthUser.user) {
-                                throw new Error(`Failed to create auth user: ${authError?.message || 'Unknown error'}`);
-                            }
-                            userId = newAuthUser.user.id;
-                            console.log(`Created auth user for ${merchant.owner_email}`);
-                        }
+                        const userId = existingAuthUser.id;
+                        console.log(`Verified Auth user already exists for ${merchant.owner_email}`);
                         const { error: profileError } = await this.supabase.getClient()
                             .from('user_profiles')
                             .insert({
@@ -386,25 +389,11 @@ let UserProfilesService = class UserProfilesService {
                     else {
                         const { data: authUser } = await this.supabase.getClient().auth.admin.listUsers();
                         const existingAuthUser = authUser?.users?.find((u) => u.email === collaborator.collaborators_email);
-                        let userId;
-                        if (existingAuthUser) {
-                            userId = existingAuthUser.id;
-                            console.log(`Auth user already exists for ${collaborator.collaborators_email}`);
+                        if (!existingAuthUser?.email_confirmed_at) {
+                            throw new Error('A separately verified or invited Supabase Auth user is required before profile backfill');
                         }
-                        else {
-                            const password = `${(0, crypto_1.randomBytes)(24).toString('base64url')}Aa1!`;
-                            const { data: newAuthUser, error: authError } = await this.supabase.getClient().auth.admin.createUser({
-                                email: collaborator.collaborators_email,
-                                password: password,
-                                email_confirm: true,
-                                app_metadata: { role: 'collaborator', password_reset_required: true },
-                            });
-                            if (authError || !newAuthUser.user) {
-                                throw new Error(`Failed to create auth user: ${authError?.message || 'Unknown error'}`);
-                            }
-                            userId = newAuthUser.user.id;
-                            console.log(`Created auth user for ${collaborator.collaborators_email}`);
-                        }
+                        const userId = existingAuthUser.id;
+                        console.log(`Verified Auth user already exists for ${collaborator.collaborators_email}`);
                         const { error: profileError } = await this.supabase.getClient()
                             .from('user_profiles')
                             .insert({

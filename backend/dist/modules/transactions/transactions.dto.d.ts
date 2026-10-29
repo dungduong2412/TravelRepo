@@ -8,6 +8,10 @@ export declare const TransactionReportQuerySchema: z.ZodObject<{
     legacy_status: z.ZodOptional<z.ZodUnion<readonly [z.ZodCoercedNumber<unknown>, z.ZodLiteral<"null">]>>;
     lifecycle_status: z.ZodOptional<z.ZodString>;
     payment_status: z.ZodOptional<z.ZodString>;
+    record_kind: z.ZodOptional<z.ZodEnum<{
+        v1_import: "v1_import";
+        uat_simulation: "uat_simulation";
+    }>>;
     from: z.ZodOptional<z.ZodString>;
     to: z.ZodOptional<z.ZodString>;
     orphan_only: z.ZodDefault<z.ZodPipe<z.ZodEnum<{
@@ -30,3 +34,9 @@ export declare const TransactionReportQuerySchema: z.ZodObject<{
     }>>;
 }, z.core.$strict>;
 export type TransactionReportQuery = z.infer<typeof TransactionReportQuerySchema>;
+export declare const CreateUatSimulationTransactionSchema: z.ZodObject<{
+    collaborator_code: z.ZodString;
+    gross_amount: z.ZodString;
+    idempotency_key: z.ZodString;
+}, z.core.$strict>;
+export type CreateUatSimulationTransaction = z.infer<typeof CreateUatSimulationTransactionSchema>;

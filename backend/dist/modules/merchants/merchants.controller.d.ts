@@ -79,7 +79,13 @@ export declare class MerchantsController {
     }, id: string): Promise<{
         category_ids: any[];
     }>;
-    create(dto: CreateMerchantDto): Promise<Omit<any, "owner_password">>;
+    create(actor: {
+        id: string;
+        email?: string;
+    }, dto: CreateMerchantDto): Promise<Omit<any, "owner_password">>;
+    resubmit(actor: {
+        id: string;
+    }, id: string): Promise<Omit<any, "owner_password">>;
     update(actor: {
         id: string;
     }, id: string, dto: UpdateMerchantDto): Promise<Omit<any, "owner_password">>;

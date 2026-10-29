@@ -68,10 +68,14 @@ export declare class MerchantsService {
     }>;
     findByEmail(email: string): Promise<any>;
     findVerified(): Promise<Omit<any, "owner_password">[]>;
-    create(dto: CreateMerchantDto): Promise<Omit<any, "owner_password">>;
+    create(actor: {
+        id: string;
+        email?: string;
+    }, dto: CreateMerchantDto): Promise<Omit<any, "owner_password">>;
     createByAdmin(actor: AuditActor, dto: AdminCreateMerchantDto): Promise<Omit<any, "owner_password">>;
     update(id: string, dto: UpdateMerchantDto): Promise<Omit<any, "owner_password">>;
     updateForActor(userId: string, id: string, dto: UpdateMerchantDto): Promise<Omit<any, "owner_password">>;
+    resubmit(userId: string, id: string): Promise<Omit<any, "owner_password">>;
     updateByAdmin(actor: AuditActor, id: string, dto: AdminUpdateMerchantDto): Promise<Omit<any, "owner_password">>;
     private requireActiveMerchantProfile;
     listMembers(userId: string): Promise<{

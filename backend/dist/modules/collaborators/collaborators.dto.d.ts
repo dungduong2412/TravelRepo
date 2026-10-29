@@ -6,7 +6,6 @@ export declare const CreateCollaboratorSchema: z.ZodObject<{
     collaborators_bank_name: z.ZodOptional<z.ZodString>;
     collaborators_bank_acc_name: z.ZodOptional<z.ZodString>;
     collaborators_bank_acc_number: z.ZodOptional<z.ZodString>;
-    collaborators_password: z.ZodString;
 }, z.core.$strict>;
 export type CreateCollaboratorDto = z.infer<typeof CreateCollaboratorSchema>;
 export declare const AdminCreateCollaboratorSchema: z.ZodObject<{
@@ -42,9 +41,9 @@ export declare const AdminUpdateCollaboratorSchema: z.ZodObject<{
     collaborators_rating: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
     collaborators_status: z.ZodOptional<z.ZodEnum<{
         pending: "pending";
+        blocked: "blocked";
         active: "active";
         inactive: "inactive";
-        blocked: "blocked";
     }>>;
     collaborators_actions: z.ZodOptional<z.ZodNullable<z.ZodString>>;
 }, z.core.$strict>;
@@ -56,6 +55,5 @@ export declare const CreateCollaboratorMemberSchema: z.ZodObject<{
     collaborators_bank_name: z.ZodOptional<z.ZodString>;
     collaborators_bank_acc_name: z.ZodOptional<z.ZodString>;
     collaborators_bank_acc_number: z.ZodOptional<z.ZodString>;
-    collaborators_password: z.ZodString;
 }, z.core.$strict>;
-export type CreateCollaboratorMemberDto = CreateCollaboratorDto;
+export type CreateCollaboratorMemberDto = z.infer<typeof CreateCollaboratorMemberSchema>;

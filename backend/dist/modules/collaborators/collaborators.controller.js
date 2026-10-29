@@ -28,6 +28,9 @@ let CollaboratorsController = class CollaboratorsController {
     create(actor, dto) {
         return this.service.createCollaborator(actor, dto);
     }
+    resubmit(actor, id) {
+        return this.service.resubmit(actor.id, id);
+    }
     listAll() {
         return this.service.listAll();
     }
@@ -68,13 +71,20 @@ let CollaboratorsController = class CollaboratorsController {
 exports.CollaboratorsController = CollaboratorsController;
 __decorate([
     (0, common_1.Post)(),
-    (0, public_decorator_1.Public)(),
     __param(0, (0, user_decorator_1.User)()),
     __param(1, (0, common_1.Body)(new zod_validation_pipe_1.ZodValidationPipe(collaborators_dto_1.CreateCollaboratorSchema))),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object, Object]),
     __metadata("design:returntype", void 0)
 ], CollaboratorsController.prototype, "create", null);
+__decorate([
+    (0, common_1.Post)(':id/resubmit'),
+    __param(0, (0, user_decorator_1.User)()),
+    __param(1, (0, common_1.Param)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String]),
+    __metadata("design:returntype", void 0)
+], CollaboratorsController.prototype, "resubmit", null);
 __decorate([
     (0, common_1.Get)(),
     (0, common_1.UseGuards)(admin_guard_1.AdminGuard),

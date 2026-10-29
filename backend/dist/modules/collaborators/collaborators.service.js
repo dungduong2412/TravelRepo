@@ -59,10 +59,12 @@ let CollaboratorsService = class CollaboratorsService {
         this.audit = audit;
     }
     async createCollaborator(actor, dto) {
-        await this.userProfilesService.assertIdentityAvailable(dto.collaborators_email);
-        const { collaborators_password, ...restDto } = dto;
+        if (!actor?.id)
+            throw new common_1.ForbiddenException('Verified signup identity is required');
+        const identity = await this.userProfilesService.requireVerifiedSignupIdentity(actor.id, dto.collaborators_email);
         const insertData = {
-            ...restDto,
+            ...dto,
+            collaborators_email: identity.email,
             collaborators_password: null,
             collaborators_code: this.generateCollaboratorCode(),
             collaborators_verified: false,
@@ -77,18 +79,22 @@ let CollaboratorsService = class CollaboratorsService {
         if (error) {
             throw new Error(`Failed to create collaborator: ${error.message}`);
         }
-        if (data.collaborators_email && collaborators_password) {
+        if (data.collaborators_email) {
             try {
                 await this.userProfilesService.createOrUpdate({
-                    email: data.collaborators_email,
+                    email: identity.email,
                     role: 'collaborator',
                     merchant_id: null,
                     collaborator_id: data.id,
-                    password: collaborators_password,
+                    user_id: identity.userId,
                     status: 'pending',
+                });
+                await this.audit.record({ id: identity.userId, role: 'collaborator' }, 'collaborator.application_submitted', 'collaborator', data.id, {
+                    email_verified: true,
                 });
             }
             catch (identityError) {
+                await this.supabase.getClient().from('user_profiles').delete().eq('user_id', identity.userId);
                 await this.supabase.getClient().from('collaborators').delete().eq('id', data.id);
                 throw identityError;
             }
@@ -130,7 +136,7 @@ let CollaboratorsService = class CollaboratorsService {
             throw new common_1.ForbiddenException('Collaborator access denied');
         const { data: profile } = await this.supabase.getClient().from('user_profiles')
             .select('role,user_profiles_status,collaborator_id').eq('user_id', actor.id).maybeSingle();
-        if (!profile || profile.user_profiles_status !== 'active' ||
+        if (!profile || !['active', 'pending', 'blocked'].includes(profile.user_profiles_status) ||
             !(profile.role === 'collaborator' && profile.collaborator_id === collaboratorId)) {
             throw new common_1.ForbiddenException('Collaborator access denied');
         }
@@ -150,7 +156,12 @@ let CollaboratorsService = class CollaboratorsService {
         if (!actor?.id) {
             throw new common_1.NotFoundException('User identity not found in token');
         }
-        const profile = await this.requireActiveCollaboratorProfile(actor.id);
+        const { data: profile, error: profileError } = await this.supabase.getClient().from('user_profiles')
+            .select('id,role,user_profiles_status,collaborator_id').eq('user_id', actor.id).maybeSingle();
+        if (profileError || !profile || profile.role !== 'collaborator' || !profile.collaborator_id ||
+            !['active', 'pending', 'blocked'].includes(profile.user_profiles_status)) {
+            throw new common_1.ForbiddenException('Collaborator profile access denied');
+        }
         const { data, error } = await this.supabase.getClient()
             .from('collaborators')
             .select('*')
@@ -234,6 +245,23 @@ let CollaboratorsService = class CollaboratorsService {
         }
         return this.withoutPassword(data);
     }
+    async resubmit(userId, collaboratorId) {
+        const { data: profile } = await this.supabase.getClient().from('user_profiles')
+            .select('id,role,user_profiles_status,collaborator_id').eq('user_id', userId).maybeSingle();
+        if (!profile || profile.role !== 'collaborator' || profile.collaborator_id !== collaboratorId || profile.user_profiles_status !== 'blocked') {
+            throw new common_1.ForbiddenException('Only the rejected Collaborator applicant can resubmit');
+        }
+        await this.userProfilesService.assertLinkedAuthEmailConfirmed(userId);
+        const { data, error } = await this.supabase.getClient().from('collaborators').update({
+            collaborators_verified: false,
+            collaborators_status: 'pending',
+        }).eq('id', collaboratorId).eq('collaborators_status', 'blocked').select().single();
+        if (error || !data)
+            throw new common_1.BadRequestException('Collaborator application cannot be resubmitted');
+        await this.supabase.getClient().from('user_profiles').update({ user_profiles_status: 'pending' }).eq('id', profile.id);
+        await this.audit.record({ id: userId, role: 'collaborator' }, 'collaborator.application_resubmitted', 'collaborator', collaboratorId);
+        return this.withoutPassword(data);
+    }
     async deactivateCollaborator(actor, collaboratorId) {
         const { data: collaborator, error: fetchError } = await this.supabase.getClient()
             .from('collaborators')
@@ -282,10 +310,9 @@ let CollaboratorsService = class CollaboratorsService {
             throw new common_1.BadRequestException('Collaborator is not assigned to a merchant team');
         }
         await this.userProfilesService.assertIdentityAvailable(dto.collaborators_email);
-        const { collaborators_password, ...safeDto } = dto;
         const client = this.supabase.getClient();
         const { data, error } = await client.from('collaborators').insert({
-            ...safeDto,
+            ...dto,
             merchant_system_id: self.merchant_system_id,
             collaborators_code: this.generateCollaboratorCode(),
             collaborators_password: null,
@@ -295,17 +322,10 @@ let CollaboratorsService = class CollaboratorsService {
         }).select().single();
         if (error)
             throw new common_1.BadRequestException(`Failed to create member: ${error.message}`);
-        try {
-            await this.userProfilesService.createOrUpdate({
-                email: dto.collaborators_email,
-                role: 'collaborator', merchant_id: null, collaborator_id: data.id,
-                password: collaborators_password, status: 'pending',
-            });
-        }
-        catch (error) {
-            await client.from('collaborators').delete().eq('id', data.id);
-            throw error;
-        }
+        await this.audit.record({ id: userId, role: 'collaborator' }, 'collaborator.member_application_created', 'collaborator', data.id, {
+            merchant_id: self.merchant_system_id,
+            auth_invitation_required: true,
+        });
         return this.withoutPassword(data);
     }
     async resolveByCode(code) {
@@ -354,6 +374,11 @@ let CollaboratorsService = class CollaboratorsService {
         if (fetchError || !collaborator) {
             throw new common_1.NotFoundException('Collaborator not found');
         }
+        const { data: linkedProfile, error: linkedProfileError } = await this.supabase.getClient().from('user_profiles')
+            .select('user_id').eq('collaborator_id', id).eq('role', 'collaborator').maybeSingle();
+        if (linkedProfileError || !linkedProfile?.user_id)
+            throw new Error('Cannot approve collaborator: verified Auth identity is required');
+        await this.userProfilesService.assertLinkedAuthEmailConfirmed(linkedProfile.user_id);
         const qrCodeBase64 = await this.generateCodeImage(collaborator.collaborators_code);
         const { data, error } = await this.supabase.getClient()
             .from('collaborators')

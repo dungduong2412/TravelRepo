@@ -29,6 +29,7 @@ export declare class CollaboratorsService {
     private generateCodeImage;
     private collaboratorCodeFromPayload;
     updateCollaborator(actor: any, collaboratorId: string, dto: UpdateCollaboratorDto): Promise<Omit<any, "collaborators_password">>;
+    resubmit(userId: string, collaboratorId: string): Promise<Omit<any, "collaborators_password">>;
     deactivateCollaborator(actor: AuditActor, collaboratorId: string): Promise<Omit<any, "collaborators_password">>;
     listMembers(userId: string): Promise<{
         id: any;

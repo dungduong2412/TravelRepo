@@ -1,9 +1,14 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 import { JwtGuard } from '../../common/auth/jwt.guard';
 import { AdminGuard } from '../../common/auth/admin.guard';
 import { User } from '../../common/auth/user.decorator';
 import { TransactionsService } from './transactions.service';
-import { TransactionReportQuery, TransactionReportQuerySchema } from './transactions.dto';
+import {
+  CreateUatSimulationTransaction,
+  CreateUatSimulationTransactionSchema,
+  TransactionReportQuery,
+  TransactionReportQuerySchema,
+} from './transactions.dto';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 
 @Controller('transactions')
@@ -30,6 +35,14 @@ export class TransactionsController {
   @Get('me')
   findMine(@User() actor: { id: string }) {
     return this.service.findForActor(actor.id);
+  }
+
+  @Post('simulation')
+  createSimulation(
+    @User() actor: { id: string },
+    @Body(new ZodValidationPipe(CreateUatSimulationTransactionSchema)) dto: CreateUatSimulationTransaction,
+  ) {
+    return this.service.createUatSimulation(actor.id, dto);
   }
 
   @Get()

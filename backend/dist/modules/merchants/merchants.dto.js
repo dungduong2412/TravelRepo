@@ -3,15 +3,29 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.CreateMerchantMemberSchema = exports.MerchantDirectoryQuerySchema = exports.AdminUpdateMerchantSchema = exports.UpdateMerchantSchema = exports.AdminCreateMerchantSchema = exports.CreateMerchantSchema = exports.MerchantSchema = void 0;
 const zod_1 = require("zod");
 const postgres_uuid_1 = require("../../common/validation/postgres-uuid");
-const StrongPasswordSchema = zod_1.z.string().min(12)
-    .regex(/[a-z]/, 'Password requires a lowercase letter')
-    .regex(/[A-Z]/, 'Password requires an uppercase letter')
-    .regex(/\d/, 'Password requires a number')
-    .regex(/[^A-Za-z0-9]/, 'Password requires a symbol');
 const ExactNonNegativeDecimalSchema = zod_1.z.union([
     zod_1.z.number().nonnegative(),
     zod_1.z.string().trim().regex(/^\d+(?:\.\d{1,4})?$/, 'Expected a non-negative decimal with up to four places'),
 ]);
+function isFractionalRate(value) {
+    const normalized = String(value).trim();
+    if (!/^\d+(?:\.\d{1,4})?$/.test(normalized))
+        return false;
+    const [whole, fraction = ''] = normalized.split('.');
+    const scaled = BigInt(whole) * 10000n + BigInt(fraction.padEnd(4, '0'));
+    return scaled <= 10000n;
+}
+function validateFractionalCommercialRates(value, ctx) {
+    for (const [typeKey, valueKey] of [
+        ['merchant_commission_type', 'merchant_commission_value'],
+        ['merchant_discount_type', 'merchant_discount_value'],
+    ]) {
+        const rate = value[valueKey];
+        if (value[typeKey] === 'percentage' && rate !== null && rate !== undefined && !isFractionalRate(rate)) {
+            ctx.addIssue({ code: zod_1.z.ZodIssueCode.custom, path: [valueKey], message: 'Percentage rates must be stored as a fraction between 0 and 1' });
+        }
+    }
+}
 const MerchantCategoryIdsSchema = zod_1.z.array(postgres_uuid_1.PostgresUuidSchema)
     .max(3, 'A merchant may have at most 3 categories')
     .refine((ids) => new Set(ids).size === ids.length, {
@@ -34,24 +48,28 @@ exports.MerchantSchema = zod_1.z.object({
 });
 exports.CreateMerchantSchema = zod_1.z.object({
     owner_email: zod_1.z.string().email(),
-    owner_password: StrongPasswordSchema,
     merchant_name: zod_1.z.string().min(1).max(200),
-    merchant_description: zod_1.z.string().optional(),
-    merchant_phone: zod_1.z.string().min(10).max(20).optional(),
+    merchant_description: zod_1.z.string().max(20000).optional(),
+    merchant_phone: zod_1.z.string().min(7).max(20).optional(),
     merchant_email: zod_1.z.string().email().optional(),
-    merchant_contact_phone: zod_1.z.string().optional(),
-    new_address_city: zod_1.z.string().optional(),
-    new_address_ward: zod_1.z.string().optional(),
-    new_address_line: zod_1.z.string().optional(),
-    merchant_commission_type: zod_1.z.enum(['percentage', 'fixed']).optional(),
-    merchant_commission_value: zod_1.z.number().min(0).optional(),
-    merchant_discount_type: zod_1.z.enum(['percentage', 'fixed']).optional(),
-    merchant_discount_value: zod_1.z.number().min(0).optional(),
-});
-exports.AdminCreateMerchantSchema = exports.CreateMerchantSchema.omit({ owner_password: true }).extend({
+    merchant_contact_phone: zod_1.z.string().max(20).optional(),
     owner_name: zod_1.z.string().max(200).optional(),
     owner_phone: zod_1.z.string().max(20).optional(),
-});
+    owner_tax_code: zod_1.z.string().max(100).optional(),
+    new_address_country: zod_1.z.string().max(200).optional(),
+    new_address_province: zod_1.z.string().max(200).optional(),
+    new_address_district: zod_1.z.string().max(200).optional(),
+    new_address_city: zod_1.z.string().max(200).optional(),
+    new_address_ward: zod_1.z.string().max(200).optional(),
+    new_address_line: zod_1.z.string().max(1000).optional(),
+    category_ids: MerchantCategoryIdsSchema.optional(),
+}).strict();
+exports.AdminCreateMerchantSchema = exports.CreateMerchantSchema.extend({
+    merchant_commission_type: zod_1.z.enum(['percentage', 'fixed']).optional(),
+    merchant_commission_value: ExactNonNegativeDecimalSchema.optional(),
+    merchant_discount_type: zod_1.z.enum(['percentage', 'fixed']).optional(),
+    merchant_discount_value: ExactNonNegativeDecimalSchema.optional(),
+}).superRefine(validateFractionalCommercialRates);
 exports.UpdateMerchantSchema = zod_1.z.object({
     merchant_name: zod_1.z.string().min(1).max(200).optional(),
     merchant_description: zod_1.z.string().max(20000).nullable().optional(),
@@ -80,7 +98,7 @@ exports.AdminUpdateMerchantSchema = exports.UpdateMerchantSchema.extend({
     merchant_verified: zod_1.z.boolean().optional(),
     merchants_status: zod_1.z.enum(['pending', 'active', 'inactive', 'blocked']).optional(),
     merchant_action: zod_1.z.string().max(500).nullable().optional(),
-}).strict();
+}).strict().superRefine(validateFractionalCommercialRates);
 exports.MerchantDirectoryQuerySchema = zod_1.z.object({
     page: zod_1.z.coerce.number().int().min(1).default(1),
     page_size: zod_1.z.coerce.number().int().min(1).max(100).default(25),
@@ -97,7 +115,6 @@ exports.CreateMerchantMemberSchema = zod_1.z.object({
     collaborators_name: zod_1.z.string().min(1).max(200),
     collaborators_phone: zod_1.z.string().min(7).max(20),
     collaborators_email: zod_1.z.string().email(),
-    collaborators_password: StrongPasswordSchema,
     collaborators_bank_name: zod_1.z.string().max(200).optional(),
     collaborators_bank_acc_number: zod_1.z.string().max(100).optional(),
 }).strict();

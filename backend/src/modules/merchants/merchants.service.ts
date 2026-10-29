@@ -106,7 +106,9 @@ export class MerchantsService {
   async findByIdForActor(userId: string, id: string) {
     const { data: profile } = await this.supabase.getClient().from('user_profiles')
       .select('role,user_profiles_status,merchant_id').eq('user_id', userId).maybeSingle();
-    if (!profile || profile.user_profiles_status !== 'active' ||
+    const applicantOwnsRecord = profile?.role === 'merchant' && profile.merchant_id === id &&
+      ['pending', 'blocked'].includes(profile.user_profiles_status);
+    if (!profile || (!applicantOwnsRecord && profile.user_profiles_status !== 'active') ||
         (profile.role !== 'admin' && !(profile.role === 'merchant' && profile.merchant_id === id))) {
       throw new ForbiddenException('Merchant access denied');
     }
@@ -171,28 +173,17 @@ export class MerchantsService {
     return (data || []).map((row) => this.withoutPassword(row));
   }
 
-  async create(dto: CreateMerchantDto) {
-    await this.userProfilesService.assertIdentityAvailable(dto.owner_email);
+  async create(actor: { id: string; email?: string }, dto: CreateMerchantDto) {
+    const identity = await this.userProfilesService.requireVerifiedSignupIdentity(actor.id, dto.owner_email);
     const merchantCode = this.generateMerchantCode();
-    
+    const { category_ids: categoryIds, ...fields } = dto;
     const { data, error } = await this.supabase.getClient()
       .from('merchant_details')
       .insert({
+        ...fields,
         merchant_code: merchantCode,
-        owner_email: dto.owner_email,
+        owner_email: identity.email,
         owner_password: null,
-        merchant_name: dto.merchant_name,
-        merchant_description: dto.merchant_description,
-        merchant_phone: dto.merchant_phone,
-        merchant_email: dto.merchant_email,
-        merchant_contact_phone: dto.merchant_contact_phone,
-        new_address_city: dto.new_address_city,
-        new_address_ward: dto.new_address_ward,
-        new_address_line: dto.new_address_line,
-        merchant_commission_type: dto.merchant_commission_type,
-        merchant_commission_value: dto.merchant_commission_value,
-        merchant_discount_type: dto.merchant_discount_type,
-        merchant_discount_value: dto.merchant_discount_value,
         merchant_verified: false, // Default to false
         merchants_status: 'pending', // Default to pending
       })
@@ -205,14 +196,27 @@ export class MerchantsService {
 
     try {
       await this.userProfilesService.createOrUpdate({
-        email: dto.owner_email,
+        email: identity.email,
         role: 'merchant',
         merchant_id: data.merchant_system_id,
         collaborator_id: null,
-        password: dto.owner_password,
+        user_id: identity.userId,
         status: 'pending',
       });
+      if (categoryIds) {
+        const { error: categoryError } = await this.supabase.getClient().rpc('set_merchant_categories', {
+          p_merchant_id: data.merchant_system_id,
+          p_actor_user_id: identity.userId,
+          p_category_ids: categoryIds,
+        });
+        if (categoryError) throw categoryError;
+      }
+      await this.audit.record({ id: identity.userId, role: 'merchant' }, 'merchant.application_submitted', 'merchant', data.merchant_system_id, {
+        email_verified: true,
+      });
     } catch (identityError) {
+      await this.supabase.getClient().from('merchant_user_links').delete().eq('merchant_id', data.merchant_system_id);
+      await this.supabase.getClient().from('user_profiles').delete().eq('user_id', identity.userId);
       await this.supabase.getClient().from('merchant_details')
         .delete().eq('merchant_system_id', data.merchant_system_id);
       throw identityError;
@@ -221,14 +225,21 @@ export class MerchantsService {
   }
 
   async createByAdmin(actor: AuditActor, dto: AdminCreateMerchantDto) {
+    const { category_ids: categoryIds, ...fields } = dto;
     const { data, error } = await this.supabase.getClient().from('merchant_details').insert({
-      ...dto,
+      ...fields,
       merchant_code: this.generateMerchantCode(),
       owner_password: null,
       merchant_verified: false,
       merchants_status: 'pending',
     }).select().single();
     if (error) throw new BadRequestException(`Failed to create merchant: ${error.message}`);
+    if (categoryIds) {
+      const { error: categoryError } = await this.supabase.getClient().rpc('set_merchant_categories', {
+        p_merchant_id: data.merchant_system_id, p_actor_user_id: actor.id, p_category_ids: categoryIds,
+      });
+      if (categoryError) throw new BadRequestException(categoryError.message);
+    }
     await this.audit.record(actor, 'merchant.created', 'merchant', data.merchant_system_id, {
       merchant_code: data.merchant_code,
       status: data.merchants_status,
@@ -258,7 +269,7 @@ export class MerchantsService {
   async updateForActor(userId: string, id: string, dto: UpdateMerchantDto) {
     const { data: profile } = await this.supabase.getClient().from('user_profiles')
       .select('role,user_profiles_status,merchant_id').eq('user_id', userId).maybeSingle();
-    if (!profile || profile.user_profiles_status !== 'active' ||
+    if (!profile || !['active', 'pending', 'blocked'].includes(profile.user_profiles_status) ||
         !(profile.role === 'merchant' && profile.merchant_id === id)) {
       throw new ForbiddenException('Merchant update access denied');
     }
@@ -274,6 +285,23 @@ export class MerchantsService {
       changed_fields: Object.keys(dto),
     });
     return updated;
+  }
+
+  async resubmit(userId: string, id: string) {
+    const { data: profile } = await this.supabase.getClient().from('user_profiles')
+      .select('id,role,user_profiles_status,merchant_id').eq('user_id', userId).maybeSingle();
+    if (!profile || profile.role !== 'merchant' || profile.merchant_id !== id || profile.user_profiles_status !== 'blocked') {
+      throw new ForbiddenException('Only the rejected Merchant applicant can resubmit');
+    }
+    await this.userProfilesService.assertLinkedAuthEmailConfirmed(userId);
+    const { data, error } = await this.supabase.getClient().from('merchant_details').update({
+      merchant_verified: false,
+      merchants_status: 'pending',
+    }).eq('merchant_system_id', id).eq('merchants_status', 'blocked').select().single();
+    if (error || !data) throw new BadRequestException('Merchant application cannot be resubmitted');
+    await this.supabase.getClient().from('user_profiles').update({ user_profiles_status: 'pending' }).eq('id', profile.id);
+    await this.audit.record({ id: userId, role: 'merchant' }, 'merchant.application_resubmitted', 'merchant', id);
+    return this.withoutPassword(data);
   }
 
   async updateByAdmin(actor: AuditActor, id: string, dto: AdminUpdateMerchantDto) {
@@ -336,19 +364,10 @@ export class MerchantsService {
     }).select().single();
     if (error) throw new BadRequestException(`Failed to create member: ${error.message}`);
 
-    try {
-      await this.userProfilesService.createOrUpdate({
-        email: dto.collaborators_email,
-        role: 'collaborator',
-        merchant_id: null,
-        collaborator_id: data.id,
-        password: dto.collaborators_password,
-        status: 'pending',
-      });
-    } catch (error) {
-      await client.from('collaborators').delete().eq('id', data.id);
-      throw error;
-    }
+    await this.audit.record({ id: userId, role: 'merchant' }, 'collaborator.member_application_created', 'collaborator', data.id, {
+      merchant_id: profile.merchant_id,
+      auth_invitation_required: true,
+    });
     return data;
   }
 
@@ -385,6 +404,11 @@ export class MerchantsService {
       console.error(`[MerchantsService] Missing owner_email for merchant ${id}`);
       throw new Error('Cannot approve merchant: owner_email is required');
     }
+
+    const { data: linkedProfile, error: linkedProfileError } = await this.supabase.getClient().from('user_profiles')
+      .select('user_id').eq('merchant_id', id).eq('role', 'merchant').maybeSingle();
+    if (linkedProfileError || !linkedProfile?.user_id) throw new Error('Cannot approve merchant: verified Auth identity is required');
+    await this.userProfilesService.assertLinkedAuthEmailConfirmed(linkedProfile.user_id);
 
     // Update merchant status
     const { data, error } = await this.supabase.getClient()

@@ -1,13 +1,20 @@
-import { ForbiddenException, Injectable, InternalServerErrorException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { SupabaseService } from '../../infrastructure/supabase/supabase.service';
-import { TransactionReportQuery } from './transactions.dto';
+import { CreateUatSimulationTransaction, TransactionReportQuery } from './transactions.dto';
 
 const COLUMNS = [
   'id', 'legacy_transaction_id', 'merchant_id', 'collaborator_id',
   'legacy_restaurant_id', 'legacy_middleman_id', 'legacy_status', 'lifecycle_status',
   'payment_status', 'document_number', 'document_date_utc',
   'document_total', 'document_discount_amount', 'commission_percent',
-  'commission_amount', 'currency_code', 'created_at',
+  'commission_amount', 'currency_code', 'created_at', 'record_kind',
+  'simulation_status', 'external_settlement_enabled',
 ].join(',');
 
 const REPORT_COLUMNS = [
@@ -21,6 +28,7 @@ const REPORT_COLUMNS = [
   'commission_percent', 'commission_amount', 'currency_code',
   'legacy_restaurant_display_name', 'legacy_middleman_display_name',
   'legacy_creator_name', 'legacy_notes', 'created_at',
+  'record_kind', 'simulation_status', 'external_settlement_enabled',
   'merchant:merchant_details!referral_transactions_merchant_id_fkey(merchant_system_id,merchant_code,merchant_name)',
   'collaborator:collaborators!referral_transactions_collaborator_id_fkey(id,collaborators_code,collaborators_name)',
 ].join(',');
@@ -64,6 +72,7 @@ export class TransactionsService {
     else if (filter.legacy_status !== undefined) query = query.eq('legacy_status', filter.legacy_status);
     if (filter.lifecycle_status) query = query.eq('lifecycle_status', filter.lifecycle_status);
     if (filter.payment_status) query = query.eq('payment_status', filter.payment_status);
+    if (filter.record_kind) query = query.eq('record_kind', filter.record_kind);
     if (filter.from) query = query.gte('document_date_utc', filter.from);
     if (filter.to) query = query.lte('document_date_utc', filter.to);
     if (filter.search) {
@@ -89,11 +98,12 @@ export class TransactionsService {
       paymentStatuses: {} as Record<string, number>,
       lifecycleStatuses: {} as Record<string, number>,
       sourceStatuses: {} as Record<string, number>,
+      recordKinds: {} as Record<string, number>,
     };
 
     for (;;) {
       let query = this.supabase.getClient().from('referral_transactions')
-        .select('document_total,document_discount_amount,commission_amount,payment_status,lifecycle_status,legacy_status')
+        .select('document_total,document_discount_amount,commission_amount,payment_status,lifecycle_status,legacy_status,record_kind')
         .range(offset, offset + batchSize - 1);
       query = this.applyReportFilters(query, filter, scope);
       const { data, error } = await query;
@@ -107,9 +117,11 @@ export class TransactionsService {
         const payment = row.payment_status ?? 'null';
         const lifecycle = row.lifecycle_status ?? 'null';
         const source = row.legacy_status === null ? 'null' : String(row.legacy_status);
+        const recordKind = row.record_kind ?? 'v1_import';
         totals.paymentStatuses[payment] = (totals.paymentStatuses[payment] || 0) + 1;
         totals.lifecycleStatuses[lifecycle] = (totals.lifecycleStatuses[lifecycle] || 0) + 1;
         totals.sourceStatuses[source] = (totals.sourceStatuses[source] || 0) + 1;
+        totals.recordKinds[recordKind] = (totals.recordKinds[recordKind] || 0) + 1;
       }
       if (rows.length < batchSize) break;
       offset += batchSize;
@@ -123,6 +135,7 @@ export class TransactionsService {
       payment_statuses: totals.paymentStatuses,
       lifecycle_statuses: totals.lifecycleStatuses,
       source_statuses: totals.sourceStatuses,
+      record_kinds: totals.recordKinds,
     };
   }
 
@@ -181,6 +194,30 @@ export class TransactionsService {
       .select(COLUMNS).order('document_date_utc', { ascending: false });
     if (error) throw new InternalServerErrorException('Unable to load transactions');
     return data;
+  }
+
+  async createUatSimulation(userId: string, dto: CreateUatSimulationTransaction) {
+    const { data, error } = await this.supabase.getClient().rpc('create_uat_simulation_transaction', {
+      p_actor_user_id: userId,
+      p_collaborator_code: dto.collaborator_code,
+      p_gross_amount: dto.gross_amount,
+      p_idempotency_key: dto.idempotency_key,
+    }).single();
+    if (error) {
+      if (error.code === '42501') throw new ForbiddenException(error.message);
+      if (error.code === '23505') throw new ConflictException(error.message);
+      if (['22003', '22023', '23514'].includes(error.code || '')) {
+        throw new BadRequestException(error.message);
+      }
+      throw new InternalServerErrorException('Unable to create UAT simulation transaction');
+    }
+    return {
+      ...(data as Record<string, unknown>),
+      record_kind: 'uat_simulation',
+      lifecycle_status: 'uat_simulation_open',
+      payment_status: 'unverified',
+      external_settlement_enabled: false,
+    };
   }
 
   async upsertImported(rows: Record<string, unknown>[]) {

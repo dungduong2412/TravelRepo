@@ -33,12 +33,16 @@ export class CollaboratorsController {
   constructor(private readonly service: CollaboratorsService) {}
 
   @Post()
-  @Public()
   create(
     @User() actor: any,
     @Body(new ZodValidationPipe(CreateCollaboratorSchema)) dto: CreateCollaboratorDto,
   ) {
     return this.service.createCollaborator(actor, dto);
+  }
+
+  @Post(':id/resubmit')
+  resubmit(@User() actor: { id: string }, @Param('id') id: string) {
+    return this.service.resubmit(actor.id, id);
   }
 
   @Get()

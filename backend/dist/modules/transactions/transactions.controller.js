@@ -33,6 +33,9 @@ let TransactionsController = class TransactionsController {
     findMine(actor) {
         return this.service.findForActor(actor.id);
     }
+    createSimulation(actor, dto) {
+        return this.service.createUatSimulation(actor.id, dto);
+    }
     findAll() {
         return this.service.findAll();
     }
@@ -61,6 +64,14 @@ __decorate([
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", void 0)
 ], TransactionsController.prototype, "findMine", null);
+__decorate([
+    (0, common_1.Post)('simulation'),
+    __param(0, (0, user_decorator_1.User)()),
+    __param(1, (0, common_1.Body)(new zod_validation_pipe_1.ZodValidationPipe(transactions_dto_1.CreateUatSimulationTransactionSchema))),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", void 0)
+], TransactionsController.prototype, "createSimulation", null);
 __decorate([
     (0, common_1.Get)(),
     (0, common_1.UseGuards)(admin_guard_1.AdminGuard),

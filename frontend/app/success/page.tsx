@@ -2,6 +2,7 @@
 
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
+import PendingApplicantMedia from '../../components/PendingApplicantMedia';
 
 function SuccessContent() {
   const router = useRouter();
@@ -48,6 +49,8 @@ function SuccessContent() {
 
         <h1 style={styles.title}>{message.title}</h1>
         <p style={styles.description}>{message.description}</p>
+
+        {(type === 'merchant' || type === 'collaborator') && <PendingApplicantMedia role={type} />}
 
         <div style={styles.buttonGroup}>
           <button

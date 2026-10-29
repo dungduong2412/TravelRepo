@@ -25,15 +25,11 @@ export default function CollaboratorMembersPage() {
     collaborators_name: '',
     collaborators_phone: '',
     collaborators_email: '',
-    collaborators_password: '',
     collaborators_bank_name: '',
     collaborators_bank_acc_number: '',
     collaborators_avatar_url: '',
   });
   
-  const [retypePassword, setRetypePassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [showRetypePassword, setShowRetypePassword] = useState(false);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
 
   useEffect(() => {
@@ -88,16 +84,6 @@ export default function CollaboratorMembersPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (formData.collaborators_password !== retypePassword) {
-      setError('Mật khẩu không khớp');
-      return;
-    }
-    
-    if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{12,}$/.test(formData.collaborators_password)) {
-      setError('Mật khẩu phải có ít nhất 12 ký tự, gồm chữ hoa, chữ thường, số và ký tự đặc biệt');
-      return;
-    }
-    
     setSubmitting(true);
     setError(null);
 
@@ -113,12 +99,10 @@ export default function CollaboratorMembersPage() {
         collaborators_name: '',
         collaborators_phone: '',
         collaborators_email: '',
-        collaborators_password: '',
         collaborators_bank_name: '',
         collaborators_bank_acc_number: '',
         collaborators_avatar_url: '',
       });
-      setRetypePassword('');
       setAvatarPreview(null);
       setShowModal(false);
       
@@ -261,46 +245,7 @@ export default function CollaboratorMembersPage() {
                 />
               </div>
 
-              <div style={styles.formGroup}>
-                <label style={styles.label}>Mật Khẩu *</label>
-                <div style={styles.passwordWrapper}>
-                  <input
-                    name="collaborators_password"
-                    type={showPassword ? 'text' : 'password'}
-                    value={formData.collaborators_password}
-                    onChange={handleChange}
-                    style={styles.input}
-                    required
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    style={styles.eyeButton}
-                  >
-                    {showPassword ? '🙈' : '👁️'}
-                  </button>
-                </div>
-              </div>
-
-              <div style={styles.formGroup}>
-                <label style={styles.label}>Nhập Lại Mật Khẩu *</label>
-                <div style={styles.passwordWrapper}>
-                  <input
-                    type={showRetypePassword ? 'text' : 'password'}
-                    value={retypePassword}
-                    onChange={(e) => setRetypePassword(e.target.value)}
-                    style={styles.input}
-                    required
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowRetypePassword(!showRetypePassword)}
-                    style={styles.eyeButton}
-                  >
-                    {showRetypePassword ? '🙈' : '👁️'}
-                  </button>
-                </div>
-              </div>
+              <p style={styles.hint}>Thành viên sẽ tự đăng ký hoặc nhận lời mời được phê duyệt; mật khẩu không đi qua API doanh nghiệp.</p>
 
               <div style={styles.formGroup}>
                 <label style={styles.label}>Tên Ngân Hàng</label>
@@ -565,6 +510,7 @@ const styles: Record<string, React.CSSProperties> = {
   formGroup: {
     marginBottom: '16px',
   },
+  hint: { gridColumn: '1 / -1', margin: 0, color: '#64748b', fontSize: '13px', lineHeight: 1.5 },
   label: {
     display: 'block',
     fontSize: '14px',

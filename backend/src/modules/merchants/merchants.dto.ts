@@ -1,16 +1,35 @@
 import { z } from 'zod';
 import { PostgresUuidSchema } from '../../common/validation/postgres-uuid';
 
-const StrongPasswordSchema = z.string().min(12)
-  .regex(/[a-z]/, 'Password requires a lowercase letter')
-  .regex(/[A-Z]/, 'Password requires an uppercase letter')
-  .regex(/\d/, 'Password requires a number')
-  .regex(/[^A-Za-z0-9]/, 'Password requires a symbol');
-
 const ExactNonNegativeDecimalSchema = z.union([
   z.number().nonnegative(),
   z.string().trim().regex(/^\d+(?:\.\d{1,4})?$/, 'Expected a non-negative decimal with up to four places'),
 ]);
+
+function isFractionalRate(value: string | number) {
+  const normalized = String(value).trim();
+  if (!/^\d+(?:\.\d{1,4})?$/.test(normalized)) return false;
+  const [whole, fraction = ''] = normalized.split('.');
+  const scaled = BigInt(whole) * 10_000n + BigInt(fraction.padEnd(4, '0'));
+  return scaled <= 10_000n;
+}
+
+function validateFractionalCommercialRates(value: {
+  merchant_commission_type?: string | null;
+  merchant_commission_value?: string | number | null;
+  merchant_discount_type?: string | null;
+  merchant_discount_value?: string | number | null;
+}, ctx: z.RefinementCtx) {
+  for (const [typeKey, valueKey] of [
+    ['merchant_commission_type', 'merchant_commission_value'],
+    ['merchant_discount_type', 'merchant_discount_value'],
+  ] as const) {
+    const rate = value[valueKey];
+    if (value[typeKey] === 'percentage' && rate !== null && rate !== undefined && !isFractionalRate(rate)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: [valueKey], message: 'Percentage rates must be stored as a fraction between 0 and 1' });
+    }
+  }
+}
 
 const MerchantCategoryIdsSchema = z.array(PostgresUuidSchema)
   .max(3, 'A merchant may have at most 3 categories')
@@ -38,27 +57,31 @@ export type MerchantDto = z.infer<typeof MerchantSchema>;
 
 export const CreateMerchantSchema = z.object({
   owner_email: z.string().email(),
-  owner_password: StrongPasswordSchema,
   merchant_name: z.string().min(1).max(200),
-  merchant_description: z.string().optional(),
-  merchant_phone: z.string().min(10).max(20).optional(),
+  merchant_description: z.string().max(20000).optional(),
+  merchant_phone: z.string().min(7).max(20).optional(),
   merchant_email: z.string().email().optional(),
-  merchant_contact_phone: z.string().optional(),
-  new_address_city: z.string().optional(),
-  new_address_ward: z.string().optional(),
-  new_address_line: z.string().optional(),
-  merchant_commission_type: z.enum(['percentage', 'fixed']).optional(),
-  merchant_commission_value: z.number().min(0).optional(),
-  merchant_discount_type: z.enum(['percentage', 'fixed']).optional(),
-  merchant_discount_value: z.number().min(0).optional(),
-});
+  merchant_contact_phone: z.string().max(20).optional(),
+  owner_name: z.string().max(200).optional(),
+  owner_phone: z.string().max(20).optional(),
+  owner_tax_code: z.string().max(100).optional(),
+  new_address_country: z.string().max(200).optional(),
+  new_address_province: z.string().max(200).optional(),
+  new_address_district: z.string().max(200).optional(),
+  new_address_city: z.string().max(200).optional(),
+  new_address_ward: z.string().max(200).optional(),
+  new_address_line: z.string().max(1000).optional(),
+  category_ids: MerchantCategoryIdsSchema.optional(),
+}).strict();
 
 export type CreateMerchantDto = z.infer<typeof CreateMerchantSchema>;
 
-export const AdminCreateMerchantSchema = CreateMerchantSchema.omit({ owner_password: true }).extend({
-  owner_name: z.string().max(200).optional(),
-  owner_phone: z.string().max(20).optional(),
-});
+export const AdminCreateMerchantSchema = CreateMerchantSchema.extend({
+  merchant_commission_type: z.enum(['percentage', 'fixed']).optional(),
+  merchant_commission_value: ExactNonNegativeDecimalSchema.optional(),
+  merchant_discount_type: z.enum(['percentage', 'fixed']).optional(),
+  merchant_discount_value: ExactNonNegativeDecimalSchema.optional(),
+}).superRefine(validateFractionalCommercialRates);
 
 export type AdminCreateMerchantDto = z.infer<typeof AdminCreateMerchantSchema>;
 
@@ -91,7 +114,7 @@ export const AdminUpdateMerchantSchema = UpdateMerchantSchema.extend({
   merchant_verified: z.boolean().optional(),
   merchants_status: z.enum(['pending', 'active', 'inactive', 'blocked']).optional(),
   merchant_action: z.string().max(500).nullable().optional(),
-}).strict();
+}).strict().superRefine(validateFractionalCommercialRates);
 
 export type UpdateMerchantDto = z.infer<typeof UpdateMerchantSchema>;
 export type AdminUpdateMerchantDto = z.infer<typeof AdminUpdateMerchantSchema>;
@@ -115,7 +138,6 @@ export const CreateMerchantMemberSchema = z.object({
   collaborators_name: z.string().min(1).max(200),
   collaborators_phone: z.string().min(7).max(20),
   collaborators_email: z.string().email(),
-  collaborators_password: StrongPasswordSchema,
   collaborators_bank_name: z.string().max(200).optional(),
   collaborators_bank_acc_number: z.string().max(100).optional(),
 }).strict();

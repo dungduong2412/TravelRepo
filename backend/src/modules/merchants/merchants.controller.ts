@@ -89,9 +89,16 @@ export class MerchantsController {
   }
 
   @Post()
-  @Public()
-  async create(@Body(new ZodValidationPipe(CreateMerchantSchema)) dto: CreateMerchantDto) {
-    return this.service.create(dto);
+  async create(
+    @User() actor: { id: string; email?: string },
+    @Body(new ZodValidationPipe(CreateMerchantSchema)) dto: CreateMerchantDto,
+  ) {
+    return this.service.create(actor, dto);
+  }
+
+  @Post(':id/resubmit')
+  async resubmit(@User() actor: { id: string }, @Param('id') id: string) {
+    return this.service.resubmit(actor.id, id);
   }
 
   @Patch(':id')

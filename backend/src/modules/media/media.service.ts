@@ -39,7 +39,7 @@ export class MediaService {
         .eq('id', mediaId).maybeSingle(),
     ]);
     if (error || !media) throw new NotFoundException('Media not found');
-    const allowed = profile?.user_profiles_status === 'active' && (
+    const allowed = profile && ['active', 'pending', 'blocked'].includes(profile.user_profiles_status) && (
       profile.role === 'admin' ||
       (profile.role === 'merchant' && profile.merchant_id === media.merchant_id) ||
       (profile.role === 'collaborator' && profile.collaborator_id === media.collaborator_id)
@@ -51,12 +51,13 @@ export class MediaService {
     return { ...data, expires_in: 300 };
   }
 
-  private async activeProfile(userId: string) {
+  private async ownerProfile(userId: string, write = false) {
     const { data, error } = await this.supabase.getClient().from('user_profiles')
       .select('role,user_profiles_status,merchant_id,collaborator_id')
       .eq('user_id', userId).maybeSingle();
-    if (error || !data || data.user_profiles_status !== 'active') {
-      throw new ForbiddenException('Active profile required');
+    const allowedStatuses = write ? ['active', 'pending'] : ['active', 'pending', 'blocked'];
+    if (error || !data || !allowedStatuses.includes(data.user_profiles_status)) {
+      throw new ForbiddenException(write ? 'Active or pending applicant profile required' : 'Assigned profile required');
     }
     return data;
   }
@@ -77,7 +78,7 @@ export class MediaService {
   }
 
   async findMine(userId: string) {
-    const profile = await this.activeProfile(userId);
+    const profile = await this.ownerProfile(userId);
     let query = this.supabase.getClient().from('media_assets')
       .select('id,merchant_id,collaborator_id,bucket_id,object_path,original_filename,mime_type,size_bytes,sha256_hex,is_hero,display_order,transfer_status,publication_status,publication_version,created_at,approval_requests:media_approval_requests!media_approval_requests_proposed_media_id_fkey(id,action,slot,status,requested_at,decided_at,decision_reason,target_media_id,requested_display_order)')
       .order('created_at', { ascending: false });
@@ -91,7 +92,7 @@ export class MediaService {
 
   private async ownedTarget(userId: string, mediaId: string) {
     const client = this.supabase.getClient();
-    const profile = await this.activeProfile(userId);
+    const profile = await this.ownerProfile(userId, true);
     const { data: media, error } = await client.from('media_assets')
       .select('id,merchant_id,collaborator_id,bucket_id,object_path,is_hero,display_order,publication_status,publication_version')
       .eq('id', mediaId).maybeSingle();
@@ -108,7 +109,7 @@ export class MediaService {
 
   async upload(userId: string, dto: UploadMediaDto) {
     const client = this.supabase.getClient();
-    const profile = await this.activeProfile(userId);
+    const profile = await this.ownerProfile(userId, true);
     let merchantId: string | null = null;
     let collaboratorId: string | null = null;
     let bucketId: 'merchant-media' | 'partner-media';

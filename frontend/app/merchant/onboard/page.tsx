@@ -1,9 +1,13 @@
 "use client";
 
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { publicApiFetch } from '../../../lib/api';
+import { apiFetch } from '../../../lib/api';
+import { signUp, supabase } from '../../../lib/supabase';
+
+type Category = { id: string; category_name?: string | null; category_name_vi?: string | null };
+const DRAFT_KEY = 'vno-merchant-onboarding-draft';
 
 export default function MerchantOnboardPage() {
   const router = useRouter();
@@ -13,51 +17,104 @@ export default function MerchantOnboardPage() {
     confirmPassword: '',
     name: '',
     description: '',
-    commissionRate: '',
-    customerDiscountRate: '',
+    ownerName: '', ownerPhone: '', merchantPhone: '', contactPhone: '', taxCode: '',
+    country: 'Vietnam', province: '', district: '', ward: '', address: '',
   });
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [categoryIds, setCategoryIds] = useState<string[]>([]);
+  const [hasVerifiedSession, setHasVerifiedSession] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      const draft = JSON.parse(sessionStorage.getItem(DRAFT_KEY) || 'null');
+      if (draft?.formData) setFormData((current) => ({ ...current, ...draft.formData, password: '', confirmPassword: '' }));
+      if (Array.isArray(draft?.categoryIds)) setCategoryIds(draft.categoryIds.slice(0, 3));
+    } catch { /* Invalid local draft is ignored. */ }
+    apiFetch('/categories/active').then(setCategories).catch(() => setCategories([]));
+    supabase.auth.getSession().then(({ data }) => setHasVerifiedSession(Boolean(data.session?.user?.email_confirmed_at)));
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      setHasVerifiedSession(Boolean(session?.user?.email_confirmed_at));
+      if (session?.user?.email) setFormData((current) => ({ ...current, ownerEmail: session.user.email || current.ownerEmail }));
+    });
+    return () => data.subscription.unsubscribe();
+  }, []);
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
   ) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData(prev => {
+      const next = { ...prev, [name]: value };
+      const { password: _password, confirmPassword: _confirmPassword, ...safe } = next;
+      sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ formData: safe, categoryIds }));
+      return next;
+    });
   };
+
+  function toggleCategory(id: string) {
+    const next = categoryIds.includes(id) ? categoryIds.filter((value) => value !== id) : [...categoryIds, id];
+    if (next.length > 3) { setError('Chỉ được chọn tối đa 3 danh mục'); return; }
+    setCategoryIds(next); setError(null);
+    const { password: _password, confirmPassword: _confirmPassword, ...safe } = formData;
+    sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ formData: safe, categoryIds: next }));
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
     setError(null);
 
-    if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{12,}$/.test(formData.password)) {
+    if (!hasVerifiedSession && !/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{12,}$/.test(formData.password)) {
       setError('Mật khẩu phải có ít nhất 12 ký tự, gồm chữ hoa, chữ thường, số và ký tự đặc biệt');
       setIsSubmitting(false);
       return;
     }
-    if (formData.password !== formData.confirmPassword) {
+    if (!hasVerifiedSession && formData.password !== formData.confirmPassword) {
       setError('Hai mật khẩu không khớp');
       setIsSubmitting(false);
       return;
     }
 
     try {
-      await publicApiFetch('/merchants', {
+      if (!hasVerifiedSession) {
+        const data = await signUp(
+          formData.ownerEmail,
+          formData.password,
+          'merchant',
+          `${window.location.origin}/merchant/onboard?confirmed=1`,
+        );
+        if (!data.session) {
+          setNotice('Kiểm tra email để xác nhận địa chỉ. Sau khi xác nhận, quay lại trang này để hoàn tất hồ sơ.');
+          setIsSubmitting(false);
+          return;
+        }
+        setHasVerifiedSession(Boolean(data.user?.email_confirmed_at));
+      }
+      await apiFetch('/merchants', {
         method: 'POST',
         body: JSON.stringify({
           owner_email: formData.ownerEmail,
-          owner_password: formData.password,
           merchant_name: formData.name,
           merchant_description: formData.description || undefined,
           merchant_email: formData.ownerEmail,
-          merchant_commission_type: 'percentage',
-          merchant_commission_value: Number(formData.commissionRate),
-          merchant_discount_type: 'percentage',
-          merchant_discount_value: Number(formData.customerDiscountRate),
+          owner_name: formData.ownerName || undefined,
+          owner_phone: formData.ownerPhone || undefined,
+          owner_tax_code: formData.taxCode || undefined,
+          merchant_phone: formData.merchantPhone || undefined,
+          merchant_contact_phone: formData.contactPhone || undefined,
+          new_address_country: formData.country || undefined,
+          new_address_province: formData.province || undefined,
+          new_address_district: formData.district || undefined,
+          new_address_ward: formData.ward || undefined,
+          new_address_line: formData.address || undefined,
+          category_ids: categoryIds,
         }),
       });
-      router.push('/success?role=merchant');
+      sessionStorage.removeItem(DRAFT_KEY);
+      router.push('/success?type=merchant');
     } catch (err: any) {
       setError(err.message || 'Failed to submit merchant');
     } finally {
@@ -72,6 +129,7 @@ export default function MerchantOnboardPage() {
         <p style={styles.subtitle}>
           Đăng ký doanh nghiệp du lịch của bạn và bắt đầu hợp tác với cộng tác viên
         </p>
+        <p style={styles.hint}>Email phải được Supabase xác nhận trước khi hồ sơ được tạo. Tỷ lệ thương mại chỉ do Platform Admin thiết lập.</p>
 
         <form onSubmit={handleSubmit} style={styles.form}>
           <div style={styles.formGroup}>
@@ -84,11 +142,12 @@ export default function MerchantOnboardPage() {
               required
               value={formData.ownerEmail}
               onChange={handleChange}
+              readOnly={hasVerifiedSession}
               style={styles.input}
             />
           </div>
 
-          <div style={styles.formGroup}>
+          {!hasVerifiedSession && <><div style={styles.formGroup}>
             <label htmlFor="password" style={styles.label}>Mật khẩu *</label>
             <input
               id="password"
@@ -115,7 +174,11 @@ export default function MerchantOnboardPage() {
               onChange={handleChange}
               style={styles.input}
             />
-          </div>
+          </div></>}
+
+          <div style={styles.formGroup}><label htmlFor="ownerName" style={styles.label}>Họ tên chủ tài khoản</label><input id="ownerName" name="ownerName" value={formData.ownerName} onChange={handleChange} style={styles.input} /></div>
+          <div style={styles.formGroup}><label htmlFor="ownerPhone" style={styles.label}>Điện thoại chủ tài khoản</label><input id="ownerPhone" name="ownerPhone" type="tel" value={formData.ownerPhone} onChange={handleChange} style={styles.input} /></div>
+          <div style={styles.formGroup}><label htmlFor="taxCode" style={styles.label}>Mã số thuế</label><input id="taxCode" name="taxCode" value={formData.taxCode} onChange={handleChange} style={styles.input} /></div>
 
           <div style={styles.formGroup}>
             <label htmlFor="name" style={styles.label}>
@@ -133,6 +196,13 @@ export default function MerchantOnboardPage() {
             />
           </div>
 
+          <div style={styles.formGroup}><label htmlFor="merchantPhone" style={styles.label}>Điện thoại doanh nghiệp</label><input id="merchantPhone" name="merchantPhone" type="tel" value={formData.merchantPhone} onChange={handleChange} style={styles.input} /></div>
+          <div style={styles.formGroup}><label htmlFor="contactPhone" style={styles.label}>Điện thoại liên hệ</label><input id="contactPhone" name="contactPhone" type="tel" value={formData.contactPhone} onChange={handleChange} style={styles.input} /></div>
+
+          <fieldset style={styles.fieldset}><legend style={styles.legend}>Danh mục ({categoryIds.length}/3)</legend><div style={styles.categoryGrid}>{categories.map((category) => <label key={category.id} style={styles.category}><input type="checkbox" checked={categoryIds.includes(category.id)} onChange={() => toggleCategory(category.id)} disabled={!categoryIds.includes(category.id) && categoryIds.length >= 3} /> {category.category_name_vi || category.category_name || category.id}</label>)}</div></fieldset>
+
+          <fieldset style={styles.fieldset}><legend style={styles.legend}>Địa chỉ doanh nghiệp</legend><div style={styles.form}><div style={styles.formGroup}><label htmlFor="country" style={styles.label}>Quốc gia</label><input id="country" name="country" value={formData.country} onChange={handleChange} style={styles.input} /></div><div style={styles.formGroup}><label htmlFor="province" style={styles.label}>Tỉnh / thành</label><input id="province" name="province" value={formData.province} onChange={handleChange} style={styles.input} /></div><div style={styles.formGroup}><label htmlFor="district" style={styles.label}>Quận / huyện</label><input id="district" name="district" value={formData.district} onChange={handleChange} style={styles.input} /></div><div style={styles.formGroup}><label htmlFor="ward" style={styles.label}>Phường / xã</label><input id="ward" name="ward" value={formData.ward} onChange={handleChange} style={styles.input} /></div><div style={styles.formGroup}><label htmlFor="address" style={styles.label}>Địa chỉ đường</label><input id="address" name="address" value={formData.address} onChange={handleChange} style={styles.input} /></div></div></fieldset>
+
           <div style={styles.formGroup}>
             <label htmlFor="description" style={styles.label}>
               Mô Tả
@@ -148,49 +218,7 @@ export default function MerchantOnboardPage() {
             />
           </div>
 
-          <div style={styles.formGroup}>
-            <label htmlFor="commissionRate" style={styles.label}>
-              Tỷ Lệ Hoa Hồng (%) *
-            </label>
-            <input
-              id="commissionRate"
-              name="commissionRate"
-              type="number"
-              required
-              min="0"
-              max="100"
-              step="0.01"
-              value={formData.commissionRate}
-              onChange={handleChange}
-              style={styles.input}
-              placeholder="Ví dụ: 10.5"
-            />
-            <small style={styles.hint}>
-              Tỷ lệ hoa hồng bạn trả cho cộng tác viên (0-100%)
-            </small>
-          </div>
-
-          <div style={styles.formGroup}>
-            <label htmlFor="customerDiscountRate" style={styles.label}>
-              Tỷ Lệ Giảm Giá Khách Hàng (%) *
-            </label>
-            <input
-              id="customerDiscountRate"
-              name="customerDiscountRate"
-              type="number"
-              required
-              min="0"
-              max="100"
-              step="0.01"
-              value={formData.customerDiscountRate}
-              onChange={handleChange}
-              style={styles.input}
-              placeholder="Ví dụ: 5"
-            />
-            <small style={styles.hint}>
-              Tỷ lệ giảm giá cho khách hàng qua cộng tác viên (0-100%)
-            </small>
-          </div>
+          {notice && <div style={{ ...styles.errorBox, background: '#ecfdf5', color: '#065f46' }}>{notice}</div>}
 
           {error && (
             <div style={styles.errorBox}>
@@ -212,7 +240,7 @@ export default function MerchantOnboardPage() {
               style={styles.primaryButton}
               disabled={isSubmitting}
             >
-              {isSubmitting ? 'Đang gửi...' : 'Gửi Đơn Đăng Ký'}
+              {isSubmitting ? 'Đang gửi...' : hasVerifiedSession ? 'Gửi Hồ Sơ Để Duyệt' : 'Xác Nhận Email'}
             </button>
           </div>
         </form>
@@ -297,6 +325,10 @@ const styles: Record<string, React.CSSProperties> = {
     gap: '12px',
     marginTop: '8px',
   },
+  fieldset: { border: '1px solid #d1d5db', borderRadius: 8, padding: 16 },
+  legend: { padding: '0 8px', fontWeight: 700, color: '#374151' },
+  categoryGrid: { display: 'grid', gap: 8 },
+  category: { display: 'flex', alignItems: 'center', gap: 8, color: '#374151', fontSize: 14 },
   primaryButton: {
     flex: 1,
     padding: '12px 24px',

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { apiFetch } from '../../../../lib/api';
+import { fractionToPercentagePoints } from '../../../../lib/rates';
 import MediaManager from '../../../../components/MediaManager';
 
 export default function MerchantProfilePage() {
@@ -290,8 +291,8 @@ export default function MerchantProfilePage() {
         <div style={styles.card}>
           <h2 style={styles.cardTitle}>Hoa Hồng & Giảm Giá</h2>
           <p style={{ color: '#64748b', margin: 0 }}>Các điều khoản này do Platform Admin quản trị.</p>
-          <p>Hoa hồng: {merchant?.merchant_commission_value ?? '-'} ({merchant?.merchant_commission_type || 'chưa cấu hình'})</p>
-          <p>Giảm giá: {merchant?.merchant_discount_value ?? '-'} ({merchant?.merchant_discount_type || 'chưa cấu hình'})</p>
+          <p>Hoa hồng: {commercialRate(merchant?.merchant_commission_type, merchant?.merchant_commission_value)}</p>
+          <p>Giảm giá: {commercialRate(merchant?.merchant_discount_type, merchant?.merchant_discount_value)}</p>
         </div>
 
         <MediaManager title="Hình ảnh doanh nghiệp" />
@@ -305,6 +306,11 @@ export default function MerchantProfilePage() {
       </form>
     </div>
   );
+}
+
+function commercialRate(type?: string | null, value?: string | number | null) {
+  if (value === null || value === undefined || value === '') return 'chưa cấu hình';
+  return type === 'percentage' ? `${fractionToPercentagePoints(value)}%` : `${value} VND`;
 }
 
 function sameCategoryIds(left: string[], right: string[]) {

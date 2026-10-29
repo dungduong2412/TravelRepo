@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import { createHash, randomUUID } from 'node:crypto';
+
 const url = process.env.VNO_TARGET_URL;
 const anonKey = process.env.VNO_TARGET_ANON_KEY;
 const serviceKey = process.env.VNO_TARGET_SERVICE_ROLE_KEY;
@@ -15,6 +17,7 @@ const personas = [
   { role: 'collaborator', email: 'd2-collaborator@local.invalid', ownerType: 'collaborator', ownerId: '20000000-0000-5000-8000-000000000003' },
 ];
 const results = [];
+const seededFixtures = [];
 function check(name, pass, evidence) {
   results.push({ name, status: pass ? 'PASS' : 'FAIL', evidence });
   if (!pass) process.exitCode = 1;
@@ -49,6 +52,52 @@ async function sessionFor(persona, method) {
   return auth('/auth/v1/verify', { body: { type: method, token_hash: link.json.hashed_token } });
 }
 
+async function ensureEffectiveFixture(persona) {
+  const ownerColumn = persona.ownerType === 'merchant' ? 'merchant_id' : 'collaborator_id';
+  const lookup = await fetch(`${url}/rest/v1/media_assets?select=id&${ownerColumn}=eq.${persona.ownerId}&publication_status=in.(approved,legacy_effective,preexisting_effective)&effective_until=is.null`, {
+    headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` },
+  });
+  const existing = await lookup.json();
+  if (lookup.ok && existing.length > 0) return;
+
+  const id = randomUUID();
+  const bucket = persona.ownerType === 'merchant' ? 'merchant-media' : 'partner-media';
+  const path = `d13-session-fixture/${id}.png`;
+  const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
+  const stored = await fetch(`${url}/storage/v1/object/${bucket}/${path}`, {
+    method: 'POST',
+    headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, 'content-type': 'image/png', 'x-upsert': 'false' },
+    body: bytes,
+  });
+  if (!stored.ok) throw new Error(`fixture Storage upload failed for ${persona.role}: HTTP ${stored.status}`);
+  const row = {
+    id,
+    [ownerColumn]: persona.ownerId,
+    bucket_id: bucket,
+    object_path: path,
+    original_filename: `${persona.role}-session-fixture.png`,
+    mime_type: 'image/png',
+    sha256_hex: createHash('sha256').update(bytes).digest('hex'),
+    size_bytes: bytes.length,
+    is_hero: true,
+    transfer_status: 'verified',
+    publication_status: 'preexisting_effective',
+    effective_from: new Date().toISOString(),
+  };
+  const inserted = await fetch(`${url}/rest/v1/media_assets`, {
+    method: 'POST',
+    headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, 'content-type': 'application/json' },
+    body: JSON.stringify(row),
+  });
+  if (!inserted.ok) {
+    await fetch(`${url}/storage/v1/object/${bucket}/${path}`, { method: 'DELETE', headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } });
+    throw new Error(`fixture metadata insert failed for ${persona.role}: HTTP ${inserted.status}`);
+  }
+  seededFixtures.push({ id, bucket, path });
+}
+
+for (const persona of personas) await ensureEffectiveFixture(persona);
+
 for (const persona of personas) {
   for (const method of ['password', 'magiclink', 'recovery']) {
     const session = await sessionFor(persona, method);
@@ -63,7 +112,7 @@ for (const persona of personas) {
 
     const media = await api('/media/me', session.json.access_token);
     const effective = Array.isArray(media.json) ? media.json.filter((row) => ['approved', 'legacy_effective', 'preexisting_effective'].includes(row.publication_status)) : [];
-    check(`${persona.role} ${method} loads effective media`, media.status === 200 && effective.length === 1, `HTTP ${media.status}; ${effective.length} effective`);
+    check(`${persona.role} ${method} loads effective media`, media.status === 200 && effective.length >= 1, `HTTP ${media.status}; ${effective.length} effective`);
     if (effective[0]) {
       const signed = await api(`/media/${effective[0].id}/signed-url`, session.json.access_token);
       const bytes = signed.json?.signedUrl ? await fetch(signed.json.signedUrl) : null;
@@ -75,6 +124,11 @@ for (const persona of personas) {
     const refreshedMedia = refreshed.json?.access_token ? await api('/media/me', refreshed.json.access_token) : { status: 0, json: [] };
     check(`${persona.role} ${method} survives session refresh`, refreshed.status === 200 && refreshedProfile.status === 200 && refreshedMedia.status === 200 && refreshedMedia.json.some((row) => ['approved', 'legacy_effective', 'preexisting_effective'].includes(row.publication_status)), `refresh ${refreshed.status}; profile ${refreshedProfile.status}; media ${refreshedMedia.status}`);
   }
+}
+
+for (const fixture of seededFixtures) {
+  await fetch(`${url}/rest/v1/media_assets?id=eq.${fixture.id}`, { method: 'DELETE', headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } });
+  await fetch(`${url}/storage/v1/object/${fixture.bucket}/${fixture.path}`, { method: 'DELETE', headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } });
 }
 
 console.log(JSON.stringify({

@@ -52,8 +52,11 @@ let MerchantsController = class MerchantsController {
     async findById(actor, id) {
         return this.service.findByIdForActor(actor.id, id);
     }
-    async create(dto) {
-        return this.service.create(dto);
+    async create(actor, dto) {
+        return this.service.create(actor, dto);
+    }
+    async resubmit(actor, id) {
+        return this.service.resubmit(actor.id, id);
     }
     async update(actor, id, dto) {
         return this.service.updateForActor(actor.id, id, dto);
@@ -155,12 +158,20 @@ __decorate([
 ], MerchantsController.prototype, "findById", null);
 __decorate([
     (0, common_1.Post)(),
-    (0, public_decorator_1.Public)(),
-    __param(0, (0, common_1.Body)(new zod_validation_pipe_1.ZodValidationPipe(merchants_dto_1.CreateMerchantSchema))),
+    __param(0, (0, user_decorator_1.User)()),
+    __param(1, (0, common_1.Body)(new zod_validation_pipe_1.ZodValidationPipe(merchants_dto_1.CreateMerchantSchema))),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [Object, Object]),
     __metadata("design:returntype", Promise)
 ], MerchantsController.prototype, "create", null);
+__decorate([
+    (0, common_1.Post)(':id/resubmit'),
+    __param(0, (0, user_decorator_1.User)()),
+    __param(1, (0, common_1.Param)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String]),
+    __metadata("design:returntype", Promise)
+], MerchantsController.prototype, "resubmit", null);
 __decorate([
     (0, common_1.Patch)(':id'),
     __param(0, (0, user_decorator_1.User)()),
