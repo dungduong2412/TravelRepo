@@ -184,8 +184,18 @@ check('Claim cannot overwrite an existing Admin profile', adminClaim.status === 
 const aM = await api(`/merchants/${merchantId}/approve`, A, { method: 'POST' });
 const aP = await api(`/collaborators/${partnerId}/approve`, A, { method: 'POST' });
 check('Admin approves claimed Merchant + Partner', aM.status === 201 && aP.status === 201, `HTTP ${aM.status}/${aP.status} ${aM.status >= 300 ? JSON.stringify(aM.json) : ''}`);
-const unclaimed = await api(`/collaborators/${(await api('/collaborators/admin', A, { method: 'POST', body: { collaborators_name: 'Unclaimed', collaborators_phone: '0900000009', collaborators_email: `final-unclaimed-${run}@local.invalid` } })).json?.id}/approve`, A, { method: 'POST' });
-check('Admin cannot approve an unclaimed (identity-less) Partner', unclaimed.status >= 400, `HTTP ${unclaimed.status}`);
+const unclaimedPartner = (await api('/collaborators/admin', A, { method: 'POST', body: { collaborators_name: 'Unclaimed', collaborators_phone: '0900000009', collaborators_email: `final-unclaimed-${run}@local.invalid` } })).json;
+const unclaimed = await api(`/collaborators/${unclaimedPartner?.id}/approve`, A, { method: 'POST' });
+check('Admin cannot approve an unclaimed Partner: controlled 409 OWNER_NOT_CLAIMED', unclaimed.status === 409 && unclaimed.json?.code === 'OWNER_NOT_CLAIMED', `HTTP ${unclaimed.status} ${unclaimed.json?.code ?? ''}`);
+const unclaimedMerchant = (await api('/merchants/admin', A, { method: 'POST', body: { owner_email: `final-unclaimed-m-${run}@local.invalid`, merchant_name: `Unclaimed Merchant ${run}`, merchant_phone: '0900000008', merchant_email: `final-unclaimed-m-${run}@local.invalid`, owner_name: 'Nobody' } })).json;
+const auditCount = async () => ((await api('/audit-events?limit=500', A)).json?.items ?? (await api('/audit-events?limit=500', A)).json ?? []).filter?.((a) => /approved/.test(a.action ?? '') && JSON.stringify(a).includes(unclaimedMerchant?.merchant_system_id)).length ?? 0;
+const auditBefore = await auditCount();
+const unclaimedM = await api(`/merchants/${unclaimedMerchant?.merchant_system_id}/approve`, A, { method: 'POST' });
+check('Admin cannot approve an unclaimed Merchant: controlled 409 OWNER_NOT_CLAIMED', unclaimedM.status === 409 && unclaimedM.json?.code === 'OWNER_NOT_CLAIMED', `HTTP ${unclaimedM.status} ${unclaimedM.json?.code ?? ''}`);
+const mAfter = await api(`/merchants/${unclaimedMerchant?.merchant_system_id}`, A);
+check('Refused approval changes nothing (status pending, not verified, no approval audit)', mAfter.json?.merchants_status === 'pending' && !mAfter.json?.merchant_verified && (await auditCount()) === auditBefore, `status=${mAfter.json?.merchants_status}`);
+const badApproveId = await api('/merchants/not-a-uuid/approve', A, { method: 'POST' }); const missingApprove = await api('/merchants/99999999-9999-4999-8999-999999999999/approve', A, { method: 'POST' });
+check('Approve with malformed / unknown id → 400 / 404 (no 500)', badApproveId.status === 400 && missingApprove.status === 404, `${badApproveId.status}/${missingApprove.status}`);
 
 // owners set their own password through their verified session, then log in
 for (const tok of [mTok, pTok]) await auth('/user', { token: tok, method: 'PUT', body: { password } });

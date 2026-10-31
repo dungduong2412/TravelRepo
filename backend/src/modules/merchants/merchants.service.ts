@@ -1,4 +1,5 @@
-import { BadRequestException, ForbiddenException, Injectable, Inject, forwardRef } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Inject, NotFoundException, UnprocessableEntityException, forwardRef } from '@nestjs/common';
+import { PostgresUuidSchema } from '../../common/validation/postgres-uuid';
 import { randomBytes } from 'crypto';
 import { SupabaseService } from '../../infrastructure/supabase/supabase.service';
 import {
@@ -391,23 +392,26 @@ export class MerchantsService {
   }
 
   async approve(actor: AuditActor, id: string) {
-    // Get merchant details
-    const merchant = await this.findById(id);
-    
-    if (!merchant) {
-      console.error(`[MerchantsService] Merchant not found: ${id}`);
-      throw new Error('Merchant not found');
+    // All precondition failures below are controlled 4xx responses raised BEFORE any write.
+    if (!PostgresUuidSchema.safeParse(id).success) {
+      throw new BadRequestException({ code: 'INVALID_ID', message: 'Merchant id must be a UUID' });
     }
+    const { data: row, error: fetchError } = await this.supabase.getClient().from('merchant_details')
+      .select('*').eq('merchant_system_id', id).maybeSingle();
+    if (fetchError) throw new Error(`Failed to fetch merchant: ${fetchError.message}`);
+    const merchant = row ? this.withoutPassword(row) : null;
+    if (!merchant) throw new NotFoundException({ code: 'MERCHANT_NOT_FOUND', message: 'Merchant not found' });
 
-    // Validate required fields for user profile creation
     if (!merchant.owner_email) {
-      console.error(`[MerchantsService] Missing owner_email for merchant ${id}`);
-      throw new Error('Cannot approve merchant: owner_email is required');
+      throw new UnprocessableEntityException({ code: 'OWNER_EMAIL_REQUIRED', message: 'Cannot approve merchant: owner_email is required' });
     }
 
     const { data: linkedProfile, error: linkedProfileError } = await this.supabase.getClient().from('user_profiles')
       .select('user_id').eq('merchant_id', id).eq('role', 'merchant').maybeSingle();
-    if (linkedProfileError || !linkedProfile?.user_id) throw new Error('Cannot approve merchant: verified Auth identity is required');
+    if (linkedProfileError) throw new Error(`Failed to load owner link: ${(linkedProfileError as { message?: string }).message}`);
+    if (!linkedProfile?.user_id) {
+      throw new ConflictException({ code: 'OWNER_NOT_CLAIMED', message: 'Cannot approve merchant: the owner has not claimed this record with a verified Auth identity' });
+    }
     await this.userProfilesService.assertLinkedAuthEmailConfirmed(linkedProfile.user_id);
 
     // Update merchant status

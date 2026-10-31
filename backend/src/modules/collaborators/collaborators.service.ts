@@ -23,6 +23,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Inject,
   forwardRef,
@@ -406,7 +407,10 @@ export class CollaboratorsService {
 
     const { data: linkedProfile, error: linkedProfileError } = await this.supabase.getClient().from('user_profiles')
       .select('user_id').eq('collaborator_id', id).eq('role', 'collaborator').maybeSingle();
-    if (linkedProfileError || !linkedProfile?.user_id) throw new Error('Cannot approve collaborator: verified Auth identity is required');
+    if (linkedProfileError) throw new Error(linkedProfileError.message);
+    if (!linkedProfile?.user_id) {
+      throw new ConflictException({ code: 'OWNER_NOT_CLAIMED', message: 'Cannot approve partner: the owner has not claimed this record with a verified Auth identity' });
+    }
     await this.userProfilesService.assertLinkedAuthEmailConfirmed(linkedProfile.user_id);
 
     // V1 identifies collaborators by the stable RestaurantMiddleman.Code. QR
