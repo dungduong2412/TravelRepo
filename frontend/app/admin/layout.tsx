@@ -49,7 +49,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   const menuItems = [
     { name: 'Dashboard', path: '/admin/dashboard', icon: '📊' },
-    { name: 'Collaborators', path: '/admin/collaborators', icon: '👥' },
+    { name: 'Partners', path: '/admin/collaborators', icon: '👥' },
     { name: 'Merchants', path: '/admin/merchants', icon: '🏪' },
     { name: 'Media Approvals', path: '/admin/media-approvals', icon: '🖼️' },
     { name: 'User Management', path: '/admin/users', icon: '👤' },

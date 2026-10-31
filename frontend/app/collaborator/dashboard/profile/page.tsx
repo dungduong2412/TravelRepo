@@ -102,7 +102,7 @@ export default function CollaboratorProfilePage() {
         {collaborator && (
           <div style={styles.infoCard}>
             <div style={styles.infoRow}>
-              <span style={styles.infoLabel}>Mã Cộng Tác Viên:</span>
+              <span style={styles.infoLabel}>Mã Đối Tác:</span>
               <span style={styles.infoValue}>{collaborator.collaborators_code}</span>
             </div>
             <div style={styles.infoRow}>
@@ -162,7 +162,7 @@ export default function CollaboratorProfilePage() {
           </div>
         </div>
 
-        <MediaManager title="Hình ảnh cộng tác viên" />
+        <MediaManager title="Hình ảnh đối tác" />
 
         <div style={styles.card}>
           <h2 style={styles.cardTitle}>Thông Tin Ngân Hàng</h2>

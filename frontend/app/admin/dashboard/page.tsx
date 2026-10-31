@@ -81,7 +81,7 @@ export default function AdminDashboardPage() {
         <div style={styles.statCard}>
           <div style={styles.statIcon}>👥</div>
           <div style={styles.statContent}>
-            <h3 style={styles.statLabel}>Active Collaborators</h3>
+            <h3 style={styles.statLabel}>Active Partners</h3>
             <p style={styles.statValue}>{stats.activeCollaborators}</p>
           </div>
         </div>
@@ -89,7 +89,7 @@ export default function AdminDashboardPage() {
         <div style={styles.statCard}>
           <div style={{ ...styles.statIcon, backgroundColor: '#fef3c7' }}>⏳</div>
           <div style={styles.statContent}>
-            <h3 style={styles.statLabel}>Pending Collaborators</h3>
+            <h3 style={styles.statLabel}>Pending Partners</h3>
             <p style={styles.statValue}>{stats.pendingCollaborators}</p>
           </div>
         </div>
@@ -120,7 +120,7 @@ export default function AdminDashboardPage() {
             style={styles.actionButton}
             onClick={() => window.location.href = '/admin/collaborators'}
           >
-            Manage Collaborators
+            Manage Partners
           </button>
           <button 
             style={styles.actionButton}

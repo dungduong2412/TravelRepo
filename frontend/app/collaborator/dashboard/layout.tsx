@@ -8,4 +8,4 @@ const menu = [
   { label: 'Hồ sơ & ngân hàng', shortLabel: 'Hồ sơ', path: '/collaborator/dashboard/profile', icon: '●' },
   { label: 'Tài khoản', path: '/collaborator/dashboard/settings', icon: '⚙' },
 ];
-export default function CollaboratorDashboardLayout({ children }: { children: React.ReactNode }) { return <RoleDashboardShell role="collaborator" roleLabel="Cộng tác viên" menu={menu}>{children}</RoleDashboardShell>; }
+export default function CollaboratorDashboardLayout({ children }: { children: React.ReactNode }) { return <RoleDashboardShell role="collaborator" roleLabel="Đối tác" menu={menu}>{children}</RoleDashboardShell>; }

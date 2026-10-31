@@ -127,7 +127,7 @@ export default function MerchantOnboardPage() {
       <div style={styles.formContainer}>
         <h1 style={styles.title}>Đăng Ký Nhà Cung Cấp</h1>
         <p style={styles.subtitle}>
-          Đăng ký doanh nghiệp du lịch của bạn và bắt đầu hợp tác với cộng tác viên
+          Đăng ký doanh nghiệp du lịch của bạn và bắt đầu hợp tác với đối tác
         </p>
         <p style={styles.hint}>Email phải được Supabase xác nhận trước khi hồ sơ được tạo. Tỷ lệ thương mại chỉ do Platform Admin thiết lập.</p>
 

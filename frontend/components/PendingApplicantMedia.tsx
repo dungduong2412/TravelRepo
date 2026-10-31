@@ -80,7 +80,7 @@ export default function PendingApplicantMedia({ role }: { role: 'merchant' | 'co
   return <section style={styles.section}>
     <div style={styles.statusRow}><div><span style={styles.eyebrow}>Trạng thái hồ sơ</span><strong style={styles.status}>{statusLabel(profile?.user_profiles_status)}</strong></div><a style={styles.link} href={role === 'merchant' ? '/merchant/dashboard/profile' : '/collaborator/dashboard/profile'}>Cập nhật hồ sơ</a></div>
     {profile?.user_profiles_status === 'blocked' && <button type="button" disabled={busy} onClick={resubmit} style={styles.resubmit}>Gửi lại hồ sơ sau khi chỉnh sửa</button>}
-    <h2 style={styles.title}>{role === 'merchant' ? 'Ảnh chính doanh nghiệp' : 'Ảnh đại diện cộng tác viên'}</h2>
+    <h2 style={styles.title}>{role === 'merchant' ? 'Ảnh chính doanh nghiệp' : 'Ảnh đại diện đối tác'}</h2>
     <p style={styles.copy}>Ảnh mới luôn ở trạng thái riêng tư cho đến khi Platform Admin phê duyệt.</p>
     <label style={styles.button}>{busy ? 'Đang tải…' : 'Chọn ảnh để gửi'}<input hidden disabled={busy} type="file" accept="image/jpeg,image/png,image/webp" onChange={upload} /></label>
     {message && <p style={styles.message}>{message}</p>}

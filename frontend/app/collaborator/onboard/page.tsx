@@ -132,7 +132,7 @@ export default function CollaboratorOnboardPage() {
   return (
     <main style={styles.container}>
       <div style={styles.formContainer}>
-        <h1 style={styles.title}>Đăng Ký Cộng Tác Viên</h1>
+        <h1 style={styles.title}>Đăng Ký Đối Tác</h1>
         <p style={styles.subtitle}>Tham gia với vai trò hướng dẫn viên du lịch và bắt đầu nhận hoa hồng</p>
         <p style={styles.hint}>Email phải được Supabase xác nhận trước khi hồ sơ được tạo. Quyền hoạt động và ảnh đại diện được Admin duyệt riêng.</p>
 

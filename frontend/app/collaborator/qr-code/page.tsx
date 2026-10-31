@@ -68,7 +68,7 @@ export default function CollaboratorQRPage() {
         {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-gray-900">
-            Your Collaborator QR Code
+            Your Partner QR Code
           </h1>
           <p className="mt-2 text-gray-600">
             Share this QR code with merchants to verify your identity
@@ -82,7 +82,7 @@ export default function CollaboratorQRPage() {
             <div className="flex items-center justify-center mb-6">
               <div className="inline-flex items-center px-4 py-2 rounded-full bg-green-100 text-green-800">
                 <CheckCircle className="w-5 h-5 mr-2" />
-                <span className="font-semibold">Verified Collaborator</span>
+                <span className="font-semibold">Verified Partner</span>
               </div>
             </div>
           )}
@@ -92,7 +92,7 @@ export default function CollaboratorQRPage() {
             <div className="bg-white p-4 rounded-xl shadow-inner border-4 border-gray-100">
               <img
                 src={qrData?.qr_code}
-                alt="Collaborator QR Code"
+                alt="Partner QR Code"
                 className="w-64 h-64 object-contain"
               />
             </div>
@@ -101,7 +101,7 @@ export default function CollaboratorQRPage() {
           {/* Collaborator Info */}
           <div className="space-y-3 mb-6">
             <div className="flex justify-between items-center py-3 border-b">
-              <span className="text-gray-600 font-medium">Collaborator Code:</span>
+              <span className="text-gray-600 font-medium">Partner Code:</span>
               <span className="font-mono font-bold text-lg">{qrData?.code}</span>
             </div>
             <div className="flex justify-between items-center py-3 border-b">

@@ -69,12 +69,12 @@ function UserLoginContent() {
     <main style={styles.container}>
       <div style={styles.card}>
         <h1 style={styles.title}>
-          {userType === 'merchant' ? 'Đăng Nhập Merchant' : 'Đăng Nhập Collaborator'}
+          {userType === 'merchant' ? 'Đăng Nhập Merchant' : 'Đăng Nhập Đối Tác'}
         </h1>
         <p style={styles.subtitle}>
           {userType === 'merchant' 
-            ? 'Đăng nhập vào tài khoản merchant của bạn' 
-            : 'Đăng nhập vào tài khoản collaborator của bạn'}
+            ? 'Đăng nhập vào tài khoản merchant của bạn'
+            : 'Đăng nhập vào tài khoản đối tác của bạn'}
         </p>
 
         <form onSubmit={handleLogin} style={styles.form}>

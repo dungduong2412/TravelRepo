@@ -11,9 +11,9 @@ function SuccessContent() {
 
   const messages: Record<string, { title: string; description: string }> = {
     collaborator: {
-      title: 'Đã Gửi Đơn Đăng Ký Cộng Tác Viên!',
+      title: 'Đã Gửi Đơn Đăng Ký Đối Tác!',
       description:
-        'Cảm ơn bạn đã đăng ký làm cộng tác viên. Đơn đăng ký của bạn đã được tiếp nhận và đang ở trạng thái nháp. Bạn sẽ nhận được hướng dẫn chi tiết qua email.',
+        'Cảm ơn bạn đã đăng ký làm đối tác. Đơn đăng ký của bạn đã được tiếp nhận và đang ở trạng thái nháp. Bạn sẽ nhận được hướng dẫn chi tiết qua email.',
     },
     merchant: {
       title: 'Đã Gửi Đơn Đăng Ký Nhà Cung Cấp!',

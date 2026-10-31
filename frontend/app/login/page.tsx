@@ -127,7 +127,7 @@ export default function LoginPage() {
             onClick={() => router.push('/collaborator/onboard')}
             style={styles.signupButtonSecondary}
           >
-            Đăng Ký Collaborator
+            Đăng Ký Đối Tác
           </button>
         </div>
       </div>

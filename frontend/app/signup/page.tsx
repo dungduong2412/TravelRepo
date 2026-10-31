@@ -40,7 +40,7 @@ export default function SignupPage() {
           {/* Collaborator Card */}
           <div style={styles.card}>
             <div style={styles.cardIcon}>👥</div>
-            <h2 style={styles.cardTitle}>Cộng Tác Viên</h2>
+            <h2 style={styles.cardTitle}>Đối Tác</h2>
             <p style={styles.cardDescription}>
               Dành cho hướng dẫn viên du lịch, người giới thiệu dịch vụ
             </p>
@@ -54,7 +54,7 @@ export default function SignupPage() {
               onClick={() => router.push('/collaborator/onboard')}
               style={styles.primaryButton}
             >
-              Đăng Ký Làm Cộng Tác Viên
+              Đăng Ký Làm Đối Tác
             </button>
           </div>
         </div>

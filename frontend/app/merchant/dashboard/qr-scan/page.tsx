@@ -68,12 +68,12 @@ export default function MerchantQrScanPage() {
   const assigned = result?.association === 'assigned_to_this_merchant';
 
   return <div className="mx-auto max-w-2xl pb-24">
-    <h1 className="text-2xl font-bold sm:text-3xl">Quét QR cộng tác viên</h1>
+    <h1 className="text-2xl font-bold sm:text-3xl">Quét QR đối tác</h1>
     <p className="mt-2 text-slate-600">Xác minh quan hệ trước khi ghi một giao dịch mô phỏng UAT.</p>
     <div className="my-5 rounded-xl border border-violet-200 bg-violet-50 p-4 text-sm text-violet-950"><strong>Chỉ dành cho UAT.</strong> Quy trình này không xác nhận thanh toán, không chuyển tiền, không trả hoa hồng và không sử dụng trạng thái PAID của V1.</div>
 
     <form onSubmit={resolve} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-      <label className="block text-sm font-semibold">Mã QR / mã cộng tác viên<input value={payload} onChange={(event) => setPayload(event.target.value)} autoCapitalize="characters" autoComplete="off" className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 px-4 text-base" placeholder="Quét hoặc nhập mã cộng tác viên" required /></label>
+      <label className="block text-sm font-semibold">Mã QR / mã đối tác<input value={payload} onChange={(event) => setPayload(event.target.value)} autoCapitalize="characters" autoComplete="off" className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 px-4 text-base" placeholder="Quét hoặc nhập mã đối tác" required /></label>
       <button disabled={busy} className="mt-4 min-h-12 w-full rounded-xl bg-rose-600 px-5 font-semibold text-white disabled:opacity-60">{busy ? 'Đang xác minh…' : 'Xác minh mã'}</button>
     </form>
     {error && <p role="alert" className="mt-4 rounded-xl bg-rose-50 p-4 text-rose-800">{error}</p>}
@@ -81,7 +81,7 @@ export default function MerchantQrScanPage() {
     {result && <section className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 sm:p-5">
       <div className="font-bold text-emerald-900">Mã hợp lệ · {result.collaborator_code}</div><div className="mt-2 text-emerald-950">{result.collaborator_name}</div>
       <dl className="mt-4 grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] gap-2 text-sm"><dt>Trạng thái</dt><dd className="break-words font-semibold">{result.status}</dd><dt>Liên kết</dt><dd className="break-words font-semibold">{associationLabel(result.association)}</dd><dt>Tạo tài chính khi quét</dt><dd className="font-semibold">Không</dd></dl>
-      {!assigned && <p className="mt-4 rounded-lg bg-amber-100 p-3 text-sm text-amber-900">Không thể tạo mô phỏng: cộng tác viên chưa được gán đúng Merchant.</p>}
+      {!assigned && <p className="mt-4 rounded-lg bg-amber-100 p-3 text-sm text-amber-900">Không thể tạo mô phỏng: đối tác chưa được gán đúng Merchant.</p>}
     </section>}
 
     {result && assigned && <form onSubmit={createSimulation} className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">

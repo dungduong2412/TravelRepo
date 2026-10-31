@@ -93,7 +93,7 @@ export default function ProfilePage() {
       case 'merchant':
         return 'Nhà Cung Cấp';
       case 'collaborator':
-        return 'Cộng Tác Viên';
+        return 'Đối Tác';
       default:
         return role;
     }
@@ -231,7 +231,7 @@ export default function ProfilePage() {
 
         {details && profile.role === 'collaborator' && (
           <div style={styles.card}>
-            <h2 style={styles.cardTitle}>Thông Tin Cộng Tác Viên</h2>
+            <h2 style={styles.cardTitle}>Thông Tin Đối Tác</h2>
             <div style={styles.cardContent}>
               {(details as CollaboratorDetails).collaborators_name && (
                 <div style={styles.infoRow}>

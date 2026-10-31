@@ -297,7 +297,7 @@ export default function HomePage() {
                   className="hidden lg:flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-blue-50 to-indigo-50 text-blue-700 rounded-full text-xs font-semibold hover:from-blue-100 hover:to-indigo-100 transition shadow-sm"
                   title="Toggle between Guest and Collaborator view"
                 >
-                  {isCollaborator ? "👤 Collaborator" : "👥 Guest"}
+                  {isCollaborator ? "👤 Partner" : "👥 Guest"}
                 </button>
               </div>
             </div>
@@ -391,7 +391,7 @@ export default function HomePage() {
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-lg font-bold text-gray-900 mb-1">
-                  👋 Welcome, Collaborator!
+                  👋 Welcome, Partner!
                 </h2>
                 <p className="text-sm text-gray-600">
                   You can now see commission rates on all listings. Share these amazing deals with your customers!

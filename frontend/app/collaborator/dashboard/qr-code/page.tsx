@@ -65,9 +65,9 @@ export default function CollaboratorQRCodePage() {
       <div style={styles.content}>
         {/* Header */}
         <div style={styles.header}>
-          <h1 style={styles.title}>Mã QR Cộng Tác Viên</h1>
+          <h1 style={styles.title}>Mã QR Đối Tác</h1>
           <p style={styles.subtitle}>
-            Mã QR chỉ chứa mã cộng tác viên, không chứa email, điện thoại hay thông tin ngân hàng.
+            Mã QR chỉ chứa mã đối tác, không chứa email, điện thoại hay thông tin ngân hàng.
           </p>
         </div>
 
@@ -97,7 +97,7 @@ export default function CollaboratorQRCodePage() {
           {/* Collaborator Info */}
           <div style={styles.infoSection}>
             <div style={styles.infoRow}>
-              <span style={styles.infoLabel}>Mã Cộng Tác Viên:</span>
+              <span style={styles.infoLabel}>Mã Đối Tác:</span>
               <span style={styles.infoValue}>{qrData?.collaborator_code}</span>
             </div>
             <div style={styles.infoRow}>
