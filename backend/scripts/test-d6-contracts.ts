@@ -30,7 +30,8 @@ assert.equal(UpdateManagedUserProfileSchema.safeParse({ role: 'merchant', user_p
 assert.equal(UpdateManagedUserProfileSchema.safeParse({ role: 'merchant', user_profiles_status: 'active', merchant_id: null, collaborator_id: uuidB }).success, false);
 assert.equal(UpdateManagedUserProfileSchema.safeParse({ role: 'admin', user_profiles_status: 'active', merchant_id: uuidA, collaborator_id: null }).success, false);
 
-assert.equal(CreateMerchantMemberSchema.safeParse({ collaborators_name: 'Member', collaborators_phone: '0900000000', collaborators_email: 'member@example.test', collaborators_password: 'StrongPassword1!' }).success, true);
+assert.equal(CreateMerchantMemberSchema.safeParse({ collaborators_name: 'Member', collaborators_phone: '0900000000', collaborators_email: 'member@example.test' }).success, true);
+assert.equal(CreateMerchantMemberSchema.safeParse({ collaborators_name: 'Member', collaborators_phone: '0900000000', collaborators_email: 'member@example.test', collaborators_password: 'StrongPassword1!' }).success, false); // passwordless onboarding (D13): password fields are rejected
 assert.equal(CreateMerchantMemberSchema.safeParse({ collaborators_name: 'Member', collaborators_phone: '0900000000', collaborators_email: 'member@example.test', collaborators_password: 'weak' }).success, false);
 
 const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);

@@ -3,6 +3,7 @@ import { SupabaseService } from '../../infrastructure/supabase/supabase.service'
 import { AuditService, AuditActor } from '../audit/audit.service';
 import { UserProfilesService } from '../user-profiles/user-profiles.service';
 import { CreateInvitationDto } from './invitations.dto';
+import { PostgresUuidSchema } from '../../common/validation/postgres-uuid';
 
 @Injectable()
 export class InvitationsService {
@@ -22,6 +23,15 @@ export class InvitationsService {
 
     // 2. Check no user_profile already linked to this entity
     await this.assertNoExistingProfile(entity_type, entity_id);
+
+    // Lapsed pending invitations must not block re-inviting
+    await this.client.from('invitations').update({ status: 'expired' })
+      .eq('entity_type', entity_type).eq('entity_id', entity_id).eq('status', 'pending').lt('expires_at', new Date().toISOString());
+
+    // Generating an Auth link supersedes the previous one, so refuse before touching Auth if a live invitation exists
+    const { data: livePending } = await this.client.from('invitations').select('id')
+      .eq('entity_type', entity_type).eq('entity_id', entity_id).eq('status', 'pending').maybeSingle();
+    if (livePending) throw new BadRequestException('A pending invitation already exists for this record; revoke it first');
 
     // 3. Generate invite link via Supabase Auth admin
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
@@ -93,8 +103,25 @@ export class InvitationsService {
     return { id, status: 'revoked' };
   }
 
-  async claim(callerId: string, callerEmail: string, entityType: string, entityId: string, invitationId?: string) {
-    // Find invitation: prefer by explicit ID, else by entity
+  async claim(callerId: string, _tokenEmail: string, entityType: string, entityId: string, invitationId?: string) {
+    if (entityType !== 'merchant' && entityType !== 'collaborator') throw new BadRequestException('Unsupported entity type');
+    if (!PostgresUuidSchema.safeParse(entityId).success) throw new BadRequestException('Invalid entity id');
+    if (invitationId && !PostgresUuidSchema.safeParse(invitationId).success) throw new BadRequestException('Invalid invitation id');
+
+    // Identity must be a Supabase Auth user whose email ownership is verified; never trust a bare email claim.
+    const { data: authData, error: authError } = await this.client.auth.admin.getUserById(callerId);
+    const authUser = authData?.user;
+    if (authError || !authUser?.email) throw new ForbiddenException('Verified identity is unavailable');
+    if (!authUser.email_confirmed_at) throw new ForbiddenException('Email confirmation is required before claiming an account');
+    const callerEmail = authUser.email.trim().toLowerCase();
+
+    // One identity, one profile: never create, rebind or overwrite an existing profile through a claim.
+    const [{ data: byUser }, { data: byEmail }] = await Promise.all([
+      this.client.from('user_profiles').select('id').eq('user_id', callerId).maybeSingle(),
+      this.client.from('user_profiles').select('id').eq('email', callerEmail).maybeSingle(),
+    ]);
+    if (byUser || byEmail) throw new BadRequestException('This identity already has an account and cannot claim another record');
+
     let inv: any;
     if (invitationId) {
       const { data, error } = await this.client.from('invitations').select().eq('id', invitationId).maybeSingle();
@@ -107,35 +134,40 @@ export class InvitationsService {
       inv = data;
     }
 
-    if (inv.status !== 'pending') throw new BadRequestException(`Invitation is ${inv.status}`);
-    if (new Date(inv.expires_at) < new Date()) {
-      // Mark expired
-      await this.client.from('invitations').update({ status: 'expired' }).eq('id', inv.id);
-      throw new BadRequestException('Invitation has expired');
-    }
-    if (inv.owner_email.trim().toLowerCase() !== callerEmail.trim().toLowerCase()) {
-      throw new ForbiddenException('Your email does not match the invitation target email');
-    }
     if (inv.entity_type !== entityType || inv.entity_id !== entityId) {
       throw new ForbiddenException('Invitation does not match this entity');
     }
+    if (inv.owner_email.trim().toLowerCase() !== callerEmail) {
+      throw new ForbiddenException('Your verified email does not match the invitation target email');
+    }
+    if (inv.status !== 'pending') throw new BadRequestException(`Invitation is ${inv.status}`);
+    if (new Date(inv.expires_at) < new Date()) {
+      await this.client.from('invitations').update({ status: 'expired' }).eq('id', inv.id).eq('status', 'pending');
+      throw new BadRequestException('Invitation has expired');
+    }
 
-    // Check no existing profile for this entity
     await this.assertNoExistingProfile(entityType, entityId);
 
-    // Create user_profile (pending — admin approval is separate)
-    const role = entityType === 'merchant' ? 'merchant' : 'collaborator';
-    const profileDto: any = {
-      user_id: callerId, email: callerEmail, role, status: 'pending',
-      ...(role === 'merchant' ? { merchant_id: entityId } : { collaborator_id: entityId }),
-    };
-    await this.userProfiles.createOrUpdate(profileDto);
-
-    // Mark invitation accepted
-    const { error } = await this.client.from('invitations').update({
+    // Single-use: atomically consume the invitation; only one concurrent claimant can win this update.
+    const { data: consumed, error: consumeError } = await this.client.from('invitations').update({
       status: 'accepted', accepted_at: new Date().toISOString(), accepted_by_auth_user_id: callerId,
-    }).eq('id', inv.id);
-    if (error) throw new BadRequestException(`Failed to accept invitation: ${error.message}`);
+    }).eq('id', inv.id).eq('status', 'pending').gt('expires_at', new Date().toISOString()).select('id');
+    if (consumeError) throw new BadRequestException(`Failed to accept invitation: ${consumeError.message}`);
+    if (!consumed || consumed.length !== 1) throw new BadRequestException('Invitation is no longer available');
+
+    const role = entityType === 'merchant' ? 'merchant' : 'collaborator';
+    try {
+      await this.userProfiles.createOrUpdate({
+        user_id: callerId, email: callerEmail, role, status: 'pending',
+        ...(role === 'merchant' ? { merchant_id: entityId } : { collaborator_id: entityId }),
+      } as any);
+    } catch (err) {
+      // Binding failed: release the invitation so the owner can retry.
+      await this.client.from('invitations').update({
+        status: 'pending', accepted_at: null, accepted_by_auth_user_id: null,
+      }).eq('id', inv.id).eq('accepted_by_auth_user_id', callerId);
+      throw err;
+    }
 
     const actor: AuditActor = { id: callerId };
     await this.audit.record(actor, 'invitation.accepted', 'invitation', inv.id, { entity_type: entityType, entity_id: entityId });
