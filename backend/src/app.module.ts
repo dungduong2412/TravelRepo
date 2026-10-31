@@ -13,6 +13,7 @@ import { CommissionsModule } from './modules/commissions/commissions.module';
 import { MediaModule } from './modules/media/media.module';
 import { HealthController } from './health.controller';
 import { AuditModule } from './modules/audit/audit.module';
+import { InvitationsModule } from './modules/invitations/invitations.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { AuditModule } from './modules/audit/audit.module';
     CommissionsModule,
     MediaModule,
     AuditModule,
+    InvitationsModule,
   ],
   controllers: [HealthController],
 })

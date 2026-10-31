@@ -30,6 +30,8 @@ export default function AdminCollaboratorsPage() {
   const [createForm, setCreateForm] = useState({ collaborators_name: '', collaborators_email: '', collaborators_phone: '', collaborators_bank_name: '', collaborators_bank_acc_name: '', collaborators_bank_acc_number: '', merchant_system_id: '' });
   const [uploadBusy, setUploadBusy] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [invitation, setInvitation] = useState<Record<string, unknown> | null | undefined>(undefined);
+  const [inviteBusy, setInviteBusy] = useState(false); const [inviteError, setInviteError] = useState<string | null>(null);
 
   const fetchCollaborators = useCallback(async () => {
     try { setError(null); setAllItems((await api.get('/collaborators')) || []); }
@@ -66,6 +68,7 @@ export default function AdminCollaboratorsPage() {
   }, [avatars, visibleItems]);
 
   async function openDetail(collaborator: Collaborator) {
+    setInvitation(undefined); setInviteError(null);
     try {
       setDetailLoading(true); setError(null);
       const [allMedia, ...queues] = await Promise.all([api.get('/media'), ...['pending', 'approved', 'rejected', 'cancelled'].map((state) => api.get(`/media/approvals?owner_type=collaborator&status=${state}&page=1&page_size=100`))]);
@@ -76,8 +79,22 @@ export default function AdminCollaboratorsPage() {
       }));
       const approvals = queues.flatMap((queue) => queue?.items || []).filter((request: Approval) => request.collaborator_id === collaborator.id);
       setDetail({ collaborator, media, approvals });
+      api.get(`/invitations/for/collaborator/${collaborator.id}`).then(setInvitation).catch(() => setInvitation(null));
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to load partner details'); }
     finally { setDetailLoading(false); }
+  }
+  async function createInvitation(collaboratorId: string) {
+    setInviteBusy(true); setInviteError(null);
+    try { setInvitation(await api.post('/invitations', { entity_type: 'collaborator', entity_id: collaboratorId })); }
+    catch (cause) { setInviteError(cause instanceof Error ? cause.message : 'Unable to create invitation'); }
+    finally { setInviteBusy(false); }
+  }
+  async function revokeInvitation(id: string) {
+    if (!confirm('Revoke this invitation?')) return;
+    setInviteBusy(true); setInviteError(null);
+    try { setInvitation(await api.delete(`/invitations/${id}`)); }
+    catch (cause) { setInviteError(cause instanceof Error ? cause.message : 'Unable to revoke invitation'); }
+    finally { setInviteBusy(false); }
   }
   async function handleApprove(id: string) { if (!confirm('Approve this partner? A QR code will be generated.')) return; try { await api.post(`/collaborators/${id}/approve`); await fetchCollaborators(); setDetail(null); } catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to approve partner'); } }
   async function handleReject(id: string) { if (!confirm('Reject this pending partner?')) return; try { await api.post(`/collaborators/${id}/reject`); await fetchCollaborators(); setDetail(null); } catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to reject partner'); } }
@@ -129,6 +146,7 @@ export default function AdminCollaboratorsPage() {
       <DetailSection title="Associations"><dl className="grid gap-4 sm:grid-cols-2"><DetailItem label="Associated merchant count" value={detail.collaborator.merchant_system_id ? 1 : 0} /><DetailItem label="Merchant system ID" value={detail.collaborator.merchant_system_id} /></dl></DetailSection>
       <DetailSection title={`Approval and profile history (${detail.approvals.length})`}>{detail.approvals.length ? detail.approvals.sort((a, b) => String(b.requested_at).localeCompare(String(a.requested_at))).map((request) => <div key={request.id} className="mb-2 rounded-lg border border-slate-200 p-3 text-sm text-slate-600"><div className="flex justify-between gap-3"><strong className="text-slate-900">{request.action} · {request.slot}</strong><StatusBadge value={request.status} /></div><p className="mt-1">Requested {formatDate(request.requested_at, true)}</p>{request.decision_reason && <p>Decision reason: {request.decision_reason}</p>}</div>) : <p className="text-sm text-slate-500">No media approval history.</p>}<p className="mt-3 text-sm text-slate-500">Profile action: {detail.collaborator.collaborators_actions || '—'}<br />Follow-up: {detail.collaborator.collaborators_remark_followup_action || '—'}</p></DetailSection>
       <DetailSection title="Upload avatar"><p className="mb-3 text-sm text-slate-500">Admin direct upload — immediately effective and audited. Only JPEG, PNG, or WebP, maximum 5 MB.</p>{uploadError && <p className="mb-3 rounded-lg bg-red-50 p-3 text-sm text-red-800">{uploadError}</p>}<label className="inline-flex min-h-10 cursor-pointer items-center rounded-lg bg-teal-700 px-4 font-semibold text-white">{uploadBusy ? 'Uploading…' : 'Upload avatar'}<input type="file" accept="image/jpeg,image/png,image/webp" disabled={uploadBusy} className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void adminUpload(detail.collaborator.id, file); event.target.value = ''; }} /></label></DetailSection>
+      <DetailSection title="Account Invitation">{invitation === undefined ? <p className="text-sm text-slate-500">Loading…</p> : invitation && (invitation.status as string) === 'pending' ? (<><p className="mb-3 text-sm text-slate-500">A pending invitation exists for this partner's email.</p><dl className="mb-3 grid gap-2 text-sm"><dt className="text-xs font-bold text-slate-500">Invited email</dt><dd>{String(invitation.owner_email || '—')}</dd><dt className="text-xs font-bold text-slate-500">Expires</dt><dd>{formatDate(invitation.expires_at as string, true)}</dd></dl><div className="mb-3 rounded-lg bg-amber-50 p-3"><p className="mb-1 text-xs font-bold text-amber-900">UAT mail-capture: invite link</p><code className="break-all text-xs text-amber-800">{String(invitation.invite_link || invitation.claim_url || '—')}</code></div><div className="flex gap-2"><button disabled={inviteBusy} onClick={() => void revokeInvitation(String(invitation.id))} className="rounded-lg border border-red-300 bg-white px-3 py-2 text-sm font-semibold text-red-700">Revoke invitation</button></div></>) : (<><p className="mb-3 text-sm text-slate-500">{invitation ? `Last invitation: ${invitation.status as string}. Create a new one to re-invite.` : 'No invitation exists. Use Invite to generate a claim link for this partner.'}</p>{inviteError && <p className="mb-3 rounded-lg bg-red-50 p-3 text-sm text-red-800">{inviteError}</p>}<button disabled={inviteBusy} onClick={() => void createInvitation(detail.collaborator.id)} className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">{inviteBusy ? 'Sending…' : 'Invite partner to claim account'}</button></>)}</DetailSection>
       <DetailSection title="Administrative actions"><div className="flex flex-wrap gap-2">{statusOf(detail.collaborator) === 'pending' && <><button onClick={() => void handleApprove(detail.collaborator.id)} className="rounded-lg bg-green-700 px-4 py-2 text-sm font-semibold text-white"><CheckCircle className="mr-2 inline h-4 w-4" />Approve</button><button onClick={() => void handleReject(detail.collaborator.id)} className="rounded-lg bg-red-700 px-4 py-2 text-sm font-semibold text-white">Reject</button></>}{detail.collaborator.collaborators_qr_code && <button onClick={() => setSelectedQr(detail.collaborator.collaborators_qr_code || null)} className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white"><QrCode className="mr-2 inline h-4 w-4" />View QR</button>}{statusOf(detail.collaborator) === 'active' && <button onClick={() => void handleDeactivate(detail.collaborator.id)} className="rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-700">Deactivate collaborator</button>}</div><p className="mt-2 text-xs text-slate-500">Destructive controls are confined to this detail view and require confirmation.</p></DetailSection>
     </aside></div>}
     {selectedQr && <div className="fixed inset-0 z-[60] grid place-items-center bg-slate-950/50 p-4" onClick={() => setSelectedQr(null)}><div className="w-full max-w-sm rounded-xl bg-white p-6" onClick={(event) => event.stopPropagation()}><h3 className="mb-4 text-center text-lg font-bold">Partner QR Code</h3><img src={selectedQr} alt="Partner QR code" className="mx-auto h-64 w-64 rounded-lg border-4 border-slate-100" /><button onClick={() => setSelectedQr(null)} className="mt-4 w-full rounded-lg bg-slate-700 px-4 py-2 font-semibold text-white">Close</button></div></div>}
