@@ -6,6 +6,7 @@ import { supabase } from '../../../../lib/supabase';
 import { api } from '../../../../lib/api';
 import { AuthShell } from '../../../../components/ui/AuthShell';
 import { Alert, Spinner } from '../../../../components/ui/Feedback';
+import { FirstPasswordForm } from '../../../../components/FirstPasswordForm';
 import { Button, ButtonLink } from '../../../../components/ui/Button';
 
 type Stage = 'loading' | 'no-session' | 'link-error' | 'claiming' | 'success' | 'error';
@@ -32,6 +33,8 @@ export default function ClaimPage() {
   const [problem, setProblem] = useState<Problem | null>(null);
   const [role, setRole] = useState<string | null>(null);
   const [retryToken, setRetryToken] = useState<string | null>(null);
+  // 'checking' until Auth confirms the session user server-side; 'required' = invited identity without a password; 'unverified' = no usable verified session
+  const [passwordGate, setPasswordGate] = useState<'checking' | 'required' | 'optional' | 'unverified'>('checking');
 
   const invitationId = searchParams.get('invitation');
   const { entityType, entityId } = params;
@@ -42,6 +45,11 @@ export default function ClaimPage() {
     try {
       const data = await api.post(`/invitations/claim/${entityType}/${entityId}${invitationId ? `?invitation=${invitationId}` : ''}`, undefined, accessToken);
       setRole(data.role);
+      // getUser() validates the JWT against Auth (not just the local cache): the password form is offered only for a verified-email session.
+      const { data: current, error: userError } = await supabase.auth.getUser();
+      const user = current?.user;
+      if (userError || !user?.email_confirmed_at) setPasswordGate('unverified');
+      else setPasswordGate(user.invited_at && !user.user_metadata?.password_set ? 'required' : 'optional');
       setStage('success');
     } catch (err) {
       setProblem(claimProblem(err instanceof Error ? err.message : ''));
@@ -81,7 +89,9 @@ export default function ClaimPage() {
       {stage === 'success' && (
         <>
           <Alert tone="success" title="Đã liên kết thành công">Hồ sơ {entityLabel} đã được gắn với tài khoản của bạn. Quản trị viên sẽ duyệt trước khi bạn dùng đầy đủ tính năng.</Alert>
-          <Button className="w-full" onClick={() => router.push(dashboard)}>Vào không gian làm việc</Button>
+          {passwordGate === 'checking' && <Spinner label="Đang xác minh phiên đăng nhập…" />}
+          {(passwordGate === 'required' || passwordGate === 'optional') && <FirstPasswordForm required={passwordGate === 'required'} onDone={() => router.push(dashboard)} />}
+          {passwordGate === 'unverified' && (<><Alert tone="warning" title="Chưa xác minh được phiên đăng nhập">Hồ sơ đã được liên kết nhưng phiên hiện tại không hợp lệ. Hãy đăng nhập lại, hoặc dùng &quot;Quên mật khẩu&quot; để đặt mật khẩu qua email.</Alert><ButtonLink href="/login" className="w-full">Đăng nhập</ButtonLink><ButtonLink href="/forgot-password" variant="secondary" className="w-full">Quên mật khẩu</ButtonLink></>)}
         </>
       )}
       {stage === 'error' && problem && (

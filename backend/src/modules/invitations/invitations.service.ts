@@ -1,28 +1,35 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, HttpException, HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { SupabaseService } from '../../infrastructure/supabase/supabase.service';
 import { AuditService, AuditActor } from '../audit/audit.service';
 import { UserProfilesService } from '../user-profiles/user-profiles.service';
 import { CreateInvitationDto } from './invitations.dto';
 import { PostgresUuidSchema } from '../../common/validation/postgres-uuid';
+import { RecipientPolicy, isRecipientAllowed } from '../../common/email/recipient-policy';
 
 @Injectable()
 export class InvitationsService {
+  private readonly recipients: RecipientPolicy;
   constructor(
     private readonly supabase: SupabaseService,
     private readonly audit: AuditService,
     private readonly userProfiles: UserProfilesService,
-  ) {}
+  ) { this.recipients = new RecipientPolicy(supabase); }
 
   private get client() { return this.supabase.getClient(); }
 
   /** 'capture' (default): the Auth action link is shown once to the creating Admin and never stored. 'email': Supabase Auth sends it itself, to allow-listed recipients only. */
   private get delivery(): 'capture' | 'email' { return process.env.INVITATION_DELIVERY === 'email' ? 'email' : 'capture'; }
 
-  private assertAllowlisted(email: string) {
-    const allow = (process.env.INVITATION_EMAIL_ALLOWLIST || '').split(',').map((v) => v.trim().toLowerCase()).filter(Boolean);
-    const target = email.trim().toLowerCase();
-    const ok = allow.some((entry) => (entry.startsWith('@') ? target.endsWith(entry) : target === entry));
-    if (!ok) throw new BadRequestException('Invitation e-mail delivery is restricted to the approved recipient allowlist');
+  /**
+   * Same policy as the Auth e-mail hook gateway (shared module): the address must be on the tester allowlist AND must not be a migrated V1 identity.
+   * Evaluated before any Auth call, so a refused invitation creates no Auth user and sends nothing. The identity lookup fails closed.
+   */
+  private async assertDeliverable(email: string) {
+    // Delivery is an explicit, separate switch (the same one the Auth hook gateway obeys): without it the hook would silently suppress the message
+    // and the invitation would look "pending" although nothing was sent.
+    if (process.env.AUTH_EMAIL_DELIVERY !== 'enabled') throw new BadRequestException({ code: 'INVITATION_DELIVERY_DISABLED', message: 'E-mail delivery is disabled in this environment; use the one-time invitation link (INVITATION_DELIVERY=capture)' });
+    if (!isRecipientAllowed(email)) throw new BadRequestException({ code: 'INVITATION_RECIPIENT_NOT_ALLOWED', message: 'Invitation e-mail delivery is restricted to the approved recipient allowlist' });
+    if (await this.recipients.isMigrated(undefined, email)) throw new BadRequestException({ code: 'INVITATION_RECIPIENT_NOT_ALLOWED', message: 'Invitation e-mail delivery is not permitted for a migrated account in this environment' });
   }
 
   /** Bearer credentials (the Auth action link) are never returned by read endpoints. */
@@ -56,9 +63,15 @@ export class InvitationsService {
     let inviteLink: string | null = null;
     if (this.delivery === 'email') {
       // Refuse before any Auth call: never mail anyone outside the approved allowlist (migrated V1 users are not on it).
-      this.assertAllowlisted(owner_email);
+      await this.assertDeliverable(owner_email);
       const { error } = await this.client.auth.admin.inviteUserByEmail(owner_email, { redirectTo });
-      if (error) throw new BadRequestException('The invitation e-mail could not be sent (the address may already have an account; use password recovery instead)');
+      if (error) {
+        // Delivery failed (provider/hook/Auth): NO invitation row is created, so a pending invitation always means "delivered to Auth or captured".
+        // Auth may already have created the invited identity before the send failed; remove it if it is still unused so a retry starts clean.
+        const cleaned = await this.removeUnusedInvitedIdentity(owner_email);
+        await this.audit.record(actor, 'invitation.delivery_failed', entity_type, entity_id, { delivery: 'email', unused_auth_identity_removed: cleaned });
+        throw new HttpException({ code: 'INVITATION_EMAIL_FAILED', message: 'The invitation e-mail could not be sent. No invitation was created; check the e-mail gateway log or use password recovery if the address already has an account.' }, HttpStatus.BAD_GATEWAY);
+      }
     } else {
       try {
         const { data, error } = await this.client.auth.admin.generateLink({
@@ -90,11 +103,11 @@ export class InvitationsService {
     if (invError) throw new BadRequestException(`Failed to create invitation: ${invError.message}`);
 
     await this.audit.record(actor, 'invitation.created', 'invitation', inv.id, {
-      entity_type, entity_id, owner_email,
+      entity_type, entity_id, owner_email, delivery: this.delivery,
     });
 
     // The action link is a bearer credential: it is returned exactly once (capture mode) and is not persisted anywhere.
-    return { ...this.redact(inv), delivery: this.delivery, ...(inviteLink ? { invite_link: inviteLink } : {}), claim_url: `${frontendUrl}/claim/${entity_type}/${entity_id}?invitation=${inv.id}` };
+    return { ...this.redact(inv), delivery: this.delivery, delivery_status: this.delivery === 'email' ? 'handed_to_auth' : 'link_captured', ...(inviteLink ? { invite_link: inviteLink } : {}), claim_url: `${frontendUrl}/claim/${entity_type}/${entity_id}?invitation=${inv.id}` };
   }
 
   async findForEntity(entityType: string, entityId: string) {

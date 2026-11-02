@@ -11,21 +11,15 @@ export type HookDecision =
   | { action: 'send' }
   | { action: 'suppress'; reason: 'not_allowlisted' | 'migrated_identity' | 'delivery_disabled' };
 
-export function parseAllowlist(raw: string | undefined): string[] {
-  return (raw || '').split(',').map((v) => v.trim().toLowerCase()).filter(Boolean);
-}
+import { isAllowlisted } from '../../common/email/recipient-policy';
+export { parseAllowlist, isAllowlisted } from '../../common/email/recipient-policy';
 
-/** Entries are exact addresses (plus-aliases are matched literally, "a+uat1@x.com" != "a@x.com") or a whole domain written "@example.org". */
-export function isAllowlisted(email: string, allowlist: string[]): boolean {
-  const target = email.trim().toLowerCase();
-  return allowlist.some((entry) => (entry.startsWith('@') ? target.endsWith(entry) : target === entry));
-}
-
-export function decide(input: { email: string; userId?: string; migratedUserIds: Set<string>; allowlist: string[]; enabled: boolean }): HookDecision {
+/** `allowed` (when given) is the already-evaluated effective allowlist verdict (see isRecipientAllowed); otherwise `allowlist` is checked. */
+export function decide(input: { email: string; userId?: string; migratedUserIds: Set<string>; allowlist: string[]; enabled: boolean; allowed?: boolean }): HookDecision {
   if (!input.enabled) return { action: 'suppress', reason: 'delivery_disabled' };
   // A migrated V1 identity is never mailed, even if somebody mistakenly put its address on the allowlist.
   if (input.migratedUserIds.has('*') || (input.userId && input.migratedUserIds.has(input.userId.toLowerCase()))) return { action: 'suppress', reason: 'migrated_identity' };
-  if (!isAllowlisted(input.email, input.allowlist)) return { action: 'suppress', reason: 'not_allowlisted' };
+  if (!(input.allowed ?? isAllowlisted(input.email, input.allowlist))) return { action: 'suppress', reason: 'not_allowlisted' };
   return { action: 'send' };
 }
 

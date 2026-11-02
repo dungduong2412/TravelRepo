@@ -300,3 +300,57 @@ test.describe('@experience workspaces render (desktop + mobile)', () => {
     });
   }
 });
+
+// Claim-page first-password gate. Hermetic: the Supabase Auth user/update calls and the claim API call are stubbed in the browser, so no identity,
+// invitation, e-mail or database row is touched. The unit under test is the UI contract: who may set a password, and who may not skip it.
+test.describe('@experience claim: first password (stubbed Auth + API, writes nothing)', () => {
+  const ENTITY = '00000000-0000-4000-8000-0000000000aa';
+  const sessionKey = `sb-${c.supabase.replace(/^https:\/\//, '').split('.')[0]}-auth-token`;
+  async function arrange(page: Page, user: Record<string, unknown>, opts: { userStatus?: number } = {}) {
+    const session = { access_token: 'stub.access.token', refresh_token: 'stub-refresh', token_type: 'bearer', expires_in: 3600, expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id: 'u-1', email: 'invited@example.invalid', ...user } };
+    await page.addInitScript(([k, v]) => { try { localStorage.setItem(k as string, v as string); } catch { /* storage unavailable */ } }, [sessionKey, JSON.stringify(session)]);
+    const puts: any[] = [];
+    await page.route('**/auth/v1/user', async (r) => {
+      if (r.request().method() === 'PUT') { puts.push(r.request().postDataJSON()); return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...session.user, user_metadata: { password_set: true } }) }); }
+      if (opts.userStatus && opts.userStatus !== 200) return r.fulfill({ status: opts.userStatus, contentType: 'application/json', body: '{"message":"invalid JWT"}' });
+      return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(session.user) });
+    });
+    await page.route('**/auth/v1/token*', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(session) }));
+    await page.route('**/invitations/claim/**', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'accepted', entity_type: 'merchant', entity_id: ENTITY, role: 'merchant' }) }));
+    return puts;
+  }
+  const open = (page: Page) => page.goto(`/claim/merchant/${ENTITY}`);
+
+  test('X18 invited identity without a password cannot finish onboarding without setting one', async ({ page }) => {
+    const puts = await arrange(page, { email_confirmed_at: '2026-11-02T00:00:00Z', invited_at: '2026-11-02T00:00:00Z', user_metadata: {} });
+    await open(page);
+    await expect(page.getByText('Đã liên kết thành công')).toBeVisible();
+    await expect(page.getByText('Cần đặt mật khẩu để hoàn tất')).toBeVisible();
+    await expect(page.getByRole('button', { name: /Bỏ qua/ })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /Vào không gian làm việc/ })).toHaveCount(0);
+    await page.getByLabel('Mật khẩu', { exact: true }).fill('weak'); await page.getByLabel('Xác nhận mật khẩu').fill('weak');
+    await page.getByRole('button', { name: 'Đặt mật khẩu' }).click();
+    await expect(page.getByText(/ít nhất 12 ký tự/).first()).toBeVisible(); expect(puts.length, 'weak password never reaches Auth').toBe(0);
+    await page.getByLabel('Mật khẩu', { exact: true }).fill('Str0ng-Passw0rd!'); await page.getByLabel('Xác nhận mật khẩu').fill('Different-Passw0rd!');
+    await page.getByRole('button', { name: 'Đặt mật khẩu' }).click();
+    await expect(page.getByText('Hai mật khẩu không khớp.')).toBeVisible(); expect(puts.length).toBe(0);
+    await page.getByLabel('Xác nhận mật khẩu').fill('Str0ng-Passw0rd!'); await page.getByRole('button', { name: 'Đặt mật khẩu' }).click();
+    await expect(page.getByRole('button', { name: /Vào không gian làm việc/ })).toBeVisible();
+    expect(puts.length).toBe(1); expect(puts[0].password).toBe('Str0ng-Passw0rd!'); expect(puts[0].data).toEqual({ password_set: true });
+    record('X18', 'invited account must set a password before leaving the claim flow (no skip; weak/mismatch refused client-side)', 'PASS');
+  });
+
+  test('X18b established account (no invitation marker) may skip; unverified or invalid session never sees the password form', async ({ page, browser }) => {
+    await arrange(page, { email_confirmed_at: '2026-11-02T00:00:00Z', user_metadata: {} });
+    await open(page);
+    await expect(page.getByRole('button', { name: /Bỏ qua/ })).toBeVisible();
+    for (const [label, user, status] of [['unconfirmed e-mail', { invited_at: '2026-11-02T00:00:00Z', email_confirmed_at: null }, 200], ['Auth rejects the token', { email_confirmed_at: '2026-11-02T00:00:00Z' }, 401]] as const) {
+      const ctx = await browser.newContext({ baseURL: c.web }); const p = await ctx.newPage();
+      await arrange(p, { ...user }, { userStatus: status }); await open(p);
+      await expect(p.getByText('Chưa xác minh được phiên đăng nhập'), label).toBeVisible();
+      await expect(p.getByLabel('Mật khẩu', { exact: true }), label).toHaveCount(0); await expect(p.getByRole('button', { name: /Vào không gian/ }), label).toHaveCount(0);
+      await ctx.close();
+    }
+    record('X18b', 'optional skip only for established accounts; unverified/invalid sessions get login or forgot-password, never the form', 'PASS');
+  });
+});

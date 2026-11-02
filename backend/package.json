@@ -17,7 +17,9 @@
     "test:approve-unclaimed": "node -r ts-node/register/transpile-only scripts/test-approve-unclaimed.ts",
     "test:public-catalog": "node -r ts-node/register/transpile-only scripts/test-public-catalog.ts",
     "test:anonymous-privacy": "node -r ts-node/register/transpile-only scripts/test-anonymous-privacy.ts",
-    "test:auth-email-hook": "node -r ts-node/register/transpile-only scripts/test-auth-email-hook.ts"
+    "test:auth-email-hook": "node -r ts-node/register/transpile-only scripts/test-auth-email-hook.ts",
+    "test:email-delivery": "node -r ts-node/register/transpile-only scripts/test-email-delivery.ts",
+    "smtp:check": "node -r ts-node/register/transpile-only scripts/smtp-check.ts"
   },
   "dependencies": {
     "@nestjs/common": "^12.1.3",

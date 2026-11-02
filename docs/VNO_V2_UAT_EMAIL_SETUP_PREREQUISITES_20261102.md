@@ -1,6 +1,6 @@
 # VNO V2 — UAT custom SMTP: owner-reviewed setup and safety gate (Phase 4, NOT enabled)
 
-Status: prepared, **nothing in Supabase Auth was changed**. Real delivery stays off until the owner supplies the items in section 4 and approves the gate in section 3.
+Status: prepared (provider decision 2026-11-02: reuse the existing VNO e-mail service, not AWS SES; operative steps are in `VNO_V2_UAT_EMAIL_GATE_B_RUNBOOK_20261102.md`), **nothing in Supabase Auth was changed**. Real delivery stays off until the owner supplies the items in section 4 and approves the gate in section 3.
 
 ## 1. Why an application allowlist is not enough
 
