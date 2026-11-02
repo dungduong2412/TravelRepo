@@ -1,11 +1,48 @@
 @import "tailwindcss";
 
+/* VNO V2 design tokens. Documented in docs/VNO_V2_DESIGN_SYSTEM.md - change them here, never inline a hex value in a page. */
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  /* Brand (coral/rose). brand-600 is the smallest step that keeps white text at >= 4.5:1. */
+  --color-brand-50: #fff1f3;
+  --color-brand-100: #ffe1e6;
+  --color-brand-500: #ff385c;
+  --color-brand-600: #d91e4a;
+  --color-brand-700: #b3153b;
+
+  /* Neutrals */
+  --color-ink: #1b1f27;
+  --color-ink-muted: #5b6472;
+  --color-line: #e5e7eb;
+  --color-surface: #ffffff;
+  --color-canvas: #f7f7f8;
+
+  /* Feedback */
+  --color-success-50: #ecfdf3;
+  --color-success-700: #05603a;
+  --color-warning-50: #fffaeb;
+  --color-warning-700: #93370d;
+  --color-danger-50: #fef3f2;
+  --color-danger-700: #b42318;
+  --color-info-50: #eff8ff;
+  --color-info-700: #175cd3;
+
+  /* Radius & elevation */
+  --radius-card: 1rem;
+  --radius-control: 0.75rem;
+  --shadow-card: 0 1px 2px rgb(16 24 40 / 0.06), 0 1px 3px rgb(16 24 40 / 0.1);
+  --shadow-pop: 0 12px 32px rgb(16 24 40 / 0.16);
+}
+
+@layer base {
+  html { -webkit-text-size-adjust: 100%; }
+  body { background: var(--color-canvas); color: var(--color-ink); font-family: var(--font-sans); }
+  :focus-visible { outline: 2px solid var(--color-brand-600); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; } }
+}
+
 @layer utilities {
-  .scrollbar-hide {
-    -ms-overflow-style: none;
-    scrollbar-width: none;
-  }
-  .scrollbar-hide::-webkit-scrollbar {
-    display: none;
-  }
+  .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+  .scrollbar-hide::-webkit-scrollbar { display: none; }
 }

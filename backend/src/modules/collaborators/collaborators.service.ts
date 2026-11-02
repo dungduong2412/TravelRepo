@@ -182,7 +182,7 @@ export class CollaboratorsService {
     }
 
     const payload = collaborator.collaborators_code;
-    const qrCodeImage = await this.generateCodeImage(payload, 360);
+    const qrCodeImage = await this.generateCodeImage(payload, 720);
 
     return {
       qr_code: qrCodeImage,

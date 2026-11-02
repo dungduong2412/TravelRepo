@@ -14,7 +14,7 @@ export const sha256 = (b: Buffer | Uint8Array) => createHash('sha256').update(b)
 
 // Download the effective approved image(s) for an owner through the public approved feed and hash the actual bytes.
 export async function approvedImages(ownerType: 'merchant' | 'collaborator', ownerId: string) {
-  const feed = await api(null, 'GET', `/media/approved/${ownerType}/${ownerId}`);
+  const feed = await api('admin', 'GET', `/media/approved/${ownerType}/${ownerId}`);
   const list: any[] = Array.isArray(feed.body) ? feed.body : feed.body?.items ?? [];
   const out: { id: string; sha: string; bytes: number; type: string }[] = [];
   for (const m of list) {

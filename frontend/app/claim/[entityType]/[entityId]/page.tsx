@@ -1,115 +1,96 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '../../../../lib/supabase';
 import { api } from '../../../../lib/api';
+import { AuthShell } from '../../../../components/ui/AuthShell';
+import { Alert, Spinner } from '../../../../components/ui/Feedback';
+import { Button, ButtonLink } from '../../../../components/ui/Button';
 
-type Stage = 'loading' | 'no-session' | 'claiming' | 'success' | 'error';
+type Stage = 'loading' | 'no-session' | 'link-error' | 'claiming' | 'success' | 'error';
+type Problem = { tone: 'danger' | 'warning' | 'info'; title: string; body: string; retry: boolean };
+
+/** Backend claim errors -> what the person can actually do next. */
+function claimProblem(raw: string): Problem {
+  const m = raw.toLowerCase();
+  if (m.includes('expired')) return { tone: 'warning', title: 'Lời mời đã hết hạn', body: 'Lời mời chỉ có hiệu lực trong 7 ngày. Hãy nhờ quản trị viên gửi lời mời mới.', retry: false };
+  if (m.includes('revoked')) return { tone: 'warning', title: 'Lời mời đã bị thu hồi', body: 'Quản trị viên đã thu hồi lời mời này. Hãy liên hệ họ để được mời lại.', retry: false };
+  if (m.includes('accepted') || m.includes('no longer available')) return { tone: 'info', title: 'Lời mời đã được sử dụng', body: 'Hồ sơ này đã được liên kết với một tài khoản. Hãy đăng nhập nếu đó là tài khoản của bạn.', retry: false };
+  if (m.includes('does not match the invitation') || m.includes('target email')) return { tone: 'danger', title: 'Sai tài khoản email', body: 'Bạn đang đăng nhập bằng một email khác với email được mời. Hãy đăng xuất và mở lại liên kết từ đúng hộp thư.', retry: false };
+  if (m.includes('already has an account')) return { tone: 'info', title: 'Tài khoản đã tồn tại', body: 'Danh tính này đã gắn với một hồ sơ khác nên không thể nhận thêm hồ sơ. Hãy đăng nhập.', retry: false };
+  if (m.includes('no pending invitation') || m.includes('not found')) return { tone: 'warning', title: 'Không tìm thấy lời mời hợp lệ', body: 'Liên kết có thể không đúng hoặc lời mời không còn hiệu lực. Hãy liên hệ quản trị viên.', retry: false };
+  if (m.includes('confirmation is required')) return { tone: 'warning', title: 'Cần xác nhận email', body: 'Hãy xác nhận email của bạn rồi mở lại liên kết lời mời.', retry: false };
+  return { tone: 'danger', title: 'Không thể hoàn tất liên kết', body: 'Đã có lỗi kết nối. Dữ liệu của bạn không bị ảnh hưởng, bạn có thể thử lại.', retry: true };
+}
 
 export default function ClaimPage() {
   const params = useParams<{ entityType: string; entityId: string }>();
   const searchParams = useSearchParams();
   const router = useRouter();
   const [stage, setStage] = useState<Stage>('loading');
-  const [message, setMessage] = useState('');
-  const [result, setResult] = useState<{ role: string; entity_id: string } | null>(null);
+  const [problem, setProblem] = useState<Problem | null>(null);
+  const [role, setRole] = useState<string | null>(null);
+  const [retryToken, setRetryToken] = useState<string | null>(null);
 
   const invitationId = searchParams.get('invitation');
-  const entityType = params.entityType;
-  const entityId = params.entityId;
+  const { entityType, entityId } = params;
+  const entityLabel = entityType === 'merchant' ? 'nhà cung cấp' : 'đối tác';
 
-  async function doClaim(token: string) {
+  const doClaim = useCallback(async (accessToken: string) => {
     setStage('claiming');
     try {
-      const endpoint = `/invitations/claim/${entityType}/${entityId}${invitationId ? `?invitation=${invitationId}` : ''}`;
-      const data = await api.post(endpoint, undefined, token);
-      setResult(data);
+      const data = await api.post(`/invitations/claim/${entityType}/${entityId}${invitationId ? `?invitation=${invitationId}` : ''}`, undefined, accessToken);
+      setRole(data.role);
       setStage('success');
-    } catch (err: any) {
-      setMessage(err.message || 'Unable to claim this record');
+    } catch (err) {
+      setProblem(claimProblem(err instanceof Error ? err.message : ''));
       setStage('error');
     }
-  }
-
-  useEffect(() => {
-    let handled = false;
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session && !handled) {
-        handled = true;
-        void doClaim(session.access_token);
-      }
-    });
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session && !handled) {
-        handled = true;
-        void doClaim(session.access_token);
-      } else if (!session && !handled) {
-        setStage('no-session');
-      }
-    });
-    return () => subscription.unsubscribe();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entityType, entityId, invitationId]);
 
-  const dashboardPath = result?.role === 'merchant' ? '/merchant/dashboard' : '/collaborator/dashboard';
-  const entityLabel = entityType === 'merchant' ? 'merchant' : 'partner';
+  useEffect(() => {
+    // Supabase reports a bad / expired / already-used emailed link in the URL fragment (#error_code=otp_expired ...).
+    const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    if (hash.get('error_code') || hash.get('error')) { setStage('link-error'); return; }
+    let handled = false;
+    const run = (accessToken: string) => { if (handled) return; handled = true; setRetryToken(accessToken); void doClaim(accessToken); };
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => { if (session) run(session.access_token); });
+    supabase.auth.getSession().then(({ data: { session } }) => { if (session) run(session.access_token); else if (!handled) setStage('no-session'); });
+    return () => subscription.unsubscribe();
+  }, [doClaim]);
+
+  const dashboard = role === 'merchant' ? '/merchant/dashboard' : '/collaborator/dashboard';
 
   return (
-    <main style={styles.container}>
-      <div style={styles.card}>
-        <h1 style={styles.title}>Account Claim</h1>
-
-        {stage === 'loading' && (
-          <p style={styles.muted}>Verifying your identity…</p>
-        )}
-
-        {stage === 'no-session' && (
-          <>
-            <p style={styles.text}>You need to be signed in to claim this {entityLabel} account.</p>
-            <p style={styles.muted}>Click the invitation link from your email, or sign in and return to this page.</p>
-            <button style={styles.button} onClick={() => router.push('/user-login')}>Sign in</button>
-          </>
-        )}
-
-        {stage === 'claiming' && (
-          <p style={styles.muted}>Binding your identity to the {entityLabel} record…</p>
-        )}
-
-        {stage === 'success' && result && (
-          <>
-            <div style={styles.successBox}>
-              <p style={styles.successText}>Your identity has been bound to this {entityLabel} record.</p>
-              <p style={styles.muted}>An admin will review and approve your account before you can access the full dashboard. You will receive a notification once approved.</p>
-            </div>
-            <button style={styles.button} onClick={() => router.push(dashboardPath)}>Go to dashboard</button>
-          </>
-        )}
-
-        {stage === 'error' && (
-          <>
-            <div style={styles.errorBox}>
-              <p style={styles.errorText}>{message}</p>
-            </div>
-            <p style={styles.muted}>If you believe this is a mistake, contact your administrator.</p>
-            <button style={styles.secondaryButton} onClick={() => router.push('/')}>Return home</button>
-          </>
-        )}
-      </div>
-    </main>
+    <AuthShell title="Liên kết tài khoản" subtitle={`Nhận hồ sơ ${entityLabel} được quản trị viên tạo cho bạn.`}>
+      {stage === 'loading' && <Spinner label="Đang xác minh danh tính…" />}
+      {stage === 'claiming' && <Spinner label={`Đang liên kết hồ sơ ${entityLabel}…`} />}
+      {stage === 'link-error' && (
+        <>
+          <Alert tone="warning" title="Liên kết không hợp lệ hoặc đã hết hạn">Liên kết trong email chỉ dùng được một lần và có thời hạn. Hãy nhờ quản trị viên gửi lời mời mới.</Alert>
+          <ButtonLink href="/login" variant="secondary" className="w-full">Đăng nhập</ButtonLink>
+        </>
+      )}
+      {stage === 'no-session' && (
+        <>
+          <Alert tone="info" title="Bạn cần đăng nhập để tiếp tục">Hãy mở liên kết lời mời trong email của bạn, hoặc đăng nhập bằng đúng email được mời rồi quay lại trang này.</Alert>
+          <Button className="w-full" onClick={() => router.push('/login')}>Đăng nhập</Button>
+        </>
+      )}
+      {stage === 'success' && (
+        <>
+          <Alert tone="success" title="Đã liên kết thành công">Hồ sơ {entityLabel} đã được gắn với tài khoản của bạn. Quản trị viên sẽ duyệt trước khi bạn dùng đầy đủ tính năng.</Alert>
+          <Button className="w-full" onClick={() => router.push(dashboard)}>Vào không gian làm việc</Button>
+        </>
+      )}
+      {stage === 'error' && problem && (
+        <>
+          <Alert tone={problem.tone} title={problem.title}>{problem.body}</Alert>
+          {problem.retry && retryToken && <Button className="w-full" onClick={() => void doClaim(retryToken)}>Thử lại</Button>}
+          <ButtonLink href="/" variant="secondary" className="w-full">Về trang chủ</ButtonLink>
+        </>
+      )}
+    </AuthShell>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  container: { minHeight: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#f9fafb', padding: 24, fontFamily: 'system-ui, sans-serif' },
-  card: { width: '100%', maxWidth: 480, background: '#fff', borderRadius: 14, padding: 36, boxShadow: '0 1px 6px rgba(0,0,0,.1)', display: 'flex', flexDirection: 'column', gap: 16 },
-  title: { margin: 0, fontSize: 24, fontWeight: 700, color: '#0f172a' },
-  text: { margin: 0, color: '#334155' },
-  muted: { margin: 0, color: '#64748b', fontSize: 14 },
-  successBox: { background: '#f0fdf4', borderRadius: 10, padding: 16, display: 'flex', flexDirection: 'column', gap: 8 },
-  successText: { margin: 0, color: '#166534', fontWeight: 600 },
-  errorBox: { background: '#fef2f2', borderRadius: 10, padding: 16 },
-  errorText: { margin: 0, color: '#991b1b' },
-  button: { padding: '11px 18px', background: '#0f766e', color: '#fff', border: 0, borderRadius: 8, cursor: 'pointer', fontWeight: 600, fontSize: 15 },
-  secondaryButton: { padding: '11px 18px', background: '#fff', color: '#334155', border: '1px solid #cbd5e1', borderRadius: 8, cursor: 'pointer', fontWeight: 600, fontSize: 15 },
-};

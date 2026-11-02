@@ -2,6 +2,9 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { SupabaseService } from '../../infrastructure/supabase/supabase.service';
 import { CreateCategoryDto, UpdateCategoryDto } from './categories.dto';
 
+/** Anonymous read paths: explicit columns only (no legacy_* migration identifiers). */
+const PUBLIC_CATEGORY_COLUMNS = 'id,category_name,category_name_vi,category_description,category_icon,is_active,display_order,created_at,updated_at';
+
 @Injectable()
 export class CategoriesService {
   constructor(private readonly supabase: SupabaseService) {}
@@ -19,7 +22,7 @@ export class CategoriesService {
   async findAll() {
     const { data, error } = await this.supabase.getClient()
       .from('categories')
-      .select('*')
+      .select(PUBLIC_CATEGORY_COLUMNS)
       .order('display_order', { ascending: true });
 
     if (error) {
@@ -33,7 +36,7 @@ export class CategoriesService {
   async findActive() {
     const { data, error } = await this.supabase.getClient()
       .from('categories')
-      .select('*')
+      .select(PUBLIC_CATEGORY_COLUMNS)
       .eq('is_active', true)
       .order('display_order', { ascending: true });
 
@@ -48,7 +51,7 @@ export class CategoriesService {
   async findById(id: string) {
     const { data, error } = await this.supabase.getClient()
       .from('categories')
-      .select('*')
+      .select(PUBLIC_CATEGORY_COLUMNS)
       .eq('id', id)
       .single();
 

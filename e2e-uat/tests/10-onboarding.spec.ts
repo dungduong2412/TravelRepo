@@ -110,7 +110,7 @@ test.describe.serial('Onboarding (first-time): Admin creates → invitation → 
         process.env[`E2E_CLAIM_${id}`] = String(inv.body?.invite_link ?? '');
         const ctx = await browser.newContext(); const pg = await ctx.newPage();
         await pg.goto(String(inv.body.invite_link)); await pg.waitForURL(/\/claim\//, { timeout: 45_000 });
-        await expect(pg.getByText(/bound to this|review and approve/i).first()).toBeVisible({ timeout: 30_000 }); await ctx.close();
+        await expect(pg.getByText(/bound to this|review and approve|liên kết thành công|đã được gắn|duyệt trước/i).first()).toBeVisible({ timeout: 30_000 }); await ctx.close();
         const me = (await api(who, 'GET', '/user-profiles/me')).body;
         expect(me.user_profiles_status).toBe('pending'); expect(me.email.toLowerCase()).toBe(c.email.toLowerCase());
         expect(who === 'merchant' ? me.merchant_id : me.collaborator_id, 'bound to the record of THIS run').toBe(entityId);

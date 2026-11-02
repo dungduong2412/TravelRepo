@@ -15,6 +15,22 @@ export class InvitationsService {
 
   private get client() { return this.supabase.getClient(); }
 
+  /** 'capture' (default): the Auth action link is shown once to the creating Admin and never stored. 'email': Supabase Auth sends it itself, to allow-listed recipients only. */
+  private get delivery(): 'capture' | 'email' { return process.env.INVITATION_DELIVERY === 'email' ? 'email' : 'capture'; }
+
+  private assertAllowlisted(email: string) {
+    const allow = (process.env.INVITATION_EMAIL_ALLOWLIST || '').split(',').map((v) => v.trim().toLowerCase()).filter(Boolean);
+    const target = email.trim().toLowerCase();
+    const ok = allow.some((entry) => (entry.startsWith('@') ? target.endsWith(entry) : target === entry));
+    if (!ok) throw new BadRequestException('Invitation e-mail delivery is restricted to the approved recipient allowlist');
+  }
+
+  /** Bearer credentials (the Auth action link) are never returned by read endpoints. */
+  private redact<T extends Record<string, any>>(row: T): Omit<T, 'invite_link'> {
+    const { invite_link: _link, ...safe } = row;
+    return safe;
+  }
+
   async create(actor: AuditActor, dto: CreateInvitationDto): Promise<Record<string, unknown>> {
     const { entity_type, entity_id } = dto;
 
@@ -38,30 +54,37 @@ export class InvitationsService {
     const redirectTo = `${frontendUrl}/claim/${entity_type}/${entity_id}`;
 
     let inviteLink: string | null = null;
-    try {
-      const { data, error } = await this.client.auth.admin.generateLink({
-        type: 'invite',
-        email: owner_email,
-        options: { redirectTo },
-      });
-      if (error) throw error;
-      inviteLink = (data as any)?.properties?.action_link ?? null;
-    } catch (err: any) {
-      // If user already exists in auth, fall back to magic link
+    if (this.delivery === 'email') {
+      // Refuse before any Auth call: never mail anyone outside the approved allowlist (migrated V1 users are not on it).
+      this.assertAllowlisted(owner_email);
+      const { error } = await this.client.auth.admin.inviteUserByEmail(owner_email, { redirectTo });
+      if (error) throw new BadRequestException('The invitation e-mail could not be sent (the address may already have an account; use password recovery instead)');
+    } else {
       try {
         const { data, error } = await this.client.auth.admin.generateLink({
-          type: 'magiclink',
+          type: 'invite',
           email: owner_email,
           options: { redirectTo },
         });
-        if (!error) inviteLink = (data as any)?.properties?.action_link ?? null;
-      } catch { /* magic link also failed — link stays null */ }
+        if (error) throw error;
+        inviteLink = (data as any)?.properties?.action_link ?? null;
+      } catch (err: any) {
+        // If user already exists in auth, fall back to magic link
+        try {
+          const { data, error } = await this.client.auth.admin.generateLink({
+            type: 'magiclink',
+            email: owner_email,
+            options: { redirectTo },
+          });
+          if (!error) inviteLink = (data as any)?.properties?.action_link ?? null;
+        } catch { /* magic link also failed — link stays null */ }
+      }
     }
 
     // 4. Insert invitation record
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
     const { data: inv, error: invError } = await this.client.from('invitations').insert({
-      entity_type, entity_id, owner_email, invite_link: inviteLink,
+      entity_type, entity_id, owner_email,
       created_by_auth_user_id: actor.id, expires_at: expiresAt,
     }).select().single();
     if (invError) throw new BadRequestException(`Failed to create invitation: ${invError.message}`);
@@ -70,7 +93,8 @@ export class InvitationsService {
       entity_type, entity_id, owner_email,
     });
 
-    return { ...inv, claim_url: `${frontendUrl}/claim/${entity_type}/${entity_id}?invitation=${inv.id}` };
+    // The action link is a bearer credential: it is returned exactly once (capture mode) and is not persisted anywhere.
+    return { ...this.redact(inv), delivery: this.delivery, ...(inviteLink ? { invite_link: inviteLink } : {}), claim_url: `${frontendUrl}/claim/${entity_type}/${entity_id}?invitation=${inv.id}` };
   }
 
   async findForEntity(entityType: string, entityId: string) {
@@ -83,13 +107,13 @@ export class InvitationsService {
       .limit(1)
       .maybeSingle();
     if (!data) return null;
-    return { ...data, claim_url: `${frontendUrl}/claim/${entityType}/${entityId}?invitation=${data.id}` };
+    return { ...this.redact(data), claim_url: `${frontendUrl}/claim/${entityType}/${entityId}?invitation=${data.id}` };
   }
 
   async findById(id: string) {
     const { data, error } = await this.client.from('invitations').select().eq('id', id).maybeSingle();
     if (error || !data) throw new NotFoundException('Invitation not found');
-    return data;
+    return this.redact(data);
   }
 
   async revoke(actor: AuditActor, id: string) {
@@ -99,8 +123,9 @@ export class InvitationsService {
       status: 'revoked', revoked_at: new Date().toISOString(), revoked_by_auth_user_id: actor.id,
     }).eq('id', id);
     if (error) throw new BadRequestException(`Failed to revoke: ${error.message}`);
-    await this.audit.record(actor, 'invitation.revoked', 'invitation', id, { entity_type: inv.entity_type, entity_id: inv.entity_id });
-    return { id, status: 'revoked' };
+    const authCleanup = await this.removeUnusedInvitedIdentity(inv.owner_email);
+    await this.audit.record(actor, 'invitation.revoked', 'invitation', id, { entity_type: inv.entity_type, entity_id: inv.entity_id, outstanding_auth_link_invalidated: authCleanup });
+    return { id, status: 'revoked', outstanding_auth_link_invalidated: authCleanup };
   }
 
   async claim(callerId: string, _tokenEmail: string, entityType: string, entityId: string, invitationId?: string) {
@@ -199,5 +224,29 @@ export class InvitationsService {
         .select('id').eq('collaborator_id', entityId).maybeSingle();
       if (data) throw new BadRequestException('A user profile is already linked to this partner');
     }
+  }
+
+  /**
+   * Revocation must also kill the emailed Auth link. For an invite-created identity that never signed in, never got a profile and was never
+   * confirmed, deleting the Auth user invalidates the link. Anyone who has ever signed in, confirmed an email or owns a profile is left untouched
+   * (their claim is already blocked by the invitation status).
+   */
+  private async removeUnusedInvitedIdentity(email: string): Promise<boolean> {
+    const target = email.trim().toLowerCase();
+    const { data: profile } = await this.client.from('user_profiles').select('id').eq('email', target).maybeSingle();
+    if (profile) return false;
+    for (let page = 1; page <= 20; page++) {
+      const { data, error } = await this.client.auth.admin.listUsers({ page, perPage: 200 });
+      if (error) return false;
+      const users = ((data as any)?.users ?? []) as Array<{ id: string; email?: string; last_sign_in_at?: string; email_confirmed_at?: string; invited_at?: string }>;
+      const match = users.find((u) => u.email?.trim().toLowerCase() === target);
+      if (match) {
+        if (match.last_sign_in_at || match.email_confirmed_at || !match.invited_at) return false;
+        const { error: deleteError } = await this.client.auth.admin.deleteUser(match.id);
+        return !deleteError;
+      }
+      if (users.length < 200) break;
+    }
+    return false;
   }
 }

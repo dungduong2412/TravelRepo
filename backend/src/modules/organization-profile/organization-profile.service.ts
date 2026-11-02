@@ -2,6 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { SupabaseService } from '../../infrastructure/supabase/supabase.service';
 import { CreateOrganizationProfileDto, UpdateOrganizationProfileDto } from './organization-profile.dto';
 
+/** Anonymous read: the organisation's own public profile fields only. */
+const PUBLIC_ORG_COLUMNS = 'id,org_id,org_name,org_address,org_phone,org_email,org_description,org_avatar_url,created_at,updated_at';
+
 @Injectable()
 export class OrganizationProfileService {
   constructor(private readonly supabase: SupabaseService) {}
@@ -12,7 +15,7 @@ export class OrganizationProfileService {
   async get() {
     const { data, error } = await this.supabase.getClient()
       .from('organization_profile')
-      .select('*')
+      .select(PUBLIC_ORG_COLUMNS)
       .limit(1)
       .maybeSingle();
 

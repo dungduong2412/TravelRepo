@@ -1,7 +1,10 @@
 "use client";
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { api } from '../../../lib/api';
+import { PageHeader, Card } from '../../../components/ui/Brand';
+import { ErrorState, Spinner } from '../../../components/ui/Feedback';
 
 interface DashboardStats {
   activeCollaborators: number;
@@ -53,197 +56,33 @@ export default function AdminDashboardPage() {
     }
   };
 
-  if (loading) {
-    return (
-      <div style={styles.loadingContainer}>
-        <div style={styles.spinner}>Loading...</div>
-      </div>
-    );
-  }
+  if (loading) return <Spinner />;
+  if (error) return <ErrorState title="Không thể tải thống kê" onRetry={fetchStats}>{error}</ErrorState>;
 
-  if (error) {
-    return (
-      <div style={styles.errorContainer}>
-        <p style={styles.errorText}>❌ {error}</p>
-        <button onClick={fetchStats} style={styles.retryButton}>
-          Retry
-        </button>
-      </div>
-    );
-  }
-
+  const tiles = [
+    { label: 'Partner đang hoạt động', value: stats.activeCollaborators, href: '/admin/collaborators' },
+    { label: 'Partner chờ duyệt', value: stats.pendingCollaborators, href: '/admin/collaborators', attention: stats.pendingCollaborators > 0 },
+    { label: 'Merchant đang hoạt động', value: stats.activeMerchants, href: '/admin/merchants' },
+    { label: 'Merchant chờ duyệt', value: stats.pendingMerchants, href: '/admin/merchants', attention: stats.pendingMerchants > 0 },
+  ];
   return (
-    <div style={styles.container}>
-      <h2 style={styles.title}>Dashboard Overview</h2>
-
-      <div style={styles.statsGrid}>
-        {/* Collaborators Stats */}
-        <div style={styles.statCard}>
-          <div style={styles.statIcon}>👥</div>
-          <div style={styles.statContent}>
-            <h3 style={styles.statLabel}>Active Partners</h3>
-            <p style={styles.statValue}>{stats.activeCollaborators}</p>
-          </div>
-        </div>
-
-        <div style={styles.statCard}>
-          <div style={{ ...styles.statIcon, backgroundColor: '#fef3c7' }}>⏳</div>
-          <div style={styles.statContent}>
-            <h3 style={styles.statLabel}>Pending Partners</h3>
-            <p style={styles.statValue}>{stats.pendingCollaborators}</p>
-          </div>
-        </div>
-
-        {/* Merchants Stats */}
-        <div style={styles.statCard}>
-          <div style={{ ...styles.statIcon, backgroundColor: '#d1fae5' }}>🏪</div>
-          <div style={styles.statContent}>
-            <h3 style={styles.statLabel}>Active Merchants</h3>
-            <p style={styles.statValue}>{stats.activeMerchants}</p>
-          </div>
-        </div>
-
-        <div style={styles.statCard}>
-          <div style={{ ...styles.statIcon, backgroundColor: '#fecaca' }}>⏳</div>
-          <div style={styles.statContent}>
-            <h3 style={styles.statLabel}>Pending Merchants</h3>
-            <p style={styles.statValue}>{stats.pendingMerchants}</p>
-          </div>
-        </div>
+    <div className="mx-auto max-w-6xl">
+      <PageHeader title="Tổng quan" subtitle="Số lượng hồ sơ theo trạng thái. Nhấn vào một ô để xử lý." />
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {tiles.map((t) => (
+          <Link key={t.label} href={t.href} className="block rounded-card focus-visible:outline-offset-2">
+            <Card className={`h-full p-4 transition hover:border-brand-500 ${t.attention ? 'border-warning-700/40 bg-warning-50' : ''}`}>
+              <div className="text-xs font-medium text-ink-muted">{t.label}</div>
+              <div className="mt-1 text-3xl font-extrabold tabular-nums" data-testid="admin-stat">{t.value}</div>
+            </Card>
+          </Link>
+        ))}
       </div>
-
-      {/* Quick Actions */}
-      <div style={styles.quickActions}>
-        <h3 style={styles.sectionTitle}>Quick Actions</h3>
-        <div style={styles.actionButtons}>
-          <button 
-            style={styles.actionButton}
-            onClick={() => window.location.href = '/admin/collaborators'}
-          >
-            Manage Partners
-          </button>
-          <button 
-            style={styles.actionButton}
-            onClick={() => window.location.href = '/admin/merchants'}
-          >
-            Manage Merchants
-          </button>
-          <button 
-            style={styles.actionButton}
-            onClick={() => window.location.href = '/admin/master-data/categories'}
-          >
-            Manage Categories
-          </button>
-        </div>
+      <div className="mt-6 grid gap-3 sm:grid-cols-3">
+        {[['/admin/media-approvals', 'Duyệt hình ảnh'], ['/admin/financials', 'Tài chính'], ['/admin/users', 'Người dùng']].map(([href, label]) => (
+          <Link key={href} href={href} className="flex min-h-14 items-center justify-between rounded-card border border-line bg-surface px-4 font-semibold shadow-card hover:border-brand-500">{label}<span aria-hidden="true">→</span></Link>
+        ))}
       </div>
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    maxWidth: '1200px',
-  },
-  title: {
-    fontSize: '28px',
-    fontWeight: 600,
-    marginBottom: '30px',
-    color: '#111827',
-  },
-  statsGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
-    gap: '20px',
-    marginBottom: '40px',
-  },
-  statCard: {
-    backgroundColor: 'white',
-    padding: '20px',
-    borderRadius: '8px',
-    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '15px',
-  },
-  statIcon: {
-    fontSize: '32px',
-    backgroundColor: '#dbeafe',
-    padding: '15px',
-    borderRadius: '8px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  statContent: {
-    flex: 1,
-  },
-  statLabel: {
-    fontSize: '14px',
-    color: '#6b7280',
-    margin: '0 0 8px 0',
-    fontWeight: 500,
-  },
-  statValue: {
-    fontSize: '32px',
-    fontWeight: 'bold',
-    color: '#111827',
-    margin: 0,
-  },
-  quickActions: {
-    backgroundColor: 'white',
-    padding: '25px',
-    borderRadius: '8px',
-    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
-  },
-  sectionTitle: {
-    fontSize: '18px',
-    fontWeight: 600,
-    marginBottom: '15px',
-    color: '#111827',
-  },
-  actionButtons: {
-    display: 'flex',
-    gap: '12px',
-    flexWrap: 'wrap',
-  },
-  actionButton: {
-    padding: '10px 20px',
-    backgroundColor: '#3b82f6',
-    color: 'white',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontSize: '14px',
-    fontWeight: 500,
-    transition: 'background-color 0.2s',
-  },
-  loadingContainer: {
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    height: '300px',
-  },
-  spinner: {
-    fontSize: '18px',
-    color: '#6b7280',
-  },
-  errorContainer: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '15px',
-    padding: '40px',
-  },
-  errorText: {
-    color: '#dc2626',
-    fontSize: '16px',
-  },
-  retryButton: {
-    padding: '10px 20px',
-    backgroundColor: '#3b82f6',
-    color: 'white',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-  },
-};

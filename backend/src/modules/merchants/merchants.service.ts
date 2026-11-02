@@ -12,6 +12,7 @@ import {
 } from './merchants.dto';
 import { UserProfilesService } from '../user-profiles/user-profiles.service';
 import { AuditActor, AuditService } from '../audit/audit.service';
+import { PUBLIC_MERCHANT_COLUMNS } from '../public-catalog/public-catalog.projection';
 
 @Injectable()
 export class MerchantsService {
@@ -163,7 +164,7 @@ export class MerchantsService {
   async findVerified() {
     const { data, error } = await this.supabase.getClient()
       .from('merchant_details')
-      .select('*')
+      .select(PUBLIC_MERCHANT_COLUMNS.join(','))
       .eq('merchant_verified', true)
       .order('merchant_registered_date', { ascending: false });
 
@@ -171,7 +172,10 @@ export class MerchantsService {
       throw new Error(`Failed to fetch verified merchants: ${error.message}`);
     }
 
-    return (data || []).map((row) => this.withoutPassword(row));
+    // Anonymous route: allow-listed columns only (owner identity, commission and legacy_* fields are never public).
+    return ((data || []) as unknown as Record<string, unknown>[])
+      .filter((row) => row.legacy_is_banned !== true)
+      .map(({ legacy_is_banned: _banned, ...safe }) => safe);
   }
 
   async create(actor: { id: string; email?: string }, dto: CreateMerchantDto) {

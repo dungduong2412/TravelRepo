@@ -24,18 +24,30 @@ export const MERCHANT_TO_CORRECT = { code: 'UAT-M-D5-20261016-A4722D', id: '9ea9
 
 export type Role = 'admin' | 'merchant' | 'partner' | 'outsider';
 
+/**
+ * E2E_TARGET=candidate runs the suite against a LOCAL build of the release candidate (web on loopback :3011, API on loopback :3100).
+ * Data is still the hosted UAT Supabase project (read-only for the new public-catalog specs); the Supabase host stays hard-pinned.
+ * The default (hosted) mode is unchanged and still refuses every host except the approved UAT hosts.
+ */
+export const CANDIDATE = process.env.E2E_TARGET === 'candidate';
+
 export function config() {
   loadEnvFile();
-  const web = process.env.E2E_WEB_URL || `https://${UAT.web}`;
-  const api = process.env.E2E_API_URL || `https://${UAT.api}`;
+  const web = process.env.E2E_WEB_URL || (CANDIDATE ? 'http://localhost:3011' : `https://${UAT.web}`);
+  const api = process.env.E2E_API_URL || (CANDIDATE ? 'http://localhost:3100' : `https://${UAT.api}`);
   const supabase = process.env.E2E_SUPABASE_URL || `https://${UAT.supabaseRef}.supabase.co`;
-  // Explicit UAT-only target verification: exact hosts, https only.
-  const must = (u: string, host: string) => { const p = new URL(u); if (p.protocol !== 'https:' || p.hostname !== host) throw new Error(`REFUSING TO RUN: ${p.hostname} is not the approved UAT host ${host}`); return p.origin; };
+  const must = (u: string, host: string, loopbackOk = false) => {
+    const p = new URL(u);
+    if (loopbackOk && CANDIDATE && p.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(p.hostname)) return p.origin;
+    if (p.protocol !== 'https:' || p.hostname !== host) throw new Error(`REFUSING TO RUN: ${p.hostname} is not the approved UAT host ${host}`);
+    return p.origin;
+  };
   return {
-    web: must(web, UAT.web),
-    api: must(api, UAT.api),
+    web: must(web, UAT.web, true),
+    api: must(api, UAT.api, true),
     supabase: must(supabase, `${UAT.supabaseRef}.supabase.co`),
     anonKey: process.env.E2E_SUPABASE_ANON_KEY || '',
+    candidate: CANDIDATE,
   };
 }
 

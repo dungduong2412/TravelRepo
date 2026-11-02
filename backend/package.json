@@ -14,7 +14,9 @@
     "test:media-lifecycle": "node -r ts-node/register/transpile-only scripts/test-media-lifecycle.ts",
     "test:d13a-contracts": "node -r ts-node/register/transpile-only scripts/test-d13a-contracts.ts",
     "test:invitation-guards": "node -r ts-node/register/transpile-only scripts/test-invitation-claim-guards.ts",
-    "test:approve-unclaimed": "node -r ts-node/register/transpile-only scripts/test-approve-unclaimed.ts"
+    "test:approve-unclaimed": "node -r ts-node/register/transpile-only scripts/test-approve-unclaimed.ts",
+    "test:public-catalog": "node -r ts-node/register/transpile-only scripts/test-public-catalog.ts",
+    "test:anonymous-privacy": "node -r ts-node/register/transpile-only scripts/test-anonymous-privacy.ts"
   },
   "dependencies": {
     "@nestjs/common": "^12.1.3",

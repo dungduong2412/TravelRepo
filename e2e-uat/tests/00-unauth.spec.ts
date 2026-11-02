@@ -9,7 +9,7 @@ const check = (id: string, title: string, ok: boolean, detail = '') => { record(
 
 test.describe('@unauth UAT target and anonymous boundaries', () => {
   test('U01 target is the approved UAT stack', async () => {
-    check('U01', 'hosts pinned to UAT', c.web.includes('vno-web-uat') && c.api.includes('vno-api-uat') && c.supabase.includes('hsezyogfxgnkpweoqqny'), `${new URL(c.web).host} ${new URL(c.api).host}`);
+    check('U01', 'hosts pinned to UAT (or loopback candidate)', (c.candidate || (c.web.includes('vno-web-uat') && c.api.includes('vno-api-uat'))) && c.supabase.includes('hsezyogfxgnkpweoqqny'), `${new URL(c.web).host} ${new URL(c.api).host}`);
   });
   test('U02 API and web are healthy', async ({ request }) => {
     const h = await request.get(`${c.api}/health`); const l = await request.get(`${c.web}/login`);

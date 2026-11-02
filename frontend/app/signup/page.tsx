@@ -1,189 +1,30 @@
 "use client";
 
-import { useRouter } from 'next/navigation';
+import { Store, Users } from 'lucide-react';
+import { Wordmark, Card } from '../../components/ui/Brand';
+import { ButtonLink } from '../../components/ui/Button';
+
+const OPTIONS = [
+  { href: '/merchant/onboard', Icon: Store, title: 'Nhà cung cấp', text: 'Dành cho khách sạn, nhà hàng, tour và các dịch vụ khác.', points: ['Đăng ký dịch vụ của bạn', 'Quản lý đơn hàng', 'Thiết lập chiết khấu cho khách hàng'], cta: 'Đăng ký làm nhà cung cấp' },
+  { href: '/collaborator/onboard', Icon: Users, title: 'Đối tác', text: 'Dành cho hướng dẫn viên và người giới thiệu dịch vụ.', points: ['Giới thiệu dịch vụ cho khách', 'Nhận hoa hồng', 'Quản lý mã QR cá nhân'], cta: 'Đăng ký làm đối tác' },
+];
 
 export default function SignupPage() {
-  const router = useRouter();
-
   return (
-    <main style={styles.container}>
-      <div style={styles.content}>
-        <div style={styles.header}>
-          <h1 style={styles.title}>Chào Mừng Đến Với VN01</h1>
-          <p style={styles.subtitle}>
-            Chọn loại tài khoản bạn muốn tạo
-          </p>
-        </div>
-
-        <div style={styles.cardGrid}>
-          {/* Merchant Card */}
-          <div style={styles.card}>
-            <div style={styles.cardIcon}>🏪</div>
-            <h2 style={styles.cardTitle}>Nhà Cung Cấp</h2>
-            <p style={styles.cardDescription}>
-              Dành cho khách sạn, nhà hàng, tour du lịch và các dịch vụ khác
-            </p>
-            <ul style={styles.featureList}>
-              <li>Đăng ký dịch vụ của bạn</li>
-              <li>Quản lý đơn hàng</li>
-              <li>Nhận thanh toán trực tiếp</li>
-              <li>Thiết lập chiết khấu cho khách hàng</li>
-            </ul>
-            <button
-              onClick={() => router.push('/merchant/onboard')}
-              style={styles.primaryButton}
-            >
-              Đăng Ký Làm Nhà Cung Cấp
-            </button>
-          </div>
-
-          {/* Collaborator Card */}
-          <div style={styles.card}>
-            <div style={styles.cardIcon}>👥</div>
-            <h2 style={styles.cardTitle}>Đối Tác</h2>
-            <p style={styles.cardDescription}>
-              Dành cho hướng dẫn viên du lịch, người giới thiệu dịch vụ
-            </p>
-            <ul style={styles.featureList}>
-              <li>Giới thiệu dịch vụ cho khách hàng</li>
-              <li>Nhận hoa hồng hấp dẫn</li>
-              <li>Theo dõi doanh thu của bạn</li>
-              <li>Quản lý mã QR cá nhân</li>
-            </ul>
-            <button
-              onClick={() => router.push('/collaborator/onboard')}
-              style={styles.primaryButton}
-            >
-              Đăng Ký Làm Đối Tác
-            </button>
-          </div>
-        </div>
-
-        <div style={styles.footer}>
-          <p style={styles.loginText}>
-            Đã có tài khoản?{' '}
-            <a
-              href="/login"
-              style={styles.loginLink}
-            >
-              Đăng nhập ngay
-            </a>
-          </p>
-          <button
-            onClick={() => router.push('/')}
-            style={styles.backButton}
-          >
-            ← Quay về trang chủ
-          </button>
-        </div>
+    <main className="mx-auto max-w-3xl px-4 py-10">
+      <div className="text-center"><Wordmark className="text-3xl" /><h1 className="mt-4 text-2xl font-bold tracking-tight">Tạo tài khoản VNO</h1><p className="mt-1 text-sm text-ink-muted">Chọn loại tài khoản bạn muốn đăng ký. Email của bạn sẽ được xác nhận trước khi tiếp tục.</p></div>
+      <div className="mt-8 grid gap-4 sm:grid-cols-2">
+        {OPTIONS.map(({ href, Icon, title, text, points, cta }) => (
+          <Card key={href} className="flex flex-col p-5">
+            <span className="grid size-11 place-items-center rounded-full bg-brand-50 text-brand-700"><Icon aria-hidden="true" className="size-5" /></span>
+            <h2 className="mt-3 text-lg font-semibold">{title}</h2>
+            <p className="mt-1 text-sm text-ink-muted">{text}</p>
+            <ul className="mt-3 flex-1 list-disc space-y-1 pl-5 text-sm">{points.map((p) => <li key={p}>{p}</li>)}</ul>
+            <ButtonLink href={href} className="mt-5 w-full">{cta}</ButtonLink>
+          </Card>
+        ))}
       </div>
+      <p className="mt-6 text-center text-sm text-ink-muted">Đã có tài khoản? <a href="/login" className="font-semibold text-brand-700 underline">Đăng nhập</a></p>
     </main>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    minHeight: '100vh',
-    backgroundColor: '#f9fafb',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: '20px',
-    fontFamily: 'system-ui, sans-serif',
-  },
-  content: {
-    maxWidth: '1000px',
-    width: '100%',
-  },
-  header: {
-    textAlign: 'center',
-    marginBottom: '48px',
-  },
-  title: {
-    fontSize: '36px',
-    fontWeight: 700,
-    color: '#111827',
-    marginBottom: '12px',
-  },
-  subtitle: {
-    fontSize: '18px',
-    color: '#6b7280',
-  },
-  cardGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-    gap: '32px',
-    marginBottom: '48px',
-  },
-  card: {
-    backgroundColor: 'white',
-    borderRadius: '16px',
-    padding: '32px',
-    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    transition: 'transform 0.2s, box-shadow 0.2s',
-    cursor: 'default',
-  },
-  cardIcon: {
-    fontSize: '64px',
-    marginBottom: '20px',
-  },
-  cardTitle: {
-    fontSize: '24px',
-    fontWeight: 600,
-    color: '#111827',
-    marginBottom: '12px',
-    textAlign: 'center',
-  },
-  cardDescription: {
-    fontSize: '15px',
-    color: '#6b7280',
-    textAlign: 'center',
-    marginBottom: '24px',
-    lineHeight: 1.6,
-  },
-  featureList: {
-    listStyle: 'none',
-    padding: 0,
-    margin: '0 0 32px 0',
-    width: '100%',
-  },
-  primaryButton: {
-    width: '100%',
-    padding: '14px 24px',
-    backgroundColor: '#FF385C',
-    color: 'white',
-    border: 'none',
-    borderRadius: '8px',
-    fontSize: '16px',
-    fontWeight: 600,
-    cursor: 'pointer',
-    transition: 'background-color 0.2s',
-  },
-  footer: {
-    textAlign: 'center',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '16px',
-    alignItems: 'center',
-  },
-  loginText: {
-    fontSize: '16px',
-    color: '#6b7280',
-  },
-  loginLink: {
-    color: '#FF385C',
-    textDecoration: 'none',
-    fontWeight: 600,
-  },
-  backButton: {
-    background: 'none',
-    border: 'none',
-    color: '#6b7280',
-    fontSize: '14px',
-    cursor: 'pointer',
-    textDecoration: 'underline',
-  },
-};

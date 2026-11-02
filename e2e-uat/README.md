@@ -44,3 +44,9 @@ Fresh pair for a new first-time run: create two Auto-Confirmed Auth users (no pr
 - **No cleanup of financial records**: simulation transactions and audit rows are intentionally kept.
 - **Email-dependent scenarios** (self-service recovery, emailed invitations) are out of scope until SMTP exists.
 - The onboarding spec (O01–O09) needs a fresh pair and has not yet executed against hosted UAT; the hosted operational and regression specs have.
+
+## Candidate mode and the experience suite (2026-11-02)
+
+`E2E_TARGET=candidate npm run test:e2e:candidate` runs `00-unauth` + `40-experience` against a LOCAL build of the release candidate (web `http://localhost:3011`, API `http://localhost:3100`) while the data stays the hosted UAT project (Supabase host still hard-pinned). Use it to test a build before it is deployed. The default hosted mode is unchanged.
+
+`40-experience` is read-only for discovery (actual migrated records) and signs in only with the dedicated synthetic identities; X10 uses the verified paired fixture Partner from `.auth/fixture.json`. It sends no e-mail. Real-mailbox signup/reset/invitation scenarios are not part of it until a UAT SMTP is approved.

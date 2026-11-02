@@ -14,6 +14,7 @@ import { MediaModule } from './modules/media/media.module';
 import { HealthController } from './health.controller';
 import { AuditModule } from './modules/audit/audit.module';
 import { InvitationsModule } from './modules/invitations/invitations.module';
+import { PublicCatalogModule } from './modules/public-catalog/public-catalog.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { InvitationsModule } from './modules/invitations/invitations.module';
     MediaModule,
     AuditModule,
     InvitationsModule,
+    PublicCatalogModule,
   ],
   controllers: [HealthController],
 })

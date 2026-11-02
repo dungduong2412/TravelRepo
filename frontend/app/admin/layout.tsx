@@ -3,267 +3,82 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import { BarChart3, Database, Image as ImageIcon, LogOut, Menu, Store, UserCog, Users, Wallet, X } from 'lucide-react';
 import { api } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
+import { Wordmark } from '../../components/ui/Brand';
+import { Spinner } from '../../components/ui/Feedback';
+
+const MENU = [
+  { name: 'Dashboard', path: '/admin/dashboard', Icon: BarChart3 },
+  { name: 'Partners', path: '/admin/collaborators', Icon: Users },
+  { name: 'Merchants', path: '/admin/merchants', Icon: Store },
+  { name: 'Media Approvals', path: '/admin/media-approvals', Icon: ImageIcon },
+  { name: 'User Management', path: '/admin/users', Icon: UserCog },
+  { name: 'Financials', path: '/admin/financials', Icon: Wallet },
+  { name: 'Master Data', path: '/admin/master-data', Icon: Database, subItems: [
+    { name: 'Organization', path: '/admin/master-data/organization' },
+    { name: 'Categories', path: '/admin/master-data/categories' },
+  ] },
+];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isAuthorized, setIsAuthorized] = useState(false);
+  const [open, setOpen] = useState(false);
 
   useEffect(() => {
     let active = true;
-
-    async function verifyAdmin() {
-      try {
-        const profile = await api.get('/user-profiles/me');
-        if (!active) return;
-
-        if (profile?.role !== 'admin' || profile?.user_profiles_status !== 'active') {
-          router.replace('/login');
-          return;
-        }
-
-        setIsAuthorized(true);
-      } catch {
-        if (active) router.replace('/login');
-      }
-    }
-
-    verifyAdmin();
-    return () => {
-      active = false;
-    };
+    api.get('/user-profiles/me').then((profile) => {
+      if (!active) return;
+      if (profile?.role !== 'admin' || profile?.user_profiles_status !== 'active') router.replace('/login');
+      else setIsAuthorized(true);
+    }).catch(() => { if (active) router.replace('/login'); });
+    return () => { active = false; };
   }, [router]);
 
+  useEffect(() => setOpen(false), [pathname]);
+
   async function handleLogout() {
-    try {
-      await supabase.auth.signOut();
-    } finally {
-      ['user', 'userRole', 'accessToken', 'refreshToken', 'merchant', 'collaborator']
-        .forEach((key) => localStorage.removeItem(key));
+    try { await supabase.auth.signOut(); } finally {
+      ['user', 'userRole', 'accessToken', 'refreshToken', 'merchant', 'collaborator'].forEach((key) => localStorage.removeItem(key));
       router.replace('/login');
     }
   }
 
-  const menuItems = [
-    { name: 'Dashboard', path: '/admin/dashboard', icon: '📊' },
-    { name: 'Partners', path: '/admin/collaborators', icon: '👥' },
-    { name: 'Merchants', path: '/admin/merchants', icon: '🏪' },
-    { name: 'Media Approvals', path: '/admin/media-approvals', icon: '🖼️' },
-    { name: 'User Management', path: '/admin/users', icon: '👤' },
-    { name: 'Financials', path: '/admin/financials', icon: '💰' },
-    { name: 'Master Data', path: '/admin/master-data', icon: '📋', 
-      subItems: [
-        { name: 'Organization', path: '/admin/master-data/organization' },
-        { name: 'Categories', path: '/admin/master-data/categories' }
-      ]
-    },
-  ];
+  if (!isAuthorized) return <div className="grid min-h-screen place-items-center bg-canvas"><Spinner label="Đang kiểm tra quyền quản trị…" /></div>;
 
-  if (!isAuthorized) {
-    return (
-      <div style={styles.authLoading}>
-        Checking admin access...
-      </div>
-    );
-  }
+  const active = (path: string) => pathname === path || pathname.startsWith(`${path}/`);
+  const nav = (
+    <nav aria-label="Điều hướng quản trị" className="flex-1 space-y-1 overflow-y-auto p-3">
+      {MENU.map(({ name, path, Icon, subItems }) => (
+        <div key={path}>
+          <Link href={path} aria-current={pathname === path ? 'page' : undefined}
+            className={`flex min-h-11 items-center gap-3 rounded-control px-3 text-sm font-semibold ${active(path) ? 'bg-brand-50 text-brand-700' : 'text-ink hover:bg-canvas'}`}>
+            <Icon aria-hidden="true" className="size-5" />{name}
+          </Link>
+          {subItems && active(path) && <div className="ml-8 mt-1 space-y-1">{subItems.map((s) => (
+            <Link key={s.path} href={s.path} className={`flex min-h-10 items-center rounded-control px-3 text-sm ${pathname === s.path ? 'font-semibold text-brand-700' : 'text-ink-muted hover:text-ink'}`}>{s.name}</Link>
+          ))}</div>}
+        </div>
+      ))}
+    </nav>
+  );
+  const logout = <button type="button" onClick={handleLogout} className="m-3 flex min-h-11 items-center justify-center gap-2 rounded-control border border-line px-4 text-sm font-semibold hover:bg-canvas"><LogOut aria-hidden="true" className="size-4" />Logout</button>;
 
   return (
-    <div style={styles.container}>
-      {/* Sidebar */}
-      <aside style={{
-        ...styles.sidebar,
-        width: isSidebarOpen ? '250px' : '60px',
-      }}>
-        <div style={styles.sidebarHeader}>
-          <h2 style={{
-            ...styles.logo,
-            display: isSidebarOpen ? 'block' : 'none',
-          }}>
-            Admin Panel
-          </h2>
-          <button
-            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            style={styles.toggleButton}
-          >
-            {isSidebarOpen ? '◀' : '▶'}
-          </button>
-        </div>
-
-        <nav style={styles.nav}>
-          {menuItems.map((item) => (
-            <div key={item.path}>
-              <Link
-                href={item.path}
-                style={{
-                  ...styles.menuItem,
-                  backgroundColor: pathname === item.path ? '#3b82f6' : 'transparent',
-                  justifyContent: isSidebarOpen ? 'flex-start' : 'center',
-                }}
-              >
-                <span style={styles.icon}>{item.icon}</span>
-                {isSidebarOpen && <span>{item.name}</span>}
-              </Link>
-              
-              {/* Submenu items */}
-              {item.subItems && isSidebarOpen && (
-                <div style={styles.subMenu}>
-                  {item.subItems.map((subItem) => (
-                    <Link
-                      key={subItem.path}
-                      href={subItem.path}
-                      style={{
-                        ...styles.subMenuItem,
-                        backgroundColor: pathname === subItem.path ? '#2563eb' : 'transparent',
-                      }}
-                    >
-                      {subItem.name}
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
-        </nav>
+    <div className="min-h-screen bg-canvas text-ink">
+      <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-line bg-surface px-4 lg:hidden">
+        <div className="flex items-center gap-2"><Wordmark className="text-xl" /><span className="text-xs text-ink-muted">Admin</span></div>
+        <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} aria-label="Menu quản trị" className="grid size-11 place-items-center rounded-control border border-line">{open ? <X className="size-5" /> : <Menu className="size-5" />}</button>
+      </header>
+      {open && <div className="fixed inset-x-0 top-14 z-30 flex max-h-[80vh] flex-col border-b border-line bg-surface shadow-pop lg:hidden">{nav}{logout}</div>}
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-line bg-surface lg:flex">
+        <div className="flex items-center gap-2 border-b border-line p-5"><Wordmark /><span className="text-xs font-semibold text-ink-muted">Admin</span></div>
+        {nav}{logout}
       </aside>
-
-      {/* Main content */}
-      <main style={styles.main}>
-        <header style={styles.header}>
-          <h1 style={styles.pageTitle}>
-            {menuItems.find(item => item.path === pathname)?.name || 'Admin'}
-          </h1>
-          <div style={styles.userInfo}>
-            <span>Admin User</span>
-            <button onClick={handleLogout} style={styles.logoutButton}>Logout</button>
-          </div>
-        </header>
-
-        <div style={styles.content}>
-          {children}
-        </div>
-      </main>
+      <main className="min-w-0 p-4 sm:p-6 lg:ml-64 lg:p-8">{children}</main>
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    display: 'flex',
-    height: '100vh',
-    backgroundColor: '#f3f4f6',
-  },
-  sidebar: {
-    backgroundColor: '#1f2937',
-    color: 'white',
-    transition: 'width 0.3s ease',
-    overflowX: 'hidden',
-    display: 'flex',
-    flexDirection: 'column',
-  },
-  sidebarHeader: {
-    padding: '20px',
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderBottom: '1px solid #374151',
-  },
-  logo: {
-    fontSize: '20px',
-    fontWeight: 'bold',
-    margin: 0,
-  },
-  toggleButton: {
-    background: 'transparent',
-    border: 'none',
-    color: 'white',
-    fontSize: '18px',
-    cursor: 'pointer',
-    padding: '5px',
-  },
-  nav: {
-    flex: 1,
-    padding: '20px 0',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '5px',
-  },
-  menuItem: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    padding: '12px 20px',
-    color: 'white',
-    textDecoration: 'none',
-    transition: 'background-color 0.2s',
-    cursor: 'pointer',
-    borderRadius: '0',
-  },
-  icon: {
-    fontSize: '20px',
-  },
-  subMenu: {
-    display: 'flex',
-    flexDirection: 'column',
-    marginLeft: '20px',
-  },
-  subMenuItem: {
-    display: 'block',
-    padding: '8px 20px',
-    color: '#d1d5db',
-    textDecoration: 'none',
-    fontSize: '14px',
-    transition: 'background-color 0.2s',
-    borderRadius: '4px',
-    margin: '2px 10px',
-  },
-  main: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    overflow: 'hidden',
-  },
-  header: {
-    backgroundColor: 'white',
-    padding: '20px 30px',
-    borderBottom: '1px solid #e5e7eb',
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  pageTitle: {
-    fontSize: '24px',
-    fontWeight: 600,
-    margin: 0,
-    color: '#111827',
-  },
-  userInfo: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '15px',
-  },
-  logoutButton: {
-    padding: '8px 16px',
-    backgroundColor: '#ef4444',
-    color: 'white',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontSize: '14px',
-  },
-  content: {
-    flex: 1,
-    padding: '30px',
-    overflow: 'auto',
-  },
-  authLoading: {
-    minHeight: '100vh',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    color: '#4b5563',
-    backgroundColor: '#f3f4f6',
-  },
-};

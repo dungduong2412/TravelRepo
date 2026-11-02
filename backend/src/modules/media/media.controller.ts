@@ -14,7 +14,6 @@ import {
   UploadMediaSchema,
 } from './media.dto';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
-import { Public } from '../../common/decorators/public.decorator';
 
 @Controller('media')
 @UseGuards(JwtGuard)
@@ -47,8 +46,9 @@ export class MediaController {
     return this.service.cancel(actor.id, id);
   }
 
+  // Authenticated only: the feed carries original filenames, storage paths and Partner images. Anonymous Merchant images are served
+  // through the allow-listed GET /public/media/:id instead.
   @Get('approved/:ownerType/:ownerId')
-  @Public()
   approved(
     @Param('ownerType') ownerType: string,
     @Param('ownerId') ownerId: string,
