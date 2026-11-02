@@ -1,7 +1,8 @@
 // Contract tests for the Auth "Send Email" hook gateway: signature, allowlist, migrated-identity block, fail-closed behaviour.
 // No network, no SMTP: the sender and the identity lookup are injected.
 import assert from 'node:assert/strict';
-import { createHmac } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
+import { composeMessage } from '../src/modules/auth-email-hook/email-policy';
 import { AuthEmailHookService } from '../src/modules/auth-email-hook/auth-email-hook.service';
 import { actionLink, decide, isAllowlisted, parseAllowlist, verifyHookSignature } from '../src/modules/auth-email-hook/email-policy';
 
@@ -14,9 +15,17 @@ const sign = (id: string, ts: number, body: string) => `v1,${createHmac('sha256'
 const body = (email: string, id = 'u-1', type = 'recovery') => Buffer.from(JSON.stringify({ user: { id, email }, email_data: { token_hash: 'th', email_action_type: type, redirect_to: 'https://web/reset-password' } }));
 const hdr = (b: Buffer, ts = Math.floor(Date.now() / 1000)) => ({ 'webhook-id': 'msg_1', 'webhook-timestamp': String(ts), 'webhook-signature': sign('msg_1', ts, b.toString()) });
 
-function service(opts: { migrated?: string[]; lookupFails?: boolean } = {}) {
+// Mirrors the REAL schema: legacy_identity_map(auth_user_id, source_email_sha256, legacy_user_id); the gateway filters with .or("auth_user_id.eq.<id>,source_email_sha256.eq.<hash>").
+const sha = (e: string) => createHash('sha256').update(e.trim().toLowerCase()).digest('hex');
+function service(opts: { migrated?: string[]; migratedEmails?: string[]; lookupFails?: boolean } = {}) {
   const sent: any[] = [];
-  const supabase: any = { getClient: () => ({ from: () => ({ select: () => ({ in: async (_c: string, ids: string[]) => (opts.lookupFails ? { data: null, error: { message: 'down' } } : { data: (opts.migrated || []).filter((m) => ids.includes(m)).map((m) => ({ legacy_user_id: m })), error: null }) }) }) }) };
+  const rows = [...(opts.migrated || []).map((id) => ({ auth_user_id: id, source_email_sha256: 'x' })), ...(opts.migratedEmails || []).map((e) => ({ auth_user_id: 'other', source_email_sha256: sha(e) }))];
+  const run = async (filter: string) => {
+    if (opts.lookupFails) return { data: null, error: { message: 'down' } };
+    const conds = filter.split(',').map((c) => c.split('.eq.'));
+    return { data: rows.filter((r: any) => conds.some(([col, val]) => r[col] === val)).slice(0, 1), error: null };
+  };
+  const supabase: any = { getClient: () => ({ from: (t: string) => { assert.equal(t, 'legacy_identity_map'); return { select: (c: string) => { assert.equal(c, 'auth_user_id'); return { or: (f: string) => ({ limit: () => run(f) }) }; } }; } }) };
   const s = new AuthEmailHookService(supabase); s.useSender(async (m) => { sent.push(m); });
   return { s, sent };
 }
@@ -54,6 +63,20 @@ const env = (o: Record<string, string | undefined>) => { for (const [k, v] of Ob
   });
 
   env({ AUTH_EMAIL_HOOK_SECRET: SECRET, AUTH_EMAIL_ALLOWLIST: 'tester+uat1@example.com', AUTH_EMAIL_DELIVERY: 'enabled', SMTP_FROM: 'VNO UAT <uat@example.org>', SUPABASE_URL: 'https://p.supabase.co' });
+  await t('templates: bilingual VI+EN, branded, mobile-safe, escaped, with plain-text and fallback link for every Auth action type', () => {
+    for (const type of ['signup', 'invite', 'magiclink', 'recovery', 'email_change', 'reauthentication', 'unknown_future_type']) {
+      const m = composeMessage('https://p.supabase.co', { user: { id: 'u', email: 'a@x.com' }, email_data: { token: '123456', token_hash: 'th"><script>', email_action_type: type, redirect_to: 'https://web/reset?x=1&y=2' } }, '[UAT] ');
+      assert.ok(m.subject.startsWith('[UAT] ') && m.subject.includes(' / '), `${type}: bilingual subject`);
+      assert.ok(/lang="vi"/.test(m.html) && /name="viewport"/.test(m.html) && /Vietnam Number One/.test(m.html), `${type}: html shell`);
+      assert.ok(!m.html.includes('<script>'), `${type}: user-controlled values are escaped`);
+      assert.ok(/UAT/.test(m.html) && /UAT/.test(m.text), `${type}: UAT notice`);
+      if (type === 'reauthentication') { assert.ok(m.html.includes('123456') && m.text.includes('123456') && !m.html.includes('/auth/v1/verify')); continue; }
+      assert.ok(/padding:12px 24px/.test(m.html) && /line-height:24px/.test(m.html), `${type}: >=48px tap target (24px line + 2x12px padding)`);
+      assert.equal((m.html.match(/href="https:\/\/p\.supabase\.co\/auth\/v1\/verify\?token=/g) || []).length, 2, `${type}: button + visible fallback link`);
+      assert.ok(m.text.includes('https://p.supabase.co/auth/v1/verify?token='), `${type}: plain-text link`);
+      assert.ok(m.html.includes('&amp;redirect_to=') && !m.html.includes('&redirect_to='), `${type}: ampersands escaped in href`);
+    }
+  });
   await t('gateway sends to an allowlisted recipient (subject carries the [UAT] marker)', async () => {
     const { s, sent } = service(); const b = body('tester+uat1@example.com');
     assert.deepEqual(await s.handle(hdr(b), b), { sent: true });
@@ -64,7 +87,11 @@ const env = (o: Record<string, string | undefined>) => { for (const [k, v] of Ob
     assert.deepEqual(await s.handle(hdr(b), b), { suppressed: true }); assert.equal(sent.length, 0);
   });
   await t('gateway never mails a migrated V1 identity, even if its address is on the allowlist', async () => {
-    const { s, sent } = service({ migrated: ['v1-user'] }); const b = body('tester+uat1@example.com', 'v1-user');
+    const { s, sent } = service({ migrated: ['11111111-1111-4111-8111-111111111111'] }); const b = body('tester+uat1@example.com', '11111111-1111-4111-8111-111111111111');
+    assert.deepEqual(await s.handle(hdr(b), b), { suppressed: true }); assert.equal(sent.length, 0);
+  });
+  await t('gateway blocks a migrated address by e-mail hash even when the Auth id is not in the map', async () => {
+    const { s, sent } = service({ migratedEmails: ['Tester+uat1@Example.com'] }); const b = body('tester+uat1@example.com', '22222222-2222-4222-8222-222222222222');
     assert.deepEqual(await s.handle(hdr(b), b), { suppressed: true }); assert.equal(sent.length, 0);
   });
   await t('gateway fails closed when the migrated-identity lookup is unavailable', async () => {
