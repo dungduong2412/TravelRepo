@@ -14,6 +14,7 @@ import { MediaModule } from './modules/media/media.module';
 import { HealthController } from './health.controller';
 import { AuditModule } from './modules/audit/audit.module';
 import { InvitationsModule } from './modules/invitations/invitations.module';
+import { AuthEmailHookModule } from './modules/auth-email-hook/auth-email-hook.module';
 import { PublicCatalogModule } from './modules/public-catalog/public-catalog.module';
 
 @Module({
@@ -36,6 +37,7 @@ import { PublicCatalogModule } from './modules/public-catalog/public-catalog.mod
     AuditModule,
     InvitationsModule,
     PublicCatalogModule,
+    AuthEmailHookModule,
   ],
   controllers: [HealthController],
 })

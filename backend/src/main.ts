@@ -7,7 +7,8 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   // Increase body size limit for base64 images (10MB images = ~13MB base64)
-  app.use(express.json({ limit: '15mb' }));
+  // rawBody is kept for Standard Webhooks signature verification (Auth e-mail hook).
+  app.use(express.json({ limit: '15mb', verify: (req: any, _res, buf) => { req.rawBody = buf; } }));
   app.use(express.urlencoded({ limit: '15mb', extended: true }));
 
   const corsOrigins = (process.env.CORS_ORIGINS || 'http://localhost:3001')
