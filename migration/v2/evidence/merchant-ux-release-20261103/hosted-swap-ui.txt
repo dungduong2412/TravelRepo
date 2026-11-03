@@ -1,0 +1,6 @@
+PASS S1 before: 4 images, one effective main (fallback = original)
+PASS S2 Set as main moves the badge to the target; still 4 images, one main
+PASS S3 after a full reload the selection persists
+PASS S4 restore: original image is the main again
+PASS S5 restore persists after reload; 4 images intact
+5/5 passed

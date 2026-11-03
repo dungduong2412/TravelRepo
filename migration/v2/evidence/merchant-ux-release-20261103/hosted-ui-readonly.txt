@@ -1,0 +1,22 @@
+PASS U1-desktop list rows are two lines (1 name line + 1 meta line), no row overflow — rows=25
+PASS U2-desktop no horizontal page scroll
+PASS U3-desktop migrated merchant thumbnails render (decoded) — {"total":20,"decoded":20}
+PASS U4-desktop-Saigonesetourist row opens read-only View Mode (no edit form)
+PASS U5-desktop-Saigonesetourist all migrated gallery images visible — {"n":4,"ok":4}
+PASS U6-desktop-Saigonesetourist exactly one Main badge
+PASS U4-desktop-STARANISE row opens read-only View Mode (no edit form)
+PASS U5-desktop-STARANISE all migrated gallery images visible — {"n":4,"ok":4}
+PASS U6-desktop-STARANISE exactly one Main badge
+PASS U1-mobile list rows are two lines (1 name line + 1 meta line), no row overflow — rows=25
+PASS U2-mobile no horizontal page scroll
+PASS U3-mobile migrated merchant thumbnails render (decoded) — {"total":13,"decoded":13}
+PASS U4-mobile-Saigonesetourist row opens read-only View Mode (no edit form)
+PASS U5-mobile-Saigonesetourist all migrated gallery images visible — {"n":4,"ok":4}
+PASS U6-mobile-Saigonesetourist exactly one Main badge
+PASS U4-mobile-STARANISE row opens read-only View Mode (no edit form)
+PASS U5-mobile-STARANISE all migrated gallery images visible — {"n":4,"ok":4}
+PASS U6-mobile-STARANISE exactly one Main badge
+PASS U7 landing cards render decoded photos that are the API main image — cards=12 withPhoto=12 mismatched=0
+PASS U8 public details hero is the same image as the card
+
+20/20 passed

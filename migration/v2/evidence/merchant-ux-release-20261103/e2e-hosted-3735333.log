@@ -1,0 +1,163 @@
+
+Running 38 tests using 1 worker
+
+[1/38] tests/00-unauth.spec.ts:11:7 › @unauth UAT target and anonymous boundaries › U01 target is the approved UAT stack
+tests/00-unauth.spec.ts:11:7 › @unauth UAT target and anonymous boundaries › U01 target is the approved UAT stack
+[PASS] U01 hosts pinned to UAT (or loopback candidate) — vno-web-uat.up.railway.app vno-api-uat.up.railway.app
+
+[2/38] tests/00-unauth.spec.ts:14:7 › @unauth UAT target and anonymous boundaries › U02 API and web are healthy
+tests/00-unauth.spec.ts:14:7 › @unauth UAT target and anonymous boundaries › U02 API and web are healthy
+[PASS] U02 api /health and web /login return 200 — 200/200
+
+[3/38] tests/00-unauth.spec.ts:18:7 › @unauth UAT target and anonymous boundaries › U03 email verification stays enforced (read-only Auth settings)
+tests/00-unauth.spec.ts:18:7 › @unauth UAT target and anonymous boundaries › U03 email verification stays enforced (read-only Auth settings)
+[PASS] U03 mailer_autoconfirm is false; no anonymous/phone/social sign-in — autoconfirm=false
+
+[4/38] tests/00-unauth.spec.ts:23:7 › @unauth UAT target and anonymous boundaries › U04 admin and financial endpoints reject anonymous callers
+tests/00-unauth.spec.ts:23:7 › @unauth UAT target and anonymous boundaries › U04 admin and financial endpoints reject anonymous callers
+[PASS] U04 12 protected endpoints return 401 anonymously
+
+[5/38] tests/00-unauth.spec.ts:36:7 › @unauth UAT target and anonymous boundaries › U05 public QR token route does not leak profile data for an unknown token
+tests/00-unauth.spec.ts:36:7 › @unauth UAT target and anonymous boundaries › U05 public QR token route does not leak profile data for an unknown token
+[PASS] U05 unknown QR token → no data, no PII — HTTP 403
+
+[6/38] tests/00-unauth.spec.ts:41:7 › @unauth UAT target and anonymous boundaries › U06 protected pages redirect anonymous browsers to login
+tests/00-unauth.spec.ts:41:7 › @unauth UAT target and anonymous boundaries › U06 protected pages redirect anonymous browsers to login
+[PASS] U06 admin/merchant/partner dashboards require login
+
+[7/38] tests/00-unauth.spec.ts:48:7 › @unauth UAT target and anonymous boundaries › U07 claim page renders and does not claim without a session
+tests/00-unauth.spec.ts:48:7 › @unauth UAT target and anonymous boundaries › U07 claim page renders and does not claim without a session
+[PASS] U07 claim page without session asks for sign-in
+
+[8/38] tests/20-regression.spec.ts:16:7 › Authorization and financial regression (needs credentials) › R01 non-admin roles are refused on Admin-only operations
+tests/20-regression.spec.ts:16:7 › Authorization and financial regression (needs credentials) › R01 non-admin roles are refused on Admin-only operations
+[PASS] R01 merchant/partner get 403 on admin endpoints
+
+[9/38] tests/20-regression.spec.ts:27:7 › Authorization and financial regression (needs credentials) › R02 tenant isolation: owners see only their own transactions
+tests/20-regression.spec.ts:27:7 › Authorization and financial regression (needs credentials) › R02 tenant isolation: owners see only their own transactions
+[PASS] R02 merchant sees 1 merchant id, partner sees 1 partner id, both ≤ admin total — 1/1
+
+[10/38] tests/20-regression.spec.ts:37:7 › Authorization and financial regression (needs credentials) › R03 unauthorized financial mutation is rejected
+tests/20-regression.spec.ts:37:7 › Authorization and financial regression (needs credentials) › R03 unauthorized financial mutation is rejected
+[PASS] R03 partner cannot create tx; 5-decimal amount rejected; merchant cannot change rates — 403/400/403
+
+[11/38] tests/20-regression.spec.ts:46:7 › Authorization and financial regression (needs credentials) › R04 unknown partner code cannot produce a transaction
+tests/20-regression.spec.ts:46:7 › Authorization and financial regression (needs credentials) › R04 unknown partner code cannot produce a transaction
+[PASS] R04 unknown code refused — 400
+
+[12/38] tests/20-regression.spec.ts:52:7 › Authorization and financial regression (needs credentials) › R05 no real payment or settlement is reachable
+tests/20-regression.spec.ts:52:7 › Authorization and financial regression (needs credentials) › R05 no real payment or settlement is reachable
+[PASS] R05 no simulation record is PAID/settled — 0 paid
+
+[13/38] tests/20-regression.spec.ts:58:7 › Authorization and financial regression (needs credentials) › R06 pending/rejected images are not exposed through the public/approved feed
+tests/20-regression.spec.ts:58:7 › Authorization and financial regression (needs credentials) › R06 pending/rejected images are not exposed through the public/approved feed
+[PASS] R06 0 pending requests checked; none leaked to another role — 0 leaks
+
+[14/38] tests/20-regression.spec.ts:69:7 › Authorization and financial regression (needs credentials) › R07 invitation endpoints: expiry, revocation and replay are enforced
+tests/20-regression.spec.ts:69:7 › Authorization and financial regression (needs credentials) › R07 invitation endpoints: expiry, revocation and replay are enforced
+[PASS] R07 claim with no invitation / bad type / bad id is refused (no 5xx) — 400/400/400
+
+[15/38] tests/20-regression.spec.ts:76:7 › Authorization and financial regression (needs credentials) › R08 approving a Merchant that no owner has claimed → controlled 409, no state change
+tests/20-regression.spec.ts:76:7 › Authorization and financial regression (needs credentials) › R08 approving a Merchant that no owner has claimed → controlled 409, no state change
+[PASS] R08 409 OWNER_NOT_CLAIMED; status still pending; no approval audit — HTTP 409 OWNER_NOT_CLAIMED
+
+[16/38] tests/20-regression.spec.ts:87:7 › Authorization and financial regression (needs credentials) › R09 outsider (verified, no application membership) is refused everywhere
+tests/20-regression.spec.ts:87:7 › Authorization and financial regression (needs credentials) › R09 outsider (verified, no application membership) is refused everywhere
+[PASS] R09 outsider gets 403 on owner, financial and admin endpoints
+
+[17/38] tests/40-experience.spec.ts:29:7 › @experience public discovery (read-only, real migrated data) › X01 home shows real Merchants, not demo listings
+tests/40-experience.spec.ts:29:7 › @experience public discovery (read-only, real migrated data) › X01 home shows real Merchants, not demo listings
+[PASS] X01 real listings; no demo titles; count equals API — shown=144 api=144 demo=0
+
+[PASS] X01b first 8 listing cards show decoded approved photos
+
+[18/38] tests/40-experience.spec.ts:43:7 › @experience public discovery (read-only, real migrated data) › X01c "Xem thêm" reaches every listing (no silently truncated catalog)
+tests/40-experience.spec.ts:43:7 › @experience public discovery (read-only, real migrated data) › X01c "Xem thêm" reaches every listing (no silently truncated catalog)
+[PASS] X01c load-more shows all listings exactly once — shown=144 unique=144 total=144
+
+[19/38] tests/40-experience.spec.ts:57:7 › @experience public discovery (read-only, real migrated data) › X02 Restaurant category lists the real restaurants (was 0)
+tests/40-experience.spec.ts:57:7 › @experience public discovery (read-only, real migrated data) › X02 Restaurant category lists the real restaurants (was 0)
+[PASS] X02 Restaurant filter shows the API/DB count — shown=36 expected=36
+
+[PASS] X02b category filter survives refresh (deep link)
+
+[20/38] tests/40-experience.spec.ts:74:7 › @experience public discovery (read-only, real migrated data) › X03 every category chip has listings; no raw Font Awesome text
+tests/40-experience.spec.ts:74:7 › @experience public discovery (read-only, real migrated data) › X03 every category chip has listings; no raw Font Awesome text
+[PASS] X03 no "fa-" strings rendered; every offered category is non-empty — 18 categories
+
+[21/38] tests/40-experience.spec.ts:82:7 › @experience public discovery (read-only, real migrated data) › X04 card opens a real detail page that survives refresh / deep link
+tests/40-experience.spec.ts:82:7 › @experience public discovery (read-only, real migrated data) › X04 card opens a real detail page that survives refresh / deep link
+[PASS] X04 card → detail; reload and fresh-tab deep link render the same Merchant — 1-39
+
+[22/38] tests/40-experience.spec.ts:99:7 › @experience public discovery (read-only, real migrated data) › X05 detail content: gallery, offer, contact, unavailable-vs-error
+tests/40-experience.spec.ts:99:7 › @experience public discovery (read-only, real migrated data) › X05 detail content: gallery, offer, contact, unavailable-vs-error
+[PASS] X05 gallery decodes, offer + contact present, missing image/id use the "unavailable" states — rich=e5642c14 bare=n/a
+
+[23/38] tests/40-experience.spec.ts:116:7 › @experience public discovery (read-only, real migrated data) › X06 technical failure is shown as an error with retry, empty result as empty
+tests/40-experience.spec.ts:116:7 › @experience public discovery (read-only, real migrated data) › X06 technical failure is shown as an error with retry, empty result as empty
+[PASS] X06 503 → error+retry (never "no listings"); 200/[] → empty state
+
+[24/38] tests/40-experience.spec.ts:130:7 › @experience public discovery (read-only, real migrated data) › X07 approved image identity: public feed bytes equal the governed admin object (SHA-256) and the stored size
+tests/40-experience.spec.ts:130:7 › @experience public discovery (read-only, real migrated data) › X07 approved image identity: public feed bytes equal the governed admin object (SHA-256) and the stored size
+[PASS] X07b card rendition is a small derivative — 70 KB
+
+[PASS] X07 12 listing hero images (size=original) are byte-identical (SHA-256) to the approved object and match the stored size
+
+[25/38] tests/40-experience.spec.ts:150:7 › @experience public discovery (read-only, real migrated data) › X08 anonymous API exposes no owner PII, commission or legacy fields
+tests/40-experience.spec.ts:150:7 › @experience public discovery (read-only, real migrated data) › X08 anonymous API exposes no owner PII, commission or legacy fields
+[PASS] X08 public catalog + /merchants/verified contain no owner_*, legacy_*, commission, tax code or e-mail address
+
+[26/38] tests/40-experience.spec.ts:160:7 › @experience public discovery (read-only, real migrated data) › X09 mobile layout: no horizontal scroll, readable cards, filter bar scrolls
+tests/40-experience.spec.ts:160:7 › @experience public discovery (read-only, real migrated data) › X09 mobile layout: no horizontal scroll, readable cards, filter bar scrolls
+[PASS] X09 home + detail at 390px: no horizontal overflow, single-column card ≥ 340px — overflow=0/0 card=358
+
+[27/38] tests/40-experience.spec.ts:178:7 › @experience Partner QR › X10 Partner Home shows the QR; enlarge, download and scan resolve to the right Partner
+tests/40-experience.spec.ts:178:7 › @experience Partner QR › X10 Partner Home shows the QR; enlarge, download and scan resolve to the right Partner
+[PASS] X10 QR image decodes to the canonical Partner code; download = VNO-QR-<code>.png; merchant scan → same Partner, no financial action — code=COL-D600ABC8D5C2C528 decoded=COL-D600ABC8D5C2C528 scan=201
+
+[28/38] tests/40-experience.spec.ts:207:7 › @experience Partner QR › X11 remapped legacy QR cases: only the new unique codes resolve; the shared V1 codes resolve to nobody
+tests/40-experience.spec.ts:207:7 › @experience Partner QR › X11 remapped legacy QR cases: only the new unique codes resolve; the shared V1 codes resolve to nobody
+[PASS] X11 4 remapped Partners resolve by their own new code (distinct ids); C2500228/C2500240 refuse (public 403, merchant scan 404)
+
+[29/38] tests/40-experience.spec.ts:220:7 › @experience Partner QR › X12 cross-account: a Partner cannot read another Partner's QR; anonymous cannot read any
+tests/40-experience.spec.ts:220:7 › @experience Partner QR › X12 cross-account: a Partner cannot read another Partner's QR; anonymous cannot read any
+[PASS] X12 anonymous 401; a Merchant token has no Partner QR (403/404) — 401/403
+
+[30/38] tests/40-experience.spec.ts:229:7 › @experience authentication and onboarding screens (no e-mail is sent) › X13 login: wrong password is explained; correct credentials route by role
+tests/40-experience.spec.ts:229:7 › @experience authentication and onboarding screens (no e-mail is sent) › X13 login: wrong password is explained; correct credentials route by role
+[PASS] X13 invalid login → friendly alert; admin/merchant/partner land on their own workspace — admin:ok merchant:ok partner:ok
+
+[31/38] tests/40-experience.spec.ts:244:7 › @experience authentication and onboarding screens (no e-mail is sent) › X14 role isolation in the browser
+tests/40-experience.spec.ts:244:7 › @experience authentication and onboarding screens (no e-mail is sent) › X14 role isolation in the browser
+[PASS] X14 a Merchant cannot open Admin/Partner workspaces and a Partner cannot open Merchant/Admin ones — /merchant/dashboard /collaborator/dashboard
+
+[32/38] tests/40-experience.spec.ts:254:7 › @experience authentication and onboarding screens (no e-mail is sent) › X15 forgot / reset / claim states: invalid and expired links give a retry path
+tests/40-experience.spec.ts:254:7 › @experience authentication and onboarding screens (no e-mail is sent) › X15 forgot / reset / claim states: invalid and expired links give a retry path
+[PASS] X15 reset-password (none/expired link), claim (expired link / no session) and forgot-password confirmation render with next steps
+
+[33/38] tests/40-experience.spec.ts:273:7 › @experience authentication and onboarding screens (no e-mail is sent) › X16 pending-approval account sees its status, not a blank spinner
+tests/40-experience.spec.ts:273:7 › @experience authentication and onboarding screens (no e-mail is sent) › X16 pending-approval account sees its status, not a blank spinner
+[PASS] X16 bound but unapproved account shows "Hồ sơ đang chờ duyệt" with logout
+
+[34/38] tests/40-experience.spec.ts:287:9 › @experience workspaces render (desktop + mobile) › X17 admin workspace renders on desktop and 390px without overflow
+tests/40-experience.spec.ts:287:9 › @experience workspaces render (desktop + mobile) › X17 admin workspace renders on desktop and 390px without overflow
+[PASS] X17-admin admin workspace: desktop + mobile, no overflow
+
+[35/38] tests/40-experience.spec.ts:287:9 › @experience workspaces render (desktop + mobile) › X17 merchant workspace renders on desktop and 390px without overflow
+tests/40-experience.spec.ts:287:9 › @experience workspaces render (desktop + mobile) › X17 merchant workspace renders on desktop and 390px without overflow
+[PASS] X17-merchant merchant workspace: desktop + mobile, no overflow
+
+[36/38] tests/40-experience.spec.ts:287:9 › @experience workspaces render (desktop + mobile) › X17 partner workspace renders on desktop and 390px without overflow
+tests/40-experience.spec.ts:287:9 › @experience workspaces render (desktop + mobile) › X17 partner workspace renders on desktop and 390px without overflow
+[PASS] X17-partner partner workspace: desktop + mobile, no overflow
+
+[37/38] tests/40-experience.spec.ts:324:7 › @experience claim: first password (stubbed Auth + API, writes nothing) › X18 invited identity without a password cannot finish onboarding without setting one
+tests/40-experience.spec.ts:324:7 › @experience claim: first password (stubbed Auth + API, writes nothing) › X18 invited identity without a password cannot finish onboarding without setting one
+[PASS] X18 invited account must set a password before leaving the claim flow (no skip; weak/mismatch refused client-side)
+
+[38/38] tests/40-experience.spec.ts:343:7 › @experience claim: first password (stubbed Auth + API, writes nothing) › X18b established account (no invitation marker) may skip; unverified or invalid session never sees the password form
+tests/40-experience.spec.ts:343:7 › @experience claim: first password (stubbed Auth + API, writes nothing) › X18b established account (no invitation marker) may skip; unverified or invalid session never sees the password form
+[PASS] X18b optional skip only for established accounts; unverified/invalid sessions get login or forgot-password, never the form
+
+  38 passed (2.2m)
+exit=0

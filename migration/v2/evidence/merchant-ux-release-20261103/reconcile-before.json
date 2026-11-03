@@ -1,0 +1,314 @@
+{
+  "generated_utc": "2026-11-03T03:07:32.395Z",
+  "snapshot": "snapshot-5",
+  "pass": 20,
+  "fail": 0,
+  "not_run": 2,
+  "fingerprints": {
+    "merchant_details": {
+      "rows": 159,
+      "sha256": "87b55c90cbc7219af8b78f9266ad44cbc87f71f1d6db00de15316fd136914a58"
+    },
+    "collaborators": {
+      "rows": 331,
+      "sha256": "966d5b0cb24aceb6e2eeaf0fb794dc70a8ec24c401d86907ce66b027f11a2962"
+    },
+    "referral_transactions": {
+      "rows": 114,
+      "sha256": "ce6090c0f0f791afea9ae0f950c5641fd4dffa49c96b12bda72846d7bfc0665d"
+    },
+    "merchant_category_links": {
+      "rows": 265,
+      "sha256": "488f0b5b2cad68442dbb7dc4a6559bb1ffa868025ed6b06e242e7cc063d89127"
+    },
+    "categories": {
+      "rows": 22,
+      "sha256": "331c8555af46cb848357427c4d868b31d57a4651b062f12b0569a836d0eaae5f"
+    },
+    "merchant_update_requests": {
+      "rows": 28,
+      "sha256": "2798c7a3055c0131b3fb5808f9763ee4dab465d5f587ba853e11acf7ab031b07"
+    },
+    "media_assets": {
+      "rows": 616,
+      "sha256": "4117a070b98b5f09362dec97d47a8dd11ddbae0b2937239b8bad152726cc08d7"
+    },
+    "user_profiles": {
+      "rows": 473,
+      "sha256": "601c2eda0a0e4fb0ffdab55c30105dd373065e8ccfbf6d063a63280ac8e2f907"
+    },
+    "legacy_identity_map": {
+      "rows": 451,
+      "sha256": "4889f0c1779d92316527f834bd9642d0591b29a46eeaf7816cacf1c8a7f639a6"
+    },
+    "legacy_import_conflicts": {
+      "rows": 8,
+      "sha256": "ae95f38eb54c93e7dc16ca26ab7fd7cac02f7ee257ae43603479d673987d25b7"
+    },
+    "legacy_migration_batches": {
+      "rows": 1,
+      "sha256": "4d3158fe1914cb4e81a09d251645b19c617f3683a8ecb84b339b35c997b96c6c"
+    },
+    "legacy_migration_runs": {
+      "rows": 109,
+      "sha256": "544df293b73da5f07bf195a9e03e068d80982e649678fc3e7245c2bd8da2b3fc"
+    },
+    "legacy_source_records": {
+      "rows": 14260,
+      "sha256": "ada4e45ab081ea907eae09913ccf52a1973feca388570851ed0979d1839a9f96"
+    },
+    "auth_users": {
+      "rows": 475,
+      "sha256": "883404b4df34133f75a6704356e7fdd5fe5483e6ebf7e5b41b34125c83c30c2d"
+    }
+  },
+  "checks": [
+    {
+      "id": "C1",
+      "name": "record counts: 140 merchants, 312 partners, 105 transactions, 28 update requests",
+      "status": "PASS",
+      "evidence": {
+        "merchants": [
+          140,
+          140
+        ],
+        "partners": [
+          312,
+          312
+        ],
+        "transactions": [
+          105,
+          105
+        ],
+        "update_requests": [
+          28,
+          28
+        ]
+      }
+    },
+    {
+      "id": "C2",
+      "name": "pre-existing synthetic rows are still present (19 merchants, 19 partners, 9 transactions)",
+      "status": "PASS",
+      "evidence": {
+        "merchants_total": 159,
+        "partners_total": 331,
+        "tx_total": 114
+      }
+    },
+    {
+      "id": "C3",
+      "name": "financial totals equal V1 (total, discount, commission)",
+      "status": "PASS",
+      "evidence": {
+        "source": [
+          "380705162.0000",
+          "24377880.8000",
+          "27766958.1000"
+        ],
+        "target": [
+          "380705162.0000",
+          "24377880.8000",
+          "27766958.1000"
+        ]
+      }
+    },
+    {
+      "id": "C4",
+      "name": "every one of the 105 transactions matches V1 amount-for-amount and status (no recalculation)",
+      "status": "PASS",
+      "evidence": {
+        "mismatched": 0
+      }
+    },
+    {
+      "id": "C5",
+      "name": "per-status counts and totals equal V1",
+      "status": "PASS",
+      "evidence": {
+        "0": [
+          2,
+          "3433354.0000"
+        ],
+        "1": [
+          37,
+          "277271808.0000"
+        ],
+        "2": [
+          2,
+          "1000000.0000"
+        ],
+        "3": [
+          64,
+          "99000000.0000"
+        ]
+      }
+    },
+    {
+      "id": "C6",
+      "name": "D3: exactly the 3 approved orphan transactions preserved with merchant link NULL, legacy ID and display name kept, amounts verbatim",
+      "status": "PASS",
+      "evidence": {
+        "orphans": 3,
+        "value": "5266708.0000"
+      }
+    },
+    {
+      "id": "C7",
+      "name": "D3: auditable mapping rows exist (approved, with evidence and policy)",
+      "status": "PASS",
+      "evidence": {
+        "rows": 3,
+        "reasons": [
+          "orphan_merchant_not_in_tenant_scope_at_snapshot_3",
+          "orphan_merchant_deleted_in_v1_after_snapshot_3"
+        ]
+      }
+    },
+    {
+      "id": "C8",
+      "name": "D4: none of the 9 deleted V1 merchants (or their soft-deleted owner users) exist in the target",
+      "status": "PASS",
+      "evidence": {
+        "merchants": 0,
+        "identities_profiles": 0,
+        "update_requests": 0,
+        "excluded": 9
+      }
+    },
+    {
+      "id": "C9",
+      "name": "transaction -> merchant / partner relationships exact (105 checked)",
+      "status": "PASS",
+      "evidence": {
+        "mismatched": 0
+      }
+    },
+    {
+      "id": "C10",
+      "name": "merchant category links reconcile",
+      "status": "PASS",
+      "evidence": {
+        "source": 265,
+        "target_for_v1_merchants": 265
+      }
+    },
+    {
+      "id": "C11",
+      "name": "every migratable V1 user has an Auth identity map, a profile with the right role and the right merchant/partner link",
+      "status": "PASS",
+      "evidence": {
+        "migratable": 451,
+        "identity_maps": 451,
+        "profile_mismatches": 0
+      }
+    },
+    {
+      "id": "C12",
+      "name": "Auth: 24 pre-existing users untouched; V1 users added",
+      "status": "PASS",
+      "evidence": {
+        "pre_existing_changed": 0,
+        "total": 475,
+        "expected": 475
+      }
+    },
+    {
+      "id": "C13",
+      "name": "Auth: imported users carry legacy ID, role and password_reset_required; passwords are random and unknown",
+      "status": "PASS",
+      "evidence": {
+        "imported_users": 451
+      }
+    },
+    {
+      "id": "C14",
+      "name": "source-to-target isolation: all pre-existing synthetic merchants, partners and transactions are byte-identical to the pre-import backup",
+      "status": "PASS",
+      "evidence": {
+        "differing": []
+      }
+    },
+    {
+      "id": "C15",
+      "name": "pre-existing 14 media assets unchanged",
+      "status": "PASS",
+      "evidence": {
+        "rows": 14
+      }
+    },
+    {
+      "id": "C16",
+      "name": "D5: V1 merchants have no rate-guard violations; the 11 deferred synthetic violations are untouched",
+      "status": "PASS",
+      "evidence": {
+        "v1_violations": 0,
+        "synthetic_violations": 11
+      }
+    },
+    {
+      "id": "C17",
+      "name": "D5 (read-only form): the fractional-rate guard trigger exists and is enabled on public.merchant_details",
+      "status": "NOT_RUN",
+      "evidence": {
+        "reason": "no database credentials (--no-db)"
+      }
+    },
+    {
+      "id": "C18",
+      "name": "all foreign keys resolve after import",
+      "status": "NOT_RUN",
+      "evidence": {
+        "reason": "no database credentials (--no-db)"
+      }
+    },
+    {
+      "id": "C19",
+      "name": "all media: 602 assets, bytes retrieved from Storage match V1 SHA-256 and size",
+      "status": "PASS",
+      "evidence": {
+        "files": 602,
+        "assets": 602,
+        "bytes": 406739732,
+        "mismatched": 0
+      }
+    },
+    {
+      "id": "C20",
+      "name": "media ownership: every merchant-linked asset points to an imported V1 merchant; partner-linked assets to imported partners",
+      "status": "PASS",
+      "evidence": {
+        "merchant_assets": 405,
+        "partner_assets": 87,
+        "merchants_with_media": 111
+      }
+    },
+    {
+      "id": "C22",
+      "name": "D6: duplicate code M2500119 kept by the earliest Merchant, the other mapped to M2500119-DUP-d669a426; all other V1 codes verbatim; codes unique; original code and both source IDs preserved in legacy_import_conflicts",
+      "status": "PASS",
+      "evidence": {
+        "kept": "M2500119",
+        "remapped": "M2500119-DUP-d669a426",
+        "replacement_length": 21,
+        "conflict_rows": 1,
+        "other_codes_verbatim": true,
+        "codes_unique": true
+      }
+    },
+    {
+      "id": "C23",
+      "name": "E1: the 4 Partners that shared V1 codes C2500228/C2500240 hold unique <code>-DUP-<id8> codes, all other V1 Partner codes are verbatim, all Partner codes are unique, original code and sibling ids are preserved in legacy_import_conflicts",
+      "status": "PASS",
+      "evidence": {
+        "pinned_error": null,
+        "remapped_codes_in_place": true,
+        "other_codes_verbatim": true,
+        "partner_codes_unique": true,
+        "partners_total": 331,
+        "audit_rows": 4,
+        "audit_ok": true
+      }
+    }
+  ]
+}

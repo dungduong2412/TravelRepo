@@ -1,0 +1,806 @@
+{
+ "published_merchants": 144,
+ "merchants_with_changed_secondary_order": 47,
+ "all_same_image_set": true,
+ "all_same_first_image": true,
+ "card_images_identical": true,
+ "merchants": [
+  {
+   "merchant_id": "b993a21c-0e79-f18c-6601-3a198d588731",
+   "before": [
+    "6ab10501-0cce-394c-6420-3a198d588527",
+    "26712ead-b713-a4e1-791f-3a198d5885ad",
+    "cbce4d9b-adc3-b7c2-2d97-3a198d588614",
+    "ecc0f993-2670-a698-c476-3a198d5886ab"
+   ],
+   "after": [
+    "6ab10501-0cce-394c-6420-3a198d588527",
+    "26712ead-b713-a4e1-791f-3a198d5885ad",
+    "ecc0f993-2670-a698-c476-3a198d5886ab",
+    "cbce4d9b-adc3-b7c2-2d97-3a198d588614"
+   ],
+   "same_image_set": true,
+   "same_first_image": true
+  },
+  {
+   "merchant_id": "59974e3b-c064-690e-c2c7-3a1b2350c311",
+   "before": [
+    "5a42d81e-7f41-de8c-4f23-3a1b2350bddd",
+    "9f86c2a1-3203-1259-0ddf-3a1b2350c25b",
+    "3c68d9b1-9b0a-75a6-891f-3a1b2350c13b",
+    "1f3aa419-7754-d06b-7297-3a1b2350bf9a"
+   ],
+   "after": [
+    "5a42d81e-7f41-de8c-4f23-3a1b2350bddd",
+    "9f86c2a1-3203-1259-0ddf-3a1b2350c25b",
+    "1f3aa419-7754-d06b-7297-3a1b2350bf9a",
+    "3c68d9b1-9b0a-75a6-891f-3a1b2350c13b"
+   ],
+   "same_image_set": true,
+   "same_first_image": true
+  },
+  {
+   "merchant_id": "d2f78b17-f581-6068-eb5c-3a195a6b1d76",
+   "before": [
+    "0bb4b4cc-2e06-548e-d4bc-3a195a6b1ad5",
+    "172a6d4c-863b-f3af-4e94-3a195a6b1bf5",
+    "f88e986c-1217-d76b-8752-3a195a6b1b63",
+    "967244f8-5b13-e97a-7761-3a195a6b1c50"
+   ],
+   "after": [
+    "0bb4b4cc-2e06-548e-d4bc-3a195a6b1ad5",
+    "172a6d4c-863b-f3af-4e94-3a195a6b1bf5",
+    "967244f8-5b13-e97a-7761-3a195a6b1c50",
+    "f88e986c-1217-d76b-8752-3a195a6b1b63"
+   ],
+   "same_image_set": true,
+   "same_first_image": true
+  },
+  {
+   "merchant_id": "4894efd0-6ed9-cf70-6494-3a229a8a6464",
+   "before": [
+    "e14a598d-78f9-b8f4-4ce0-3a229a8a6299",
+    "163da433-9b3c-8f22-9c7f-3a229a8a641a",
+    "644d023f-697b-7eae-1610-3a229a8a6395",
+    "76292156-12b7-fa17-e2d6-3a229a8a6327"
+   ],
+   "after": [
+    "e14a598d-78f9-b8f4-4ce0-3a229a8a6299",
+    "76292156-12b7-fa17-e2d6-3a229a8a6327",
+    "644d023f-697b-7eae-1610-3a229a8a6395",
+    "163da433-9b3c-8f22-9c7f-3a229a8a641a"
+   ],
+   "same_image_set": true,
+   "same_first_image": true
+  },
+  {
+   "merchant_id": "5c4b647f-22b0-1855-b0da-3a1978dd48f0",
+   "before": [
+    "2543ec44-5ef7-6759-6163-3a1978dd4744",
+    "994dd79f-ad8a-2391-3f18-3a1978dd482e",
+    "7deb70f6-df73-595e-9691-3a1978dd47b2",
+    "f5dd7f2e-0356-743e-fde5-3a1978dd48a9"
+   ],
+   "after": [
+    "2543ec44-5ef7-6759-6163-3a1978dd4744",
+    "7deb70f6-df73-595e-9691-3a1978dd47b2",
+    "f5dd7f2e-0356-743e-fde5-3a1978dd48a9",
+    "994dd79f-ad8a-2391-3f18-3a1978dd482e"
+   ],
+   "same_image_set": true,
+   "same_first_image": true
+  },
+  {
+   "merchant_id": "68df87b8-d06b-ddb0-3f04-3a1a42118b2f",
+   "before": [
+    "25737399-912f-bc70-1a4e-3a1a4211876d",
+    "93fd6fcf-b9a6-0dfd-8c7f-3a1a4211888c",
+    "ad74b937-b6f1-f974-685f-3a1a42118949",
+    "fb4c509d-e12a-105a-f4fd-3a1a42118a00"
+   ],
+   "after": [
+    "25737399-912f-bc70-1a4e-3a1a4211876d",
+    "ad74b937-b6f1-f974-685f-3a1a42118949",
+    "93fd6fcf-b9a6-0dfd-8c7f-3a1a4211888c",
+    "fb4c509d-e12a-105a-f4fd-3a1a42118a00"
+   ],
+   "same_image_set": true,
+   "same_first_image": true
+  },
+  {
+   "merchant_id": "413e8dff-915a-56c9-5253-3a1a8f3af004",
+   "before": [
+    "890228fa-f2d8-182d-a034-3a1a8f3aef11",
+    "0a4dedf6-cc0e-a02b-e152-3a1a8f3aef98",
+    "37175a94-42ba-c176-f3f5-3a1a8f3aef56",
+    "18813269-eff3-3012-7c0d-3a1a8f3aefd4"
+   ],
+   "after": [
+    "890228fa-f2d8-182d-a034-3a1a8f3aef11",
+    "37175a94-42ba-c176-f3f5-3a1a8f3aef56",
+    "0a4dedf6-cc0e-a02b-e152-3a1a8f3aef98",
+    "18813269-eff3-3012-7c0d-3a1a8f3aefd4"
+   ],
+   "same_image_set": true,
+   "same_first_image": true
+  },
+  {
+   "merchant_id": "91cf13ee-09f6-77b9-ba4a-3a1a3229c66b",
+   "before": [
+    "1bb2f771-94b5-7aad-35de-3a1a3229c108",
+    "58433320-f22b-4c5f-85a5-3a1a3229c2df",
+    "013da757-2f96-8fcb-1ef1-3a1a3229c604",
+    "86dd7b16-2fa5-d5a4-fae5-3a1a3229c427"
+   ],
+   "after": [
+    "1bb2f771-94b5-7aad-35de-3a1a3229c108",
+    "013da757-2f96-8fcb-1ef1-3a1a3229c604",
+    "58433320-f22b-4c5f-85a5-3a1a3229c2df",
+    "86dd7b16-2fa5-d5a4-fae5-3a1a3229c427"
+   ],
+   "same_image_set": true,
+   "same_first_image": true
+  },
+  {
+   "merchant_id": "4d5e3ec8-5fb8-3897-7e25-3a1959329962",
+   "before": [
+    "bb370d39-5df9-783f-6bd9-3a1959329866",
+    "ec981fa1-d1c5-8aca-b6c0-3a195932990a",
+    "ef43483f-ad6c-fed1-2523-3a19593298a4",
+    "e8afb936-540e-cdc4-054b-3a19593298d8"
+   ],
+   "after": [
+    "bb370d39-5df9-783f-6bd9-3a1959329866",
+    "ef43483f-ad6c-fed1-2523-3a19593298a4",
+    "ec981fa1-d1c5-8aca-b6c0-3a195932990a",
+    "e8afb936-540e-cdc4-054b-3a19593298d8"
+   ],
+   "same_image_set": true,
+   "same_first_image": true
+  },
+  {
+   "merchant_id": "e598cccc-8727-5cc7-c357-3a1a5ba361f3",
+   "before": [
+    "3e122126-09e1-01fe-e52e-3a1a5ba35fc5",
+    "fbaa5432-5186-8292-3502-3a1a5ba36054",
+    "b8793aed-0b2e-126c-7f5c-3a1a5ba360c9",
+    "8b924ef7-823f-7d84-55c9-3a1a5ba36132"
+   ],
+   "after": [
+    "3e122126-09e1-01fe-e52e-3a1a5ba35fc5",
+    "8b924ef7-823f-7d84-55c9-3a1a5ba36132",
+    "fbaa5432-5186-8292-3502-3a1a5ba36054",
+    "b8793aed-0b2e-126c-7f5c-3a1a5ba360c9"
+   ],
+   "same_image_set": true,
+   "same_first_image": true
+  },
+  {
+   "merchant_id": "337ef6ac-2193-bbbb-76a4-3a205fb878b3",
+   "before": [
+    "d1f76057-5395-3727-20c6-3a205fb876ba",
+    "d3f00f22-df19-4300-bf14-3a205fb8785f",
+    "a18e5cab-7323-dab6-84b0-3a205fb877b0",
+    "3c2de00a-07bb-744d-a192-3a205fb87737"
+   ],
+   "after": [
+    "d1f76057-5395-3727-20c6-3a205fb876ba",
+    "d3f00f22-df19-4300-bf14-3a205fb8785f",
+    "3c2de00a-07bb-744d-a192-3a205fb87737",
+    "a18e5cab-7323-dab6-84b0-3a205fb877b0"
+   ],
+   "same_image_set": true,
+   "same_first_image": true
+  },
+  {
+   "merchant_id": "604e7725-ea2e-3a6a-2303-3a1940ea4b67",
+   "before": [
+    "a5b90f5e-f3bc-99ac-e4e7-3a1959f00798",
+    "652cd456-3f34-2e9e-f6e3-3a1959f00992",
+    "1c9b1fcb-b25c-08a2-183c-3a1959f008bd",
+    "bf3affd6-1144-6f8d-03dc-3a1959f00939"
+   ],
+   "after": [
+    "a5b90f5e-f3bc-99ac-e4e7-3a1959f00798",
+    "652cd456-3f34-2e9e-f6e3-3a1959f00992",
+    "bf3affd6-1144-6f8d-03dc-3a1959f00939",
+    "1c9b1fcb-b25c-08a2-183c-3a1959f008bd"
+   ],
+   "same_image_set": true,
+   "same_first_image": true
+  },
+  {
+   "merchant_id": "5e5fd5f7-5e78-d167-512e-3a1a0924fef7",
+   "before": [
+    "95fb2995-cc49-687e-de0a-3a1a0924fd1b",
+    "60d5423f-d3b0-20af-7a0e-3a1a0924fd93",
+    "a90c85ac-7cfc-e738-611e-3a1a0924fe60",
+    "d72c82ba-b014-4588-4cd5-3a1a0924fdfd"
+   ],
+   "after": [
+    "95fb2995-cc49-687e-de0a-3a1a0924fd1b",
+    "d72c82ba-b014-4588-4cd5-3a1a0924fdfd",
+    "60d5423f-d3b0-20af-7a0e-3a1a0924fd93",
+    "a90c85ac-7cfc-e738-611e-3a1a0924fe60"
+   ],
+   "same_image_set": true,
+   "same_first_image": true
+  },
+  {
+   "merchant_id": "fb613946-83e2-36ac-0572-3a1b3e5eac0b",
+   "before": [
+    "24debf59-d29a-c0e3-ba19-3a1b3e5ea765",
+    "675059c1-e085-bd93-f688-3a1b3e5ea9cd",
+    "ec7c8c3d-2603-f635-d148-3a1b3e5eaaff",
+    "fdc1014c-7a46-4bad-b125-3a1b3e5ea863"
+   ],
+   "after": [
+    "24debf59-d29a-c0e3-ba19-3a1b3e5ea765",
+    "fdc1014c-7a46-4bad-b125-3a1b3e5ea863",
+    "ec7c8c3d-2603-f635-d148-3a1b3e5eaaff",
+    "675059c1-e085-bd93-f688-3a1b3e5ea9cd"
+   ],
+   "same_image_set": true,
+   "same_first_image": true
+  },
+  {
+   "merchant_id": "b7011194-2b2b-c9e9-11d9-3a195ef21275",
+   "before": [
+    "b54b6697-aaa3-0f0a-c100-3a195ef210d9",
+    "acac8c50-6abb-6c8e-9aca-3a195ef21213",
+    "34142a19-48d0-4b76-e62e-3a195ef211b9",
+    "1ec59539-feb7-b63c-a3cf-3a195ef21144"
+   ],
+   "after": [
+    "b54b6697-aaa3-0f0a-c100-3a195ef210d9",
+    "34142a19-48d0-4b76-e62e-3a195ef211b9",
+    "1ec59539-feb7-b63c-a3cf-3a195ef21144",
+    "acac8c50-6abb-6c8e-9aca-3a195ef21213"
+   ],
+   "same_image_set": true,
+   "same_first_image": true
+  },
+  {
+   "merchant_id": "d2162ad8-3582-0156-fbda-3a1abd39e090",
+   "before": [
+    "3e92e766-b0ef-752c-2a22-3a1abd39de4e",
+    "c58aab96-22e6-3d62-b2a8-3a1abd39df47",
+    "1df4a06c-12d5-72c9-a6ec-3a1abd39dfcd",
+    "6b28c744-588c-a17c-9f6b-3a1abd39dec3"
+   ],
+   "after": [
+    "3e92e766-b0ef-752c-2a22-3a1abd39de4e",
+    "c58aab96-22e6-3d62-b2a8-3a1abd39df47",
+    "6b28c744-588c-a17c-9f6b-3a1abd39dec3",
+    "1df4a06c-12d5-72c9-a6ec-3a1abd39dfcd"
+   ],
+   "same_image_set": true,
+   "same_first_image": true
+  },
+  {
+   "merchant_id": "81ef8cf0-17b5-0c19-36f1-3a1e6badb5d5",
+   "before": [
+    "cd963dc6-1ba8-2dd8-9993-3a1e6badb3d0",
+    "fefc2847-56de-be57-fc03-3a1e6badb47f",
+    "d6d5f298-be0d-254a-0473-3a1e6badb43c",
+    "3e5ee04e-1bb4-84b4-6e4c-3a1e6badb4ce"
+   ],
+   "after": [
+    "cd963dc6-1ba8-2dd8-9993-3a1e6badb3d0",
+    "d6d5f298-be0d-254a-0473-3a1e6badb43c",
+    "fefc2847-56de-be57-fc03-3a1e6badb47f",
+    "3e5ee04e-1bb4-84b4-6e4c-3a1e6badb4ce"
+   ],
+   "same_image_set": true,
+   "same_first_image": true
+  },
+  {
+   "merchant_id": "47df1ec3-a53e-c4d9-12ed-3a1969e5db79",
+   "before": [
+    "ef909a0b-1ade-7916-d61f-3a1969e5da62",
+    "ce0a3013-4eac-e49d-8c7c-3a1969e5daf7",
+    "896c43f8-9447-d2e3-bbda-3a1969e5dab4"
+   ],
+   "after": [
+    "ef909a0b-1ade-7916-d61f-3a1969e5da62",
+    "896c43f8-9447-d2e3-bbda-3a1969e5dab4",
+    "ce0a3013-4eac-e49d-8c7c-3a1969e5daf7"
+   ],
+   "same_image_set": true,
+   "same_first_image": true
+  },
+  {
+   "merchant_id": "3742e916-5c36-2a07-8967-3a19fdfea791",
+   "before": [
+    "9294e323-ca5a-5ad7-8cc3-3a19fdfea3e4",
+    "c90ecd84-eb4d-c105-0f92-3a19fdfea52b",
+    "b787e0c5-4b0f-ab23-809a-3a19fdfea698",
+    "d07a91d2-17ac-690a-0a54-3a19fdfea5e3"
+   ],
+   "after": [
+    "9294e323-ca5a-5ad7-8cc3-3a19fdfea3e4",
+    "d07a91d2-17ac-690a-0a54-3a19fdfea5e3",
+    "c90ecd84-eb4d-c105-0f92-3a19fdfea52b",
+    "b787e0c5-4b0f-ab23-809a-3a19fdfea698"
+   ],
+   "same_image_set": true,
+   "same_first_image": true
+  },
+  {
+   "merchant_id": "68a7fb40-09ee-a66e-2eb5-3a1b2da279e2",
+   "before": [
+    "c64c8018-c814-bc54-73b7-3a1b2da2768e",
+    "c7fbcc74-139f-25ad-41bb-3a1b2da27829",
+    "3fdfbbc5-eb2b-ea2b-6b4a-3a1b2da27769",
+    "cd645041-49fc-8c0d-0d60-3a1b2da27940"
+   ],
+   "after": [
+    "c64c8018-c814-bc54-73b7-3a1b2da2768e",
+    "cd645041-49fc-8c0d-0d60-3a1b2da27940",
+    "c7fbcc74-139f-25ad-41bb-3a1b2da27829",
+    "3fdfbbc5-eb2b-ea2b-6b4a-3a1b2da27769"
+   ],
+   "same_image_set": true,
+   "same_first_image": true
+  },
+  {
+   "merchant_id": "97540aeb-d9b8-156f-8333-3a19556bfb50",
+   "before": [
+    "2e88e8f8-88b5-f7d2-c76f-3a19556bf9e4",
+    "2f7c0c1c-86b3-0fc4-dcfe-3a19556bfae5",
+    "af29f4c9-e5f1-fe7e-3211-3a19556bfa2f",
+    "f70ac468-941b-3398-af36-3a19556bfa7c"
+   ],
+   "after": [
+    "2e88e8f8-88b5-f7d2-c76f-3a19556bf9e4",
+    "2f7c0c1c-86b3-0fc4-dcfe-3a19556bfae5",
+    "f70ac468-941b-3398-af36-3a19556bfa7c",
+    "af29f4c9-e5f1-fe7e-3211-3a19556bfa2f"
+   ],
+   "same_image_set": true,
+   "same_first_image": true
+  },
+  {
+   "merchant_id": "cf88ba7a-b07c-0bdf-8329-3a1baf97ac46",
+   "before": [
+    "b567d78e-8403-0fa2-a790-3a1bafb356e0",
+    "c8b60b7b-9fcd-c806-271c-3a1bafb359a1",
+    "7009d480-332e-0d53-cdd5-3a1bafb35b2f",
+    "2fc9fd38-c600-5a4b-23f9-3a1bafb35a5f"
+   ],
+   "after": [
+    "b567d78e-8403-0fa2-a790-3a1bafb356e0",
+    "2fc9fd38-c600-5a4b-23f9-3a1bafb35a5f",
+    "c8b60b7b-9fcd-c806-271c-3a1bafb359a1",
+    "7009d480-332e-0d53-cdd5-3a1bafb35b2f"
+   ],
+   "same_image_set": true,
+   "same_first_image": true
+  },
+  {
+   "merchant_id": "edfbd006-2245-0d98-ddd4-3a19c050bac7",
+   "before": [
+    "5f04992d-444f-0c0a-95df-3a19c050b936",
+    "1f79409e-a300-a8df-8b70-3a19c050ba7a",
+    "2e60fdd2-14a4-198b-cc52-3a19c050b9c5",
+    "795bd36c-c9e9-debb-308d-3a19c050ba20"
+   ],
+   "after": [
+    "5f04992d-444f-0c0a-95df-3a19c050b936",
+    "2e60fdd2-14a4-198b-cc52-3a19c050b9c5",
+    "1f79409e-a300-a8df-8b70-3a19c050ba7a",
+    "795bd36c-c9e9-debb-308d-3a19c050ba20"
+   ],
+   "same_image_set": true,
+   "same_first_image": true
+  },
+  {
+   "merchant_id": "9cc4d997-9926-1e6f-a13c-3a2109077a65",
+   "before": [
+    "d929369d-1b58-628f-ff62-3a2109077966",
+    "0b79aa5c-6176-ff06-ccd6-3a21090779b2",
+    "624a087f-4907-3555-1639-3a2109077a34",
+    "ce1a1945-0dcc-4500-78ba-3a21090779fb"
+   ],
+   "after": [
+    "d929369d-1b58-628f-ff62-3a2109077966",
+    "ce1a1945-0dcc-4500-78ba-3a21090779fb",
+    "0b79aa5c-6176-ff06-ccd6-3a21090779b2",
+    "624a087f-4907-3555-1639-3a2109077a34"
+   ],
+   "same_image_set": true,
+   "same_first_image": true
+  },
+  {
+   "merchant_id": "0b532f3f-3cc5-19df-59ee-3a1b2634211e",
+   "before": [
+    "652f9e12-289f-f9dd-aa8a-3a1b26341e2d",
+    "e36136b5-6fa7-7fc4-4dcb-3a1b26342052",
+    "df78952e-1199-11cc-3e44-3a1b26341ecb",
+    "ffc803e5-1522-ae9b-74ae-3a1b26341f87"
+   ],
+   "after": [
+    "652f9e12-289f-f9dd-aa8a-3a1b26341e2d",
+    "ffc803e5-1522-ae9b-74ae-3a1b26341f87",
+    "df78952e-1199-11cc-3e44-3a1b26341ecb",
+    "e36136b5-6fa7-7fc4-4dcb-3a1b26342052"
+   ],
+   "same_image_set": true,
+   "same_first_image": true
+  },
+  {
+   "merchant_id": "504c92e7-29dc-a2e6-953b-3a247ab42571",
+   "before": [
+    "cdc26bc5-8fc2-4770-58b7-3a247ab42380",
+    "1be5b4c4-6dfb-f809-6603-3a247ab423ee",
+    "fc2ccbc7-fed6-fb92-9c3d-3a247ab42465",
+    "3030823e-41db-871b-dd48-3a247ab424fb"
+   ],
+   "after": [
+    "cdc26bc5-8fc2-4770-58b7-3a247ab42380",
+    "fc2ccbc7-fed6-fb92-9c3d-3a247ab42465",
+    "1be5b4c4-6dfb-f809-6603-3a247ab423ee",
+    "3030823e-41db-871b-dd48-3a247ab424fb"
+   ],
+   "same_image_set": true,
+   "same_first_image": true
+  },
+  {
+   "merchant_id": "478082ea-d7e2-32a5-be10-3a1b1f641d5d",
+   "before": [
+    "ca9c4068-b9c0-3199-8319-3a1b1fb3a38d",
+    "1c045adc-e024-1ee8-b227-3a1b1fb3a61b",
+    "f8b4b667-8e5c-14ee-0b5b-3a1b1fb3a748",
+    "2fcf824a-495b-abfc-90c4-3a1b1fb3a51b"
+   ],
+   "after": [
+    "ca9c4068-b9c0-3199-8319-3a1b1fb3a38d",
+    "2fcf824a-495b-abfc-90c4-3a1b1fb3a51b",
+    "1c045adc-e024-1ee8-b227-3a1b1fb3a61b",
+    "f8b4b667-8e5c-14ee-0b5b-3a1b1fb3a748"
+   ],
+   "same_image_set": true,
+   "same_first_image": true
+  },
+  {
+   "merchant_id": "9621869a-f5d3-e54c-5c6a-3a21dce266f5",
+   "before": [
+    "ef7cde78-116c-7d5d-fac0-3a21dce26570",
+    "5a1e8829-5402-092f-ebf3-3a21dce266b1",
+    "d4879f21-b3e0-8ce1-c9fa-3a21dce26655",
+    "6c7b31f5-52fe-748b-1d59-3a21dce265d3"
+   ],
+   "after": [
+    "ef7cde78-116c-7d5d-fac0-3a21dce26570",
+    "6c7b31f5-52fe-748b-1d59-3a21dce265d3",
+    "5a1e8829-5402-092f-ebf3-3a21dce266b1",
+    "d4879f21-b3e0-8ce1-c9fa-3a21dce26655"
+   ],
+   "same_image_set": true,
+   "same_first_image": true
+  },
+  {
+   "merchant_id": "332881ef-faac-b575-3c6a-3a1963a5f0c5",
+   "before": [
+    "dc8b4054-263d-396a-28e9-3a1963a5eef1",
+    "92b93ccb-c79f-db6f-af01-3a1963a5ef98",
+    "fd03d1df-09eb-006e-8744-3a1963a5ef6a",
+    "9af8631d-3dc8-16b6-b6d5-3a1963a5ef38"
+   ],
+   "after": [
+    "dc8b4054-263d-396a-28e9-3a1963a5eef1",
+    "fd03d1df-09eb-006e-8744-3a1963a5ef6a",
+    "9af8631d-3dc8-16b6-b6d5-3a1963a5ef38",
+    "92b93ccb-c79f-db6f-af01-3a1963a5ef98"
+   ],
+   "same_image_set": true,
+   "same_first_image": true
+  },
+  {
+   "merchant_id": "e4b1cea2-aba0-a16c-2802-3a1b5e870e7a",
+   "before": [
+    "d8188a0f-b9b0-4d17-c372-3a1b5e870bb1",
+    "833d960a-67e6-52b2-cd0c-3a1b5e870d76",
+    "2009fae8-c65a-d3e7-62db-3a1b5e870c7c",
+    "4801ffd9-8322-dcf5-1ee3-3a1b5e870d10"
+   ],
+   "after": [
+    "d8188a0f-b9b0-4d17-c372-3a1b5e870bb1",
+    "4801ffd9-8322-dcf5-1ee3-3a1b5e870d10",
+    "833d960a-67e6-52b2-cd0c-3a1b5e870d76",
+    "2009fae8-c65a-d3e7-62db-3a1b5e870c7c"
+   ],
+   "same_image_set": true,
+   "same_first_image": true
+  },
+  {
+   "merchant_id": "7eafec40-f088-86c6-2bb3-3a1d56de1542",
+   "before": [
+    "dcfeb7f7-b733-1c64-b490-3a1d56de124e",
+    "ced38f08-cf4d-928a-3484-3a1d56de1389",
+    "0061951e-9916-3dd3-f3ef-3a1d56de1427",
+    "1c0a198e-be55-1432-cc39-3a1d56de1318"
+   ],
+   "after": [
+    "dcfeb7f7-b733-1c64-b490-3a1d56de124e",
+    "1c0a198e-be55-1432-cc39-3a1d56de1318",
+    "ced38f08-cf4d-928a-3484-3a1d56de1389",
+    "0061951e-9916-3dd3-f3ef-3a1d56de1427"
+   ],
+   "same_image_set": true,
+   "same_first_image": true
+  },
+  {
+   "merchant_id": "76e18d7b-3f15-6573-5167-3a19a7370481",
+   "before": [
+    "0514e3e1-a096-28b6-4612-3a19a737026a",
+    "a4609fb5-43eb-3021-8362-3a19a737030e",
+    "8bc27122-3a08-20bc-c7e4-3a19a73702c2",
+    "2f81d6fe-fbd9-1439-89ce-3a19a73703c2"
+   ],
+   "after": [
+    "0514e3e1-a096-28b6-4612-3a19a737026a",
+    "8bc27122-3a08-20bc-c7e4-3a19a73702c2",
+    "a4609fb5-43eb-3021-8362-3a19a737030e",
+    "2f81d6fe-fbd9-1439-89ce-3a19a73703c2"
+   ],
+   "same_image_set": true,
+   "same_first_image": true
+  },
+  {
+   "merchant_id": "6e5e32b8-ed49-28fd-3e49-3a205f8ba42b",
+   "before": [
+    "fd20fca8-1bfe-fca7-9b2e-3a205f8ba2a4",
+    "5fc9e3f0-982b-e67b-0e64-3a205f8ba3b4",
+    "5620cbb8-efc4-f38c-a775-3a205f8ba30d",
+    "c36b21dc-dd16-3c76-3608-3a205f8ba353"
+   ],
+   "after": [
+    "fd20fca8-1bfe-fca7-9b2e-3a205f8ba2a4",
+    "5620cbb8-efc4-f38c-a775-3a205f8ba30d",
+    "c36b21dc-dd16-3c76-3608-3a205f8ba353",
+    "5fc9e3f0-982b-e67b-0e64-3a205f8ba3b4"
+   ],
+   "same_image_set": true,
+   "same_first_image": true
+  },
+  {
+   "merchant_id": "790c4aba-2549-0ff2-8df9-3a1968a5685a",
+   "before": [
+    "8dc8ffe6-fa56-3dbb-4783-3a1968a566ca",
+    "458036cd-ff26-a3e5-5b6b-3a1968a56807",
+    "ae264183-a0e1-ac3e-8831-3a1968a567b3",
+    "88750f02-fb31-9006-140c-3a1968a5671d"
+   ],
+   "after": [
+    "8dc8ffe6-fa56-3dbb-4783-3a1968a566ca",
+    "458036cd-ff26-a3e5-5b6b-3a1968a56807",
+    "88750f02-fb31-9006-140c-3a1968a5671d",
+    "ae264183-a0e1-ac3e-8831-3a1968a567b3"
+   ],
+   "same_image_set": true,
+   "same_first_image": true
+  },
+  {
+   "merchant_id": "62f40535-30de-230a-cca0-3a1b235aa2bb",
+   "before": [
+    "872e1e14-b1c2-8fc5-db1f-3a1b235a9bc8",
+    "b3731c61-bd59-d641-1923-3a1b235a9f52",
+    "670e1c49-457e-7fd3-3b15-3a1b235a9dca",
+    "60dcaf8e-35c8-4eee-b1ef-3a1b235aa13c"
+   ],
+   "after": [
+    "872e1e14-b1c2-8fc5-db1f-3a1b235a9bc8",
+    "670e1c49-457e-7fd3-3b15-3a1b235a9dca",
+    "b3731c61-bd59-d641-1923-3a1b235a9f52",
+    "60dcaf8e-35c8-4eee-b1ef-3a1b235aa13c"
+   ],
+   "same_image_set": true,
+   "same_first_image": true
+  },
+  {
+   "merchant_id": "52844d5d-f672-dfb7-cbe7-3a1a8f3317d3",
+   "before": [
+    "a23d7cb3-bda3-8f6c-e0f8-3a1a8f331606",
+    "f14cfc54-db51-2f43-2022-3a1a8f331743",
+    "43a95686-2a3f-b655-f55c-3a1a8f33166d",
+    "8022da35-139a-46e5-abc0-3a1a8f3316b7"
+   ],
+   "after": [
+    "a23d7cb3-bda3-8f6c-e0f8-3a1a8f331606",
+    "43a95686-2a3f-b655-f55c-3a1a8f33166d",
+    "8022da35-139a-46e5-abc0-3a1a8f3316b7",
+    "f14cfc54-db51-2f43-2022-3a1a8f331743"
+   ],
+   "same_image_set": true,
+   "same_first_image": true
+  },
+  {
+   "merchant_id": "d373c08b-0f36-3555-74db-3a1a50dcad37",
+   "before": [
+    "e5f1e0b6-9585-5080-fd3c-3a1a50dcabfd",
+    "04fc2a40-c9f1-e846-9d7b-3a1a50dcaccc",
+    "66f54ae4-603a-ae1a-3889-3a1a5187d9ba",
+    "ab1fe732-e857-5a4d-18a2-3a1a50dcac74"
+   ],
+   "after": [
+    "e5f1e0b6-9585-5080-fd3c-3a1a50dcabfd",
+    "04fc2a40-c9f1-e846-9d7b-3a1a50dcaccc",
+    "ab1fe732-e857-5a4d-18a2-3a1a50dcac74",
+    "66f54ae4-603a-ae1a-3889-3a1a5187d9ba"
+   ],
+   "same_image_set": true,
+   "same_first_image": true
+  },
+  {
+   "merchant_id": "efd709db-11cb-cb43-68eb-3a1940bd7f42",
+   "before": [
+    "11795f26-cc3a-2afd-ec0c-3a1940bd7dd0",
+    "f3149854-a821-283c-c25a-3a1940bd7edf",
+    "1dbffcb3-7239-089f-cf2c-3a1940bd7e8a",
+    "dc3bf4b8-800c-6592-1dc2-3a1940bd7e3e"
+   ],
+   "after": [
+    "11795f26-cc3a-2afd-ec0c-3a1940bd7dd0",
+    "1dbffcb3-7239-089f-cf2c-3a1940bd7e8a",
+    "f3149854-a821-283c-c25a-3a1940bd7edf",
+    "dc3bf4b8-800c-6592-1dc2-3a1940bd7e3e"
+   ],
+   "same_image_set": true,
+   "same_first_image": true
+  },
+  {
+   "merchant_id": "05413e76-e490-e888-d8b6-3a1940f8b188",
+   "before": [
+    "a22b7da9-8c3f-2677-9cd4-3a1959f742de",
+    "4b1dd062-9fd5-14f3-645f-3a1959f743c0",
+    "690863d6-e54c-fe76-7813-3a1959f7455b",
+    "9ace4856-48f1-d5ec-e52c-3a1959f7448a"
+   ],
+   "after": [
+    "a22b7da9-8c3f-2677-9cd4-3a1959f742de",
+    "4b1dd062-9fd5-14f3-645f-3a1959f743c0",
+    "9ace4856-48f1-d5ec-e52c-3a1959f7448a",
+    "690863d6-e54c-fe76-7813-3a1959f7455b"
+   ],
+   "same_image_set": true,
+   "same_first_image": true
+  },
+  {
+   "merchant_id": "4b9b50f1-8091-6f9e-7dd9-3a1940c82176",
+   "before": [
+    "94ffa2e0-1c4e-a8c2-cfbb-3a1940c82049",
+    "45f59bef-873d-fdba-43b4-3a1940c8212b",
+    "e08bdb49-d2d1-fc3d-7f91-3a1940c820bb",
+    "521cd8b8-4941-e882-3962-3a1940c8208a"
+   ],
+   "after": [
+    "94ffa2e0-1c4e-a8c2-cfbb-3a1940c82049",
+    "45f59bef-873d-fdba-43b4-3a1940c8212b",
+    "521cd8b8-4941-e882-3962-3a1940c8208a",
+    "e08bdb49-d2d1-fc3d-7f91-3a1940c820bb"
+   ],
+   "same_image_set": true,
+   "same_first_image": true
+  },
+  {
+   "merchant_id": "2114e37c-7d21-54aa-218b-3a19bc567b7c",
+   "before": [
+    "1d6c66a6-394b-3c0f-d7fa-3a19bc567a08",
+    "e197954f-2489-c9f4-3f35-3a19bc567af9",
+    "5ed71de4-3ef9-1338-c051-3a19bc567a9f",
+    "003479b5-370e-1531-e067-3a19bc567b3c"
+   ],
+   "after": [
+    "1d6c66a6-394b-3c0f-d7fa-3a19bc567a08",
+    "5ed71de4-3ef9-1338-c051-3a19bc567a9f",
+    "003479b5-370e-1531-e067-3a19bc567b3c",
+    "e197954f-2489-c9f4-3f35-3a19bc567af9"
+   ],
+   "same_image_set": true,
+   "same_first_image": true
+  },
+  {
+   "merchant_id": "66be09f5-b4a0-bf14-7499-3a19689e21cc",
+   "before": [
+    "3df4c467-342b-3e04-1a3d-3a19689e2061",
+    "938af372-1a64-6e2b-8301-3a19689e211b",
+    "32006d8d-e9e2-7a71-d1da-3a19689e20c4",
+    "b2ac66e8-6a36-e679-fa23-3a19689e2157"
+   ],
+   "after": [
+    "3df4c467-342b-3e04-1a3d-3a19689e2061",
+    "938af372-1a64-6e2b-8301-3a19689e211b",
+    "b2ac66e8-6a36-e679-fa23-3a19689e2157",
+    "32006d8d-e9e2-7a71-d1da-3a19689e20c4"
+   ],
+   "same_image_set": true,
+   "same_first_image": true
+  },
+  {
+   "merchant_id": "ab6b25f1-ab06-fe63-443b-3a1b2803daf2",
+   "before": [
+    "ef4319e0-83bc-6a23-4c6b-3a1b2803d934",
+    "993cc8fb-bfef-8143-9189-3a1b2803da51",
+    "d8fff657-0109-1bb9-f934-3a1b2803da06",
+    "a6aef992-28ac-f61c-3651-3a1b2803d9bd"
+   ],
+   "after": [
+    "ef4319e0-83bc-6a23-4c6b-3a1b2803d934",
+    "a6aef992-28ac-f61c-3651-3a1b2803d9bd",
+    "993cc8fb-bfef-8143-9189-3a1b2803da51",
+    "d8fff657-0109-1bb9-f934-3a1b2803da06"
+   ],
+   "same_image_set": true,
+   "same_first_image": true
+  },
+  {
+   "merchant_id": "221eec15-b4a3-8b37-a9d5-3a1ec024726c",
+   "before": [
+    "b1ebbe84-dcb7-e473-984e-3a1ec0246e35",
+    "e3444fa1-644f-00ab-1e7e-3a1ec0246f78",
+    "cc6069a3-5449-2f28-b5bf-3a1ec0246ef2",
+    "1389db93-bce7-05ef-73d5-3a1ec024702c"
+   ],
+   "after": [
+    "b1ebbe84-dcb7-e473-984e-3a1ec0246e35",
+    "cc6069a3-5449-2f28-b5bf-3a1ec0246ef2",
+    "e3444fa1-644f-00ab-1e7e-3a1ec0246f78",
+    "1389db93-bce7-05ef-73d5-3a1ec024702c"
+   ],
+   "same_image_set": true,
+   "same_first_image": true
+  },
+  {
+   "merchant_id": "2c8b54bd-84da-d18a-42d3-3a1940f57f50",
+   "before": [
+    "7278d889-76c0-31e4-5933-3a1940f57e55",
+    "d2161e8b-0b6b-c3fe-8bd7-3a1940f57efe",
+    "4dc1467c-98ee-fa50-8d1b-3a1940f57ec4",
+    "de735d46-03ee-d88a-c9e6-3a1940f57e87"
+   ],
+   "after": [
+    "7278d889-76c0-31e4-5933-3a1940f57e55",
+    "de735d46-03ee-d88a-c9e6-3a1940f57e87",
+    "d2161e8b-0b6b-c3fe-8bd7-3a1940f57efe",
+    "4dc1467c-98ee-fa50-8d1b-3a1940f57ec4"
+   ],
+   "same_image_set": true,
+   "same_first_image": true
+  },
+  {
+   "merchant_id": "7f3ff8fd-799f-b3f0-3474-3a19409c95b9",
+   "before": [
+    "8c2342e2-a9b4-3352-4c1e-3a1959f27506",
+    "7b100e43-ee3e-dc4d-aff5-3a1959f27619",
+    "dc788adb-f817-b4e0-1a3a-3a1959f275aa",
+    "243713d9-0431-070d-bbf8-3a1959f276b6"
+   ],
+   "after": [
+    "8c2342e2-a9b4-3352-4c1e-3a1959f27506",
+    "dc788adb-f817-b4e0-1a3a-3a1959f275aa",
+    "7b100e43-ee3e-dc4d-aff5-3a1959f27619",
+    "243713d9-0431-070d-bbf8-3a1959f276b6"
+   ],
+   "same_image_set": true,
+   "same_first_image": true
+  },
+  {
+   "merchant_id": "f96eba3c-31c4-df22-3379-3a1a93f334b1",
+   "before": [
+    "f33d547f-47dc-8509-ceda-3a1a93f33105",
+    "6bed85e1-d640-d73c-0f5d-3a1a93f333db",
+    "a0df55b6-b9c9-24d9-ff1f-3a1a93f331ef",
+    "c114c82d-c6ac-0bad-0270-3a1a93f3333b"
+   ],
+   "after": [
+    "f33d547f-47dc-8509-ceda-3a1a93f33105",
+    "c114c82d-c6ac-0bad-0270-3a1a93f3333b",
+    "6bed85e1-d640-d73c-0f5d-3a1a93f333db",
+    "a0df55b6-b9c9-24d9-ff1f-3a1a93f331ef"
+   ],
+   "same_image_set": true,
+   "same_first_image": true
+  }
+ ]
+}

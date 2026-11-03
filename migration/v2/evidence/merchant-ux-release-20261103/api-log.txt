@@ -1,0 +1,138 @@
+Starting Container
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [InstanceLoader] ConfigModule dependencies initialized +4ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [InstanceLoader] AuthModule dependencies initialized +3ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [InstanceLoader] PublicCatalogModule dependencies initialized +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [InstanceLoader] AuthEmailHookModule dependencies initialized +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [InstanceLoader] QrModule dependencies initialized +1ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [InstanceLoader] CategoriesModule dependencies initialized +1ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [InstanceLoader] OrganizationProfileModule dependencies initialized +1ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [NestFactory] Starting Nest application...
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [InstanceLoader] SupabaseModule dependencies initialized +15ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [InstanceLoader] ConfigHostModule dependencies initialized +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [InstanceLoader] AppModule dependencies initialized +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [InstanceLoader] InvitationsModule dependencies initialized +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RoutesResolver] HealthController {/health}: +17ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/health, GET} route +3ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [InstanceLoader] TransactionsModule dependencies initialized +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [InstanceLoader] CommissionsModule dependencies initialized +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [InstanceLoader] AuditModule dependencies initialized +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [InstanceLoader] UserProfilesModule dependencies initialized +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [InstanceLoader] MediaModule dependencies initialized +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [InstanceLoader] MerchantsModule dependencies initialized +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [InstanceLoader] CollaboratorsModule dependencies initialized +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RoutesResolver] AuthController {/auth}: +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/auth/login, POST} route +1ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RoutesResolver] UserProfilesController {/user-profiles}: +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/user-profiles, GET} route +1ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/user-profiles/backfill, POST} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/user-profiles/me, GET} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/user-profiles/track-login, POST} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/user-profiles/:id, GET} route +1ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/user-profiles/:id, PATCH} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/user-profiles/create, POST} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/categories/:id, PUT} route +1ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/categories/:id, DELETE} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RoutesResolver] MerchantsController {/merchants}: +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RoutesResolver] CategoriesController {/categories}: +1ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/merchants, GET} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/merchants/admin-directory, GET} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/categories, GET} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/merchants/verified, GET} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/categories/active, GET} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/categories/:id, GET} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/categories, POST} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/merchants/:id/approve, POST} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/merchants/members, GET} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/merchants/members, POST} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/merchants/admin, POST} route +1ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/merchants/:id/operational-detail, GET} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/merchants/:id/admin, PATCH} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/merchants/:id, GET} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/merchants, POST} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/merchants/:id/resubmit, POST} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/merchants/:id, PATCH} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/merchants/:id/reject, POST} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/merchants/:id, DELETE} route +1ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RoutesResolver] CollaboratorsController {/collaborators}: +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/collaborators, POST} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/collaborators/:id/resubmit, POST} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/collaborators, GET} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/collaborators/admin, POST} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/collaborators/me, GET} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/collaborators/me/qr-code, GET} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/collaborators/members, GET} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RoutesResolver] MerchantQrController {/qr}: +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/collaborators/members, POST} route +1ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/collaborators/code/:code, GET} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/collaborators/:id/approve, POST} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/collaborators/:id/reject, POST} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/collaborators/:id/admin, PATCH} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/collaborators/:id, PATCH} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/collaborators/:id, DELETE} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RoutesResolver] QrController {/c}: +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/c/:qrToken, GET} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/qr/resolve, POST} route +1ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RoutesResolver] OrganizationProfileController {/organization-profile}: +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/organization-profile, GET} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/organization-profile, POST} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/organization-profile, PUT} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/organization-profile/upsert, POST} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/organization-profile, DELETE} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RoutesResolver] TransactionsController {/transactions}: +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/transactions/me/report, GET} route +1ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/transactions/report, GET} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/transactions/me, GET} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/transactions/simulation, POST} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/transactions, GET} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RoutesResolver] CommissionsController {/commissions}: +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/commissions/me, GET} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/commissions, GET} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RoutesResolver] MediaController {/media}: +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/media/me, GET} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/media/upload, POST} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/media/requests/change, POST} route +1ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/media/merchants/:merchantId/main, POST} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/media/requests/:id, DELETE} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/media/approved/:ownerType/:ownerId, GET} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/media/approvals, GET} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/media/approvals/:id/approve, POST} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/media/approvals/:id/reject, POST} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/media/:id/signed-url, GET} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/media, GET} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RoutesResolver] AuditController {/audit-events}: +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/audit-events, GET} route +1ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RoutesResolver] InvitationsController {/invitations}: +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/invitations, POST} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/invitations/for/:entityType/:entityId, GET} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/invitations/:id, GET} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/invitations/:id, DELETE} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/invitations/claim/:entityType/:entityId, POST} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RoutesResolver] PublicCatalogController {/public}: +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/public/categories, GET} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/public/merchants, GET} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/public/merchants/:id, GET} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/public/media/:assetId, GET} route +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RoutesResolver] AuthEmailHookController {/auth/hooks}: +0ms
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [RouterExplorer] Mapped {/auth/hooks/send-email, POST} route +1ms
+[supabase] init {
+  urlConfigured: true,
+  anonKeyConfigured: true,
+  serviceKeyConfigured: true
+}
+[Nest] 1  - 11/03/2026, 3:09:11 AM     LOG [NestApplication] Nest application successfully started +3ms
+🚀 Backend API running on http://localhost:3100
+  options: {},
+  cause: undefined,
+  errorCode: undefined
+}
+Approve merchant error: ConflictException: Cannot approve merchant: the owner has not claimed this record with a verified Auth identity
+    at MerchantsService.approve (/app/dist/modules/merchants/merchants.service.js:440:19)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async MerchantsController.approve (/app/dist/modules/merchants/merchants.controller.js:66:20)
+    at async file:///app/node_modules/@nestjs/core/router/router-execution-context.js:68:62
+    at async MerchantsController.approve (file:///app/node_modules/@nestjs/core/router/router-proxy.js:6:17) {
+  response: {
+    code: 'OWNER_NOT_CLAIMED',
+    message: 'Cannot approve merchant: the owner has not claimed this record with a verified Auth identity'
+  },
+  status: 409,

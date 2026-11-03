@@ -1,0 +1,58 @@
+{
+  "merchant_details": {
+    "rows": 159,
+    "sha256": "87b55c90cbc7219af8b78f9266ad44cbc87f71f1d6db00de15316fd136914a58"
+  },
+  "collaborators": {
+    "rows": 331,
+    "sha256": "966d5b0cb24aceb6e2eeaf0fb794dc70a8ec24c401d86907ce66b027f11a2962"
+  },
+  "referral_transactions": {
+    "rows": 114,
+    "sha256": "ce6090c0f0f791afea9ae0f950c5641fd4dffa49c96b12bda72846d7bfc0665d"
+  },
+  "merchant_category_links": {
+    "rows": 265,
+    "sha256": "488f0b5b2cad68442dbb7dc4a6559bb1ffa868025ed6b06e242e7cc063d89127"
+  },
+  "categories": {
+    "rows": 22,
+    "sha256": "331c8555af46cb848357427c4d868b31d57a4651b062f12b0569a836d0eaae5f"
+  },
+  "merchant_update_requests": {
+    "rows": 28,
+    "sha256": "2798c7a3055c0131b3fb5808f9763ee4dab465d5f587ba853e11acf7ab031b07"
+  },
+  "media_assets": {
+    "rows": 616,
+    "sha256": "4117a070b98b5f09362dec97d47a8dd11ddbae0b2937239b8bad152726cc08d7"
+  },
+  "user_profiles": {
+    "rows": 473,
+    "sha256": "601c2eda0a0e4fb0ffdab55c30105dd373065e8ccfbf6d063a63280ac8e2f907"
+  },
+  "legacy_identity_map": {
+    "rows": 451,
+    "sha256": "4889f0c1779d92316527f834bd9642d0591b29a46eeaf7816cacf1c8a7f639a6"
+  },
+  "legacy_import_conflicts": {
+    "rows": 8,
+    "sha256": "ae95f38eb54c93e7dc16ca26ab7fd7cac02f7ee257ae43603479d673987d25b7"
+  },
+  "legacy_migration_batches": {
+    "rows": 1,
+    "sha256": "4d3158fe1914cb4e81a09d251645b19c617f3683a8ecb84b339b35c997b96c6c"
+  },
+  "legacy_migration_runs": {
+    "rows": 109,
+    "sha256": "544df293b73da5f07bf195a9e03e068d80982e649678fc3e7245c2bd8da2b3fc"
+  },
+  "legacy_source_records": {
+    "rows": 14260,
+    "sha256": "ada4e45ab081ea907eae09913ccf52a1973feca388570851ed0979d1839a9f96"
+  },
+  "auth_users": {
+    "rows": 475,
+    "sha256": "883404b4df34133f75a6704356e7fdd5fe5483e6ebf7e5b41b34125c83c30c2d"
+  }
+}

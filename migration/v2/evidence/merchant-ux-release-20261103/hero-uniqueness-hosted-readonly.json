@@ -1,0 +1,17 @@
+{
+ "at": "2026-11-03T14:52:25.698Z",
+ "media_rows": 616,
+ "effective_rows": 613,
+ "merchants": {
+  "owners_with_effective_media": 115,
+  "with_0_heroes": 3,
+  "with_1_hero": 112,
+  "with_more_than_1_hero": 0
+ },
+ "partners": {
+  "owners_with_effective_media": 91,
+  "with_0_heroes": 87,
+  "with_1_hero": 4,
+  "with_more_than_1_hero": 0
+ }
+}

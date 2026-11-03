@@ -1,0 +1,37 @@
+{
+ "merchant": "UAT-E2E-MERCHANT (synthetic)",
+ "rows": 4,
+ "media_rows_sha256": {
+  "before_test": "9bf786e150c63339439e7d02739504fed84609156a2ef695d064bd58b10dc24d",
+  "after_ui_swap_and_restore": "b4fb3de2010c59c2555d367232bf879ceaaf880fb89e878fbf8fead1c338cf34",
+  "after_exact_restore": "9bf786e150c63339439e7d02739504fed84609156a2ef695d064bd58b10dc24d"
+ },
+ "after_exact_restore_equals_before": true,
+ "differences_after_ui_restore_only": {
+  "ca761100": {
+   "publication_version": [
+    1,
+    3
+   ]
+  },
+  "ef6acbdf": {
+   "is_hero": [
+    false,
+    true
+   ],
+   "publication_version": [
+    1,
+    2
+   ]
+  }
+ },
+ "total_media_rows_hosted": {
+  "before": "0-0/616",
+  "after": "0-0/616"
+ },
+ "audit_events_for_merchant": {
+  "before": 3,
+  "after": 5
+ },
+ "note": "Raw row snapshots stay local (they contain internal account ids); hashes prove exact restoration."
+}

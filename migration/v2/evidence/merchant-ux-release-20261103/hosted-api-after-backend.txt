@@ -1,0 +1,22 @@
+PASS H0 synthetic E2E identities authenticate
+PASS H1 /health 200 ok
+PASS H2 public categories still served — n=18
+PASS H3 public published count unchanged vs pre-deploy baseline — now=144 before=144
+PASS H4 every public card image identical to pre-deploy baseline (no unintended main-photo change) — changed=0
+PASS H5 admin directory returns every merchant with new fields and no owner password — merchants=159
+PASS H6 admin Main Photo == public card image for every published merchant — published=144 mismatches=0
+PASS H7 thumbnails signed for every merchant that has an effective image — withImage=115 thumbs=115
+PASS H8 sampled thumbnail URLs return real images — 23/23
+PASS H9 gallery images of migrated merchants resolve (signed URL → bytes) — merchants=12/12 images=26
+PASS H10 anonymous set-main → 401
+PASS H11-merchant owner merchant owner set-main → 403
+PASS H11-partner partner set-main → 403
+PASS H11-outsider outsider set-main → 403
+PASS H12 cross-tenant: another merchant's image under D5 → 404
+PASS H13 rejected (non-effective) image cannot be promoted → 400
+PASS H14 malformed ids / extra fields → 400
+PASS H15 admin directory is admin-only (anon 401, merchant/partner 403)
+PASS H16 merchant media listing is tenant-scoped
+PASS H17 D5 media rows unchanged by all refused calls
+
+20/20 passed
