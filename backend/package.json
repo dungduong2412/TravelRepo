@@ -15,6 +15,7 @@
     "test:d13a-contracts": "node -r ts-node/register/transpile-only scripts/test-d13a-contracts.ts",
     "test:invitation-guards": "node -r ts-node/register/transpile-only scripts/test-invitation-claim-guards.ts",
     "test:approve-unclaimed": "node -r ts-node/register/transpile-only scripts/test-approve-unclaimed.ts",
+    "test:main-media": "node -r ts-node/register/transpile-only scripts/test-main-media.ts",
     "test:public-catalog": "node -r ts-node/register/transpile-only scripts/test-public-catalog.ts",
     "test:anonymous-privacy": "node -r ts-node/register/transpile-only scripts/test-anonymous-privacy.ts",
     "test:auth-email-hook": "node -r ts-node/register/transpile-only scripts/test-auth-email-hook.ts",

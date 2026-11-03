@@ -41,6 +41,11 @@ export const MediaChangeRequestSchema = z.object({
 });
 export type MediaChangeRequestDto = z.infer<typeof MediaChangeRequestSchema>;
 
+export const SetMainMediaSchema = z.object({
+  media_id: PostgresUuidSchema,
+}).strict();
+export type SetMainMediaDto = z.infer<typeof SetMainMediaSchema>;
+
 export const MediaDecisionSchema = z.object({
   reason: z.string().trim().max(1000).optional(),
 }).strict();

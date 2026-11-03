@@ -13,7 +13,7 @@ export const IMAGE_SIZES = {
   hero: { width: 1280, height: 800 },
 } as const;
 export type ImageSize = keyof typeof IMAGE_SIZES | 'original';
-const MEDIA_COLUMNS = 'id,merchant_id,bucket_id,object_path,is_hero,display_order';
+const MEDIA_COLUMNS = 'id,merchant_id,bucket_id,object_path,is_hero,display_order,created_at';
 
 type Snapshot = {
   at: number;
@@ -38,7 +38,7 @@ export class PublicCatalogService {
       client.from('merchant_category_links').select('merchant_id,category_id'),
       client.from('media_assets').select(MEDIA_COLUMNS).not('merchant_id', 'is', null)
         .in('publication_status', [...PUBLIC_MEDIA_STATUSES]).eq('transfer_status', 'verified')
-        .order('is_hero', { ascending: false }).order('display_order'),
+        .order('is_hero', { ascending: false }).order('display_order').order('created_at').order('id'),
     ]);
     for (const r of [merchants, cats, links, media]) if (r.error) throw new InternalServerErrorException('Catalog is temporarily unavailable');
 

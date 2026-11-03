@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { SupabaseService } from '../../infrastructure/supabase/supabase.service';
 import { createHash, randomUUID } from 'crypto';
 import {
@@ -8,6 +8,7 @@ import {
   UploadMediaDto,
 } from './media.dto';
 import { AuditService } from '../audit/audit.service';
+import { EFFECTIVE_MEDIA_STATUSES, isEffectiveMedia } from './main-media';
 
 export function hasExpectedImageSignature(bytes: Buffer, mimeType: string) {
   if (mimeType === 'image/jpeg') return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
@@ -22,6 +23,8 @@ export class MediaService {
     private readonly supabase: SupabaseService,
     private readonly audit: AuditService,
   ) {}
+
+  private readonly mainSwapQueue = new Map<string, Promise<unknown>>();
 
   async findAll() {
     const { data, error } = await this.supabase.getClient().from('media_assets')
@@ -325,6 +328,93 @@ export class MediaService {
     if (error) throw new InternalServerErrorException('Unable to load media approvals');
     return { items: data || [], page: filter.page, page_size: filter.page_size, total: count || 0,
       page_count: Math.ceil((count || 0) / filter.page_size) };
+  }
+
+  /**
+   * Promote an existing effective gallery image to Main Photo. Reuses `media_assets.is_hero` (no schema change): the object, its
+   * Storage path, legacy mappings and display order are untouched and the previous hero stays in the gallery. Each row change is
+   * guarded by publication_version, so a concurrent approval or edit aborts the swap and the previous hero is restored.
+   */
+  async setMerchantMain(userId: string, merchantIdInput: string, mediaIdInput: string) {
+    // Serialise swaps per Merchant within this API instance (UAT runs one). Across instances the post-promotion check below still
+    // guarantees the Merchant never keeps two Main Photos.
+    const key = merchantIdInput.toLowerCase();
+    const previous = this.mainSwapQueue.get(key) ?? Promise.resolve();
+    const run = previous.catch(() => undefined).then(() => this.applyMerchantMain(userId, key, mediaIdInput));
+    const tail = run.catch(() => undefined);
+    this.mainSwapQueue.set(key, tail);
+    try { return await run; } finally { if (this.mainSwapQueue.get(key) === tail) this.mainSwapQueue.delete(key); }
+  }
+
+  private async applyMerchantMain(userId: string, merchantIdInput: string, mediaIdInput: string) {
+    const merchantId = merchantIdInput.toLowerCase();
+    const mediaId = mediaIdInput.toLowerCase();
+    const client = this.supabase.getClient();
+    const { data: actor } = await client.from('user_profiles').select('role,user_profiles_status').eq('user_id', userId).maybeSingle();
+    if (!actor || actor.role !== 'admin' || actor.user_profiles_status !== 'active') throw new ForbiddenException('Active Platform Admin required');
+
+    const { data: media, error } = await client.from('media_assets')
+      .select('id,merchant_id,collaborator_id,is_hero,publication_status,transfer_status,publication_version')
+      .eq('id', mediaId).maybeSingle();
+    if (error) throw new InternalServerErrorException('Unable to load media');
+    if (!media || media.merchant_id !== merchantId || media.collaborator_id) throw new NotFoundException('Merchant media not found');
+    if (!isEffectiveMedia(media.publication_status) || media.transfer_status !== 'verified') {
+      throw new BadRequestException('Only effective, verified gallery images can be the Main Photo');
+    }
+
+    const { data: heroes, error: heroError } = await client.from('media_assets')
+      .select('id,publication_version').eq('merchant_id', merchantId).eq('is_hero', true)
+      .in('publication_status', [...EFFECTIVE_MEDIA_STATUSES]);
+    if (heroError) throw new InternalServerErrorException('Unable to load current Main Photo');
+    const previous = (heroes || []).filter((hero) => hero.id !== mediaId);
+    if (media.is_hero && !previous.length) return { merchant_id: merchantId, main_media_id: mediaId, previous_main_media_ids: [], changed: false };
+
+    const { data: pending, error: pendingError } = await client.from('media_approval_requests').select('id')
+      .eq('status', 'pending').in('target_media_id', [mediaId, ...previous.map((hero) => hero.id)]).limit(1);
+    if (pendingError) throw new InternalServerErrorException('Unable to check pending media requests');
+    if (pending?.length) throw new ConflictException('Resolve the pending media request for these images before changing the Main Photo');
+
+    const demoted: { id: string; publication_version: number }[] = [];
+    const restore = async () => {
+      for (const hero of demoted) {
+        await client.from('media_assets').update({ is_hero: true, publication_version: hero.publication_version + 2 }).eq('id', hero.id).eq('publication_version', hero.publication_version + 1);
+      }
+    };
+    for (const hero of previous) {
+      const { data: changed, error: demoteError } = await client.from('media_assets')
+        .update({ is_hero: false, publication_version: hero.publication_version + 1 })
+        .eq('id', hero.id).eq('publication_version', hero.publication_version).select('id');
+      if (demoteError || !changed?.length) {
+        await restore();
+        if (demoteError) throw new InternalServerErrorException('Unable to change the Main Photo');
+        throw new ConflictException('The image changed while updating the Main Photo; reload and try again');
+      }
+      demoted.push(hero);
+    }
+    const { data: promoted, error: promoteError } = await client.from('media_assets')
+      .update({ is_hero: true, publication_version: media.publication_version + 1 })
+      .eq('id', mediaId).eq('publication_version', media.publication_version).select('id');
+    if (promoteError || !promoted?.length) {
+      await restore();
+      if (promoteError) throw new InternalServerErrorException('Unable to change the Main Photo');
+      throw new ConflictException('The image changed while updating the Main Photo; reload and try again');
+    }
+
+    // A concurrent swap from another instance can slip between our demote and promote. If another effective hero exists now, back
+    // out our own promotion (leaving the other request's choice in place) instead of leaving the Merchant with two Main Photos.
+    const { data: heroesNow, error: verifyError } = await client.from('media_assets').select('id').eq('merchant_id', merchantId).eq('is_hero', true)
+      .in('publication_status', [...EFFECTIVE_MEDIA_STATUSES]);
+    if (verifyError || (heroesNow || []).some((hero) => hero.id !== mediaId)) {
+      await client.from('media_assets').update({ is_hero: false, publication_version: media.publication_version + 2 })
+        .eq('id', mediaId).eq('publication_version', media.publication_version + 1);
+      if (verifyError) { await restore(); throw new InternalServerErrorException('Unable to verify the Main Photo'); }
+      throw new ConflictException('Another Main Photo change happened at the same time; reload and try again');
+    }
+
+    await this.audit.record({ id: userId, role: actor.role }, 'media.main_set', 'merchant', merchantId, {
+      media_id: mediaId, previous_main_media_ids: previous.map((hero) => hero.id),
+    });
+    return { merchant_id: merchantId, main_media_id: mediaId, previous_main_media_ids: previous.map((hero) => hero.id), changed: true };
   }
 
   async findEffective(ownerType: string, ownerId: string) {

@@ -13,6 +13,7 @@ import {
 import { UserProfilesService } from '../user-profiles/user-profiles.service';
 import { AuditActor, AuditService } from '../audit/audit.service';
 import { PUBLIC_MERCHANT_COLUMNS } from '../public-catalog/public-catalog.projection';
+import { EFFECTIVE_MEDIA_STATUSES, pickMainMedia } from '../media/main-media';
 
 @Injectable()
 export class MerchantsService {
@@ -82,13 +83,50 @@ export class MerchantsService {
       .order(filter.sort, { ascending: filter.direction === 'asc', nullsFirst: false })
       .range(from, from + filter.page_size - 1);
     if (error) throw new Error(`Failed to fetch merchant directory: ${error.message}`);
+    const rows = (data || []).map((row) => this.withoutPassword(row));
+    const summaries = await this.directorySummaries(rows.map((row: any) => row.merchant_system_id));
     return {
-      items: (data || []).map((row) => this.withoutPassword(row)),
+      items: rows.map((row: any) => ({ ...row, ...summaries.get(row.merchant_system_id) })),
       page: filter.page,
       page_size: filter.page_size,
       total: count || 0,
       page_count: Math.ceil((count || 0) / filter.page_size),
     };
+  }
+
+  /**
+   * Row decorations for the Admin list: category names and the Main Photo thumbnail. Failures degrade to "no category / no image"
+   * so a Storage or lookup problem never blocks the directory. The thumbnail is a short-lived signed URL of the same asset the public
+   * catalog serves as the Merchant's Main Photo (pickMainMedia is the shared rule).
+   */
+  private async directorySummaries(merchantIds: string[]) {
+    const summaries = new Map<string, { category_names: string[]; main_image: { id: string; thumb_url: string | null } | null }>();
+    for (const id of merchantIds) summaries.set(id, { category_names: [], main_image: null });
+    if (!merchantIds.length) return summaries;
+    const client = this.supabase.getClient();
+    const [links, media] = await Promise.all([
+      client.from('merchant_category_links')
+        .select('merchant_id,category:categories!merchant_category_links_category_id_fkey(category_name,category_name_vi)')
+        .in('merchant_id', merchantIds),
+      client.from('media_assets').select('id,merchant_id,bucket_id,object_path,is_hero,display_order,created_at')
+        .in('merchant_id', merchantIds).in('publication_status', [...EFFECTIVE_MEDIA_STATUSES]).eq('transfer_status', 'verified'),
+    ]);
+    for (const link of (links.data || []) as any[]) {
+      const category = Array.isArray(link.category) ? link.category[0] : link.category;
+      const name = category?.category_name_vi || category?.category_name;
+      if (name) summaries.get(link.merchant_id)?.category_names.push(name);
+    }
+    const byMerchant = new Map<string, any[]>();
+    for (const asset of (media.data || []) as any[]) byMerchant.set(asset.merchant_id, [...(byMerchant.get(asset.merchant_id) || []), asset]);
+    const mains = [...byMerchant.entries()].map(([merchantId, assets]) => [merchantId, pickMainMedia(assets)] as const);
+    await Promise.all(mains.map(async ([merchantId, main]) => {
+      if (!main) return;
+      const { data: signed } = await client.storage.from(main.bucket_id).createSignedUrl(main.object_path, 600, {
+        transform: { width: 160, height: 160, resize: 'cover', quality: 70 },
+      });
+      summaries.get(merchantId)!.main_image = { id: main.id, thumb_url: signed?.signedUrl ?? null };
+    }));
+    return summaries;
   }
 
   async findById(id: string) {

@@ -10,10 +10,13 @@ import {
   MediaChangeRequestSchema,
   MediaDecisionDto,
   MediaDecisionSchema,
+  SetMainMediaDto,
+  SetMainMediaSchema,
   UploadMediaDto,
   UploadMediaSchema,
 } from './media.dto';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
+import { PostgresUuidSchema } from '../../common/validation/postgres-uuid';
 
 @Controller('media')
 @UseGuards(JwtGuard)
@@ -39,6 +42,17 @@ export class MediaController {
     @Body(new ZodValidationPipe(MediaChangeRequestSchema)) dto: MediaChangeRequestDto,
   ) {
     return this.service.requestChange(actor.id, dto);
+  }
+
+  // Platform Admin only. The owner is the path Merchant; the image must belong to it, so a media id can never be promoted across tenants.
+  @Post('merchants/:merchantId/main')
+  @UseGuards(AdminGuard)
+  setMerchantMain(
+    @User() actor: { id: string },
+    @Param('merchantId', new ZodValidationPipe(PostgresUuidSchema)) merchantId: string,
+    @Body(new ZodValidationPipe(SetMainMediaSchema)) dto: SetMainMediaDto,
+  ) {
+    return this.service.setMerchantMain(actor.id, merchantId, dto.media_id);
   }
 
   @Delete('requests/:id')
