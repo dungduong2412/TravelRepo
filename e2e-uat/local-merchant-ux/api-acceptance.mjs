@@ -43,7 +43,7 @@ const set = await api(admin, 'POST', `/media/merchants/${A}/main`, { media_id: a
 check('M1 admin sets an existing gallery image as main', set.status === 201 && set.body.changed === true && set.body.main_media_id === a3, JSON.stringify(set.body));
 check('M2 exactly one Main Photo after the change, and it persists on re-read', (await heroIds()).join() === a3);
 const after = (await api(admin, 'GET', `/merchants/${A}/operational-detail`)).body.media.map((m) => ({ id: m.id, path: m.original_filename, order: m.display_order, st: m.publication_status }));
-check('M3 gallery intact: same images, filenames, order and publication status; previous main remains in the gallery', JSON.stringify(after) === JSON.stringify(before) && after.find((m) => m.id === a1).st === 'approved');
+check('M3 gallery intact: same images, filenames, order and publication status; previous main remains in the gallery', JSON.stringify([...after].sort((x, y) => x.id.localeCompare(y.id))) === JSON.stringify([...before].sort((x, y) => x.id.localeCompare(y.id))) && after.find((m) => m.id === a1).st === 'approved');
 check('M4 admin directory thumbnail switches to the new main', (await dir('UXIMG Alpha'))[0].main_image.id === a3);
 await new Promise((r) => setTimeout(r, 31_000)); // public catalog snapshot TTL is 30 s
 pa = await publicOf(A); const listing = (await api(null, 'GET', `/public/merchants?q=${encodeURIComponent('UXIMG Alpha')}`)).body.items.find((x) => x.id === A);

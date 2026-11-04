@@ -86,7 +86,7 @@ export class PublicCatalogService {
     const filtered = s.merchants.filter((m) => {
       if (query.category && !(s.categoryByMerchant.get(m.merchant_system_id) || []).includes(query.category)) return false;
       if (!q) return true;
-      return [m.merchant_name, m.new_address_city, m.new_address_ward, plainText(m.merchant_description)]
+      return [m.merchant_name, m.new_address_city, m.new_address_ward, plainText(m.merchant_description, m.merchant_description_format)]
         .some((v) => typeof v === 'string' && v.toLocaleLowerCase('vi').includes(q));
     });
     const from = (query.page - 1) * query.page_size;

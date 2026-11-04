@@ -28,7 +28,7 @@ function Picture({ asset, className, label }: { asset: MerchantMedia; className:
 export function MerchantHero({ media, name }: { media: MerchantMedia[]; name: string }) {
   const main = useMemo(() => mainMedia(media), [media]);
   if (!main) return <div data-testid="merchant-hero-empty" className="grid aspect-[16/7] w-full place-items-center rounded-card bg-canvas text-sm text-ink-muted">No main photo yet</div>;
-  return <Picture key={main.id} asset={main} label={`Main photo of ${name}`} className="aspect-[16/7] max-h-72 w-full rounded-card" />;
+  return <Picture key={main.id} asset={main} label={`Main photo of ${name}`} className="aspect-[16/5] max-h-44 w-full rounded-card" />;
 }
 
 /**

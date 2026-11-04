@@ -1,4 +1,4 @@
-// READ-ONLY on migrated records: opens, scrolls, screenshots. Never clicks Edit/Save/Set as main/Upload.
+// READ-ONLY on migrated records: opens the editor, scrolls, screenshots. Never types, saves, or clicks Save/Set as main/Upload.
 import { createRequire } from 'node:module';
 import fs from 'node:fs';
 const require = createRequire(import.meta.url);
@@ -17,8 +17,8 @@ for (const [label, viewport] of [['desktop', { width: 1440, height: 900 }], ['mo
     await page.waitForFunction((n) => { const r = document.querySelectorAll('[data-testid=merchant-row]'); return r.length >= 1 && r[0].textContent.toLowerCase().includes(n.toLowerCase()); }, name);
     const rowName = (await page.getByTestId('merchant-row-name').first().innerText()).trim();
     if (label === 'desktop' && name === 'Saigonesetourist') await page.screenshot({ path: `${OUT}/real-list-${label}.png` });
-    await page.getByTestId('merchant-row').first().click(); await page.getByTestId('merchant-view').waitFor();
-    check(`${label} ${name}: row opens View Mode, no edit form`, await page.getByTestId('merchant-edit').count() === 0);
+    await page.getByTestId('merchant-row').first().click(); await page.getByTestId('merchant-editor').waitFor();
+    check(`${label} ${name}: row opens the editor directly (no separate View Mode)`, await page.getByTestId('merchant-edit').count() === 1 && await page.getByTestId('edit-merchant').count() === 0);
     await page.getByTestId('merchant-gallery').scrollIntoViewIfNeeded();
     await page.waitForFunction(() => [...document.querySelectorAll('[data-testid=gallery-item] img')].every((i) => i.complete), null, { timeout: 15000 }).catch(() => undefined);
     const items = await page.getByTestId('gallery-item').count();
@@ -27,7 +27,7 @@ for (const [label, viewport] of [['desktop', { width: 1440, height: 900 }], ['mo
     check(`${label} ${name}: exactly one Main badge${hasHero ? '' : ' (automatic fallback, flagged)'}`, (await page.locator('[data-testid=gallery-item][data-main=true]').count()) === 1 && (hasHero || (await page.getByText('no main photo chosen').count()) === 1));
     await page.screenshot({ path: `${OUT}/real-gallery-${label}-${name.replace(/\W/g, '')}.png` });
     if (hasHero && label === 'desktop') {
-      const id = (await page.locator('[data-testid=merchant-view] [data-testid=view-on-vno]').getAttribute('href')).split('/').pop();
+      const id = (await page.locator('[data-testid=merchant-editor] [data-testid=view-on-vno]').getAttribute('href')).split('/').pop();
       const detail = await (await fetch(`http://localhost:3100/public/merchants/${id}`)).json();
       const adminMainAlt = await page.locator('[data-testid=gallery-item][data-main=true] img').getAttribute('alt');
       check(`${label} ${name}: public details hero (first gallery id) is the admin Main photo`, detail.gallery[0].id === detail.image_url.split('/').pop() && detail.gallery.length === expectedImages, adminMainAlt);

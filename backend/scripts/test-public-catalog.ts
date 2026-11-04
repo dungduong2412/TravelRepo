@@ -20,7 +20,29 @@ t('listing/detail carry no private field even if the row contains them', () => {
 });
 t('contact phone is the business contact only, trimmed', () => assert.equal(toPublicDetail(row, [], []).phone, '0900 111 222'));
 t('missing contact phone is null, not the owner phone', () => assert.equal(toPublicDetail({ ...row, merchant_contact_phone: '' }, [], []).phone, null));
-t('markdown and html are flattened to plain text', () => { const d = plainText(row.merchant_description); assert.ok(!/[<>*\[\]]/.test(d)); assert.ok(d.includes('Glosbe') && d.includes('thương hiệu')); });
+t('markdown descriptions are flattened to plain text, html tags always dropped', () => {
+  const d = plainText(row.merchant_description, 'markdown'); assert.ok(!/[<>*\[\]]/.test(d)); assert.ok(d.includes('Glosbe') && d.includes('thương hiệu'));
+  const h = plainText(row.merchant_description); assert.ok(!/<\/?b>/.test(h)); assert.ok(h.includes('thương hiệu'));
+});
+t('plain_text descriptions keep the Admin\'s characters and Vietnamese Unicode exactly', () => {
+  const typed = 'Khách sạn 3* — Wi-Fi_free, #1 Phan Thiết\n> trên 10 khách giảm thêm\nGiá <500k';
+  assert.equal(plainText(typed), typed);
+  assert.equal(plainText(typed, 'plain_text'), typed);
+  assert.equal(toPublicDetail({ ...row, merchant_description: typed, merchant_description_format: 'plain_text' }, [], []).description, typed);
+});
+t('imported V1 Markdown structure is flattened even though the column says plain_text; meaningful symbols are kept', () => {
+  assert.equal(plainText('**[Glosbe](https://x.example)** và *đẹp* và __đậm__ và `mã`'), 'Glosbe và đẹp và đậm và mã');
+  assert.equal(plainText('\\+ NHA KHOA\n\\- Vali\n\\* Sao'), '+ NHA KHOA\n- Vali\n* Sao');
+  assert.equal(plainText('## Tiêu đề\n#cookingclass #1\n***\n3* khách sạn, 5*, a*b*c'), 'Tiêu đề\n#cookingclass #1\n\n3* khách sạn, 5*, a*b*c');
+  assert.equal(plainText('![ảnh](http://x/y.png)Xin chào'), 'Xin chào');
+});
+t('markdown format additionally drops every leftover formatting symbol', () => assert.equal(plainText('> trích dẫn *một* #tag_x', 'markdown'), 'trích dẫn một tagx'));
+t('descriptions: CRLF normalised, blank-line runs collapsed, empty and null give an empty string (UI shows the fallback)', () => {
+  assert.equal(plainText('a\r\nb\r\n\r\n\r\n\r\nc'), 'a\nb\n\nc');
+  assert.equal(plainText('   '), ''); assert.equal(plainText(null), '');
+  assert.equal(toPublicDetail({ ...row, merchant_description: null }, [], []).description, '');
+});
+t('the format column is public-safe and requested by the catalog', () => assert.ok(PUBLIC_MERCHANT_COLUMNS.includes('merchant_description_format' as never)));
 t('excerpt is bounded', () => assert.ok(excerpt('x'.repeat(500)).length <= 140));
 t('offers: percentage, rounding, zero and null', () => {
   assert.equal(publicOffer('percentage', 0.05)?.label, 'Giảm 5%');

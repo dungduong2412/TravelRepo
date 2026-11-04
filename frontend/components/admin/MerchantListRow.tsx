@@ -16,7 +16,7 @@ export function verificationLabel(m: DirectoryRowData) {
   return m.merchants_status === 'pending' ? { text: 'Pending', tone: 'bg-warning-50 text-warning-700' } : { text: 'Not verified', tone: 'bg-canvas text-ink-muted' };
 }
 
-/** Two-line Merchant row: (name · verification) / (code · category · location). Each line truncates; the whole row opens View Mode. */
+/** Two-line Merchant row: (name · verification) / (code · category · location). Each line truncates; the whole row opens the editor. */
 export function MerchantListRow({ merchant, onOpen }: { merchant: DirectoryRowData; onOpen: () => void }) {
   const badge = verificationLabel(merchant);
   const meta = [text(merchant.merchant_code), (merchant.category_names || []).join(', '), rowLocation(merchant)].filter(Boolean).join(' · ');
