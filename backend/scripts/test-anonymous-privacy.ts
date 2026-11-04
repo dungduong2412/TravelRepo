@@ -3,7 +3,7 @@
 //   live  (BASE_URL=<api>)  : every anonymous GET is fetched and deep-scanned (keys at any depth, nested objects and arrays, string values).
 // Usage: BASE_URL=https://vno-api-uat.up.railway.app node -r ts-node/register/transpile-only scripts/test-anonymous-privacy.ts
 import assert from 'node:assert/strict';
-import { toPublicDetail, toPublicListing } from '../src/modules/public-catalog/public-catalog.projection';
+import { toLegacyVerifiedMerchant, toPublicDetail, toPublicListing } from '../src/modules/public-catalog/public-catalog.projection';
 
 // Keys that must never appear at any depth of an anonymous response.
 const FORBIDDEN_KEY = /^(owner_.*|legacy_.*|.*password.*|.*tax.*|.*commission.*|.*bank.*|merchant_email|merchant_phone|merchant_contact_email|collaborators_(email|phone|password|bank.*|qr_code)|user_id|auth_user_id|created_by.*|approved_by|uploaded_by|object_path|bucket_id|original_filename|sha256_hex|invite_link|.*token.*)$/i;
@@ -51,6 +51,16 @@ const t = async (name: string, fn: () => void | Promise<void>) => { await fn(); 
     assert.deepEqual(privacyViolations(v), []);
     const json = JSON.stringify(v);
     for (const secret of ['Nguyen', 'o@x.vn', '0911111111', '"123"', '999', 'n@x.vn']) assert.ok(!json.includes(secret), secret);
+  });
+
+  await t('legacy /merchants/verified shape drops the render flag and the ban marker; public details still honour the format', () => {
+    const legacy = toLegacyVerifiedMerchant({ ...hostile, merchant_description_format: 'markdown', legacy_is_banned: false });
+    assert.ok(!('merchant_description_format' in legacy) && !('legacy_is_banned' in legacy));
+    assert.equal(legacy.merchant_name, 'Shop');
+    const md = { ...hostile, merchant_description: '> trích *một* #tag_x' };
+    assert.equal(toPublicDetail({ ...md, merchant_description_format: 'markdown' }, [], []).description, 'trích một tagx');
+    assert.equal(toPublicDetail({ ...md, merchant_description_format: 'plain_text' }, [], []).description, '> trích một #tag_x');
+    assert.ok(!('merchant_description_format' in toPublicDetail(md, [], [])));
   });
 
   const base = process.env.BASE_URL?.replace(/\/$/, '');

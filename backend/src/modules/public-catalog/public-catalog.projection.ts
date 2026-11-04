@@ -98,3 +98,13 @@ export function toPublicDetail(row: Record<string, any>, categories: PublicCateg
     gallery: assetIds.map((id) => ({ id, url: `/public/media/${id}` })),
   };
 }
+
+/**
+ * Legacy anonymous shape (GET /merchants/verified): the original allow-list only. `merchant_description_format` is a render flag for the
+ * public Merchant Details API (toPublicDetail applies it server-side) and is deliberately not part of this contract; legacy_is_banned is
+ * used to hide banned rows and never returned.
+ */
+export function toLegacyVerifiedMerchant(row: Record<string, unknown>): Record<string, unknown> {
+  const { legacy_is_banned: _banned, merchant_description_format: _format, ...safe } = row;
+  return safe;
+}

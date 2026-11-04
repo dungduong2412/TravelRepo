@@ -12,7 +12,7 @@ import {
 } from './merchants.dto';
 import { UserProfilesService } from '../user-profiles/user-profiles.service';
 import { AuditActor, AuditService } from '../audit/audit.service';
-import { PUBLIC_MERCHANT_COLUMNS } from '../public-catalog/public-catalog.projection';
+import { PUBLIC_MERCHANT_COLUMNS, toLegacyVerifiedMerchant } from '../public-catalog/public-catalog.projection';
 import { EFFECTIVE_MEDIA_STATUSES, pickMainMedia } from '../media/main-media';
 
 @Injectable()
@@ -213,7 +213,7 @@ export class MerchantsService {
     // Anonymous route: allow-listed columns only (owner identity, commission and legacy_* fields are never public).
     return ((data || []) as unknown as Record<string, unknown>[])
       .filter((row) => row.legacy_is_banned !== true)
-      .map(({ legacy_is_banned: _banned, ...safe }) => safe);
+      .map(toLegacyVerifiedMerchant);
   }
 
   async create(actor: { id: string; email?: string }, dto: CreateMerchantDto) {
