@@ -22,8 +22,28 @@ Admin row click opens the editor directly (View Mode removed); Save keeps the ed
 - The single FAIL is **C21 — `user_profiles` only**: 11 synthetic profiles carry login tracking from the E2E/walk logins; direct read: 0 of the 451 migrated profiles have any. Same explanation as the 2026-11-03 release.
 - C17/C18 are NOT_RUN (need `SUPABASE_DB_PASSWORD`), as in every no-DB run.
 
+## Hosted Save acceptance (owner-authorised, 2026-11-04) — PASSED
+One controlled Save on the synthetic `UAT-E2E-MERCHANT` (`MCH50B53`, id `d5a4ffba-b500-4e32-bc82-ca73c22c57f3`) only, through the real hosted Admin UI on `45cdcc6`. No migrated merchant, discount, financial field, media, QR code or verification status was touched; no migration, no deploy, no Gate B change.
+
+| # | Step | Result |
+|---|---|---|
+| 1 | Pre-test row captured (every column) and per-row fingerprints of 10 tables | done; original `merchant_description` = NULL, format `plain_text`, `verified=false`, `pending` |
+| 2 | Row click opens the editor directly in Edit Mode | PASS |
+| 3 | Only Description changed to a unique synthetic value; unsaved flag shown, Save enabled | PASS |
+| 4 | Save via Admin UI | PASS — HTTP 200; editor stays open; saved notice; the PATCH body contained **only** `merchant_description` |
+| 5 | Page reload, reopen: saved description persists | PASS |
+| 6 | Public VNO details page | **NOT APPLICABLE on this merchant** — it is unverified/pending so `/public/merchants/<id>` is 404 before and after (nothing leaked). Public propagation was not changed to be provable (changing verification status was prohibited); it remains proven locally (`edit-acceptance.mjs`) and the public-catalog description projection is covered by `test:public-catalog` |
+| 7 | Original restored through the Admin UI | PASS — HTTP 200, PATCH body only `merchant_description: null` |
+| 8 | Reload: description empty again, format still `plain_text` | PASS |
+| 9 | Fingerprints | the merchant row is **byte-identical to the pre-test row (0 differing fields)**; `merchant_details` (159), `collaborators` (331), `referral_transactions` (114), `merchant_category_links`, `categories`, `merchant_update_requests`, `media_assets` (616), `legacy_source_records`: 0 rows changed |
+| 10 | Hosted regression after the test | Playwright `00-unauth`+`20-regression`+`40-experience` 38/38; public catalog 144/0 changes; reconcile `--uat --no-db` 20 PASS / 0 FAIL / 2 NOT_RUN (C17/C18 need the DB password) |
+
+Expected side-effects (the only ones): 2 `audit_events` rows `merchant.updated` (`changed_fields: [merchant_description]`, `status: pending` unchanged) and the synthetic admin's login counter in `user_profiles`. `merchant_last_update` is not bumped by this endpoint (the row stayed identical after restore).
+
+**Final UAT status: Merchant Direct Edit ACCEPTED on UAT at `45cdcc6`.**
+
 ## Not verified on hosted
-- An actual Save of an edit on hosted was **not** exercised (it would write to a merchant). Save, only-changed-fields PATCH, unsaved-change protection and public propagation were proven on the local stack by `e2e-uat/local-merchant-ux/edit-acceptance.mjs`. A hosted proof needs an owner-approved edit on the synthetic `UAT-E2E-MERCHANT` (to be reverted afterwards).
+- Hosted public propagation of an edited description (step 6 above): needs a *published* synthetic merchant; proven locally only.
 - Imported descriptions that rely on Markdown structure are still flattened by design; the format selector lets an Admin choose plain text.
 
 ## Remaining open items (carried over)
