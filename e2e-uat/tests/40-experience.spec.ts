@@ -330,7 +330,7 @@ test.describe('@experience claim: first password (stubbed Auth + API, writes not
     await expect(page.getByRole('button', { name: /Vào không gian làm việc/ })).toHaveCount(0);
     await page.getByLabel('Mật khẩu', { exact: true }).fill('weak'); await page.getByLabel('Xác nhận mật khẩu').fill('weak');
     await page.getByRole('button', { name: 'Đặt mật khẩu' }).click();
-    await expect(page.getByText(/ít nhất 12 ký tự/).first()).toBeVisible(); expect(puts.length, 'weak password never reaches Auth').toBe(0);
+    await expect(page.getByText(/ít nhất 8 ký tự/).first()).toBeVisible(); expect(puts.length, 'weak password never reaches Auth').toBe(0);
     await page.getByLabel('Mật khẩu', { exact: true }).fill('Str0ng-Passw0rd!'); await page.getByLabel('Xác nhận mật khẩu').fill('Different-Passw0rd!');
     await page.getByRole('button', { name: 'Đặt mật khẩu' }).click();
     await expect(page.getByText('Hai mật khẩu không khớp.')).toBeVisible(); expect(puts.length).toBe(0);
