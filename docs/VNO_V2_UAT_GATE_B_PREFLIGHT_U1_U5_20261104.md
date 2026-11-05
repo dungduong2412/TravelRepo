@@ -34,3 +34,10 @@ Verification is never switched off. Also ask OxMail why the vietnamnumberone.com
 5. Railway SSH key (`railway ssh keys add`) so U3 can run in the container, or run U3 from any network that reaches the SMTP port. This Mac now reaches it, so with 1 and 2 done, U3 can also run locally via `railway run`.
 
 With 1–4 in place, U3 and U5 are one sitting; then the PASS/FAIL report and your separate approval for delivery.
+
+## Addendum 2026-11-05 — owner GO for SMTP host; steps 1–3 done
+- **Change:** `SMTP_HOST=mail.oxmail.vn` on UAT `vno-api` only (owner-approved). Kept `SMTP_PORT=587`, `SMTP_SECURITY=starttls`, `AUTH_EMAIL_DELIVERY=disabled`, `INVITATION_DELIVERY=capture`; no `SMTP_TLS_SERVERNAME`, verification on. Production untouched.
+- **Redeploy:** same SHA `1471baa`, SUCCESS within 30 s; `/health` 200, Web 200; unsigned hook still 503.
+- **TLS:** `mail.oxmail.vn` 587 (STARTTLS) and 465: `Verification: OK`, `Verify return code: 0`, `CN=mail.oxmail.vn`, Let's Encrypt, expires 2026-12-27 (`gate-b-preflight-20261104/tls-mail.oxmail.vn-587-after-host-change.txt`, local).
+- **Unchanged behaviour:** hosted anonymous privacy 10/10 (144 merchant details); Playwright `00-unauth`+`20-regression`+`40-experience` 38/38. No data written.
+- **Still blocked:** `SMTP_PASS` (U3), tester allowlist, hook secret and Dashboard hook (U4/U5).
