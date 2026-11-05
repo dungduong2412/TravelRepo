@@ -40,6 +40,7 @@ import { SupabaseService } from '../../infrastructure/supabase/supabase.service'
 import { UserProfilesService } from '../user-profiles/user-profiles.service';
 import * as QRCode from 'qrcode';
 import { AuditActor, AuditService } from '../audit/audit.service';
+import { publicOffer } from '../public-catalog/public-catalog.projection';
 
 @Injectable()
 export class CollaboratorsService {
@@ -176,19 +177,20 @@ export class CollaboratorsService {
 
   async getMyQrCode(actor: any) {
     const collaborator = await this.getMyCollaborator(actor);
-    
+
     if (!collaborator.collaborators_verified) {
       throw new ForbiddenException('Collaborator must be verified to access QR code');
     }
 
-    const payload = collaborator.collaborators_code;
+    const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
+    const payload = `${frontendUrl}/c/${collaborator.collaborators_code}`;
     const qrCodeImage = await this.generateCodeImage(payload, 720);
 
     return {
       qr_code: qrCodeImage,
       qr_code_image: qrCodeImage,
       qr_payload: payload,
-      qr_payload_format: 'collaborator_code',
+      qr_payload_format: 'url',
       code: collaborator.collaborators_code,
       collaborator_code: collaborator.collaborators_code,
       name: collaborator.collaborators_name,
@@ -413,9 +415,12 @@ export class CollaboratorsService {
     }
     await this.userProfilesService.assertLinkedAuthEmailConfirmed(linkedProfile.user_id);
 
-    // V1 identifies collaborators by the stable RestaurantMiddleman.Code. QR
-    // payloads therefore contain only that code: never email, phone or bank data.
-    const qrCodeBase64 = await this.generateCodeImage(collaborator.collaborators_code);
+    // QR encodes a full navigable URL so customers can scan and land on the Partner's page.
+    // The stored code is used for printing physical cards; use the production FRONTEND_URL
+    // before distributing physical cards.
+    const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
+    const qrPayload = `${frontendUrl}/c/${collaborator.collaborators_code}`;
+    const qrCodeBase64 = await this.generateCodeImage(qrPayload);
 
     // Update collaborator with verified status and QR code
     const { data, error } = await this.supabase.getClient()
@@ -463,6 +468,45 @@ export class CollaboratorsService {
 
   async resolveByQrToken(qrToken: string) {
     return this.resolveByCode(this.collaboratorCodeFromPayload(qrToken));
+  }
+
+  async resolveByQrTokenPublic(qrToken: string) {
+    const code = this.collaboratorCodeFromPayload(qrToken);
+    const { data: collaborator } = await this.supabase.getClient()
+      .from('collaborators')
+      .select('id,collaborators_code,collaborators_name,collaborators_verified,collaborators_status,merchant_system_id')
+      .eq('collaborators_code', code)
+      .eq('collaborators_verified', true)
+      .maybeSingle();
+    if (!collaborator) throw new NotFoundException('Partner not found');
+
+    let merchantInfo: { merchant_id: string; merchant_name: string; merchant_city: string | null; offer: ReturnType<typeof publicOffer> } | null = null;
+    if (collaborator.merchant_system_id) {
+      const { data: m } = await this.supabase.getClient()
+        .from('merchant_details')
+        .select('merchant_system_id,merchant_name,new_address_city,merchant_discount_type,merchant_discount_value,merchant_verified,merchants_status')
+        .eq('merchant_system_id', collaborator.merchant_system_id)
+        .eq('merchant_verified', true)
+        .eq('merchants_status', 'active')
+        .maybeSingle();
+      if (m) {
+        merchantInfo = {
+          merchant_id: m.merchant_system_id,
+          merchant_name: m.merchant_name,
+          merchant_city: m.new_address_city ?? null,
+          offer: publicOffer(m.merchant_discount_type, m.merchant_discount_value),
+        };
+      }
+    }
+
+    return {
+      partner_code: collaborator.collaborators_code,
+      partner_name: collaborator.collaborators_name,
+      merchant_id: merchantInfo?.merchant_id ?? null,
+      merchant_name: merchantInfo?.merchant_name ?? null,
+      merchant_city: merchantInfo?.merchant_city ?? null,
+      offer: merchantInfo?.offer ?? null,
+    };
   }
 
   async resolveQrForMerchant(userId: string, payload: string) {

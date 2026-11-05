@@ -1,0 +1,8 @@
+{
+  "_review": "Roles the isolated restore target may create when the dump references them and the target lacks them. Anything not listed here stops the restore (P0c). Reviewed 2026-11-01 against the UAT backup uat-pg-backup-20261101-retry2.",
+  "prisma_user": {
+    "decision": "create unprivileged, NOLOGIN, no password",
+    "evidence": "Referenced only as a grant recipient: GRANT ALL on schema public, ~30 public tables/sequences, and default privileges of role postgres in schema public (33 GRANT lines + 2 ALTER DEFAULT PRIVILEGES). Owns nothing in the dump, appears in no policy, function or view, and no code in this repository refers to it. Source attributes: NOSUPERUSER INHERIT NOCREATEROLE NOCREATEDB LOGIN NOREPLICATION NOBYPASSRLS; membership GRANT prisma_user TO postgres WITH ADMIN OPTION, INHERIT FALSE, SET FALSE.",
+    "deviation": "LOGIN is not reproduced: the source password is not exported and an isolated target needs no external login. All grants, default privileges and the postgres membership are reproduced exactly."
+  }
+}

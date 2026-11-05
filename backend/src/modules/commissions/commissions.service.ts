@@ -38,8 +38,12 @@ export class CommissionsService {
   }
 
   private async rows(filter?: { column: 'merchant_id' | 'collaborator_id'; value: string }) {
+    // V1 imports: include all (historical, already settled).
+    // Real transactions: include only confirmed (RECORDED is not yet earned, cancelled/reversed are void).
+    // UAT simulations: exclude entirely (test data, never earned).
     let query = this.supabase.getClient().from('referral_transactions')
-      .select('commission_amount,document_total,payment_status');
+      .select('commission_amount,document_total,payment_status,record_kind,lifecycle_status')
+      .or('record_kind.eq.v1_import,and(record_kind.eq.real_transaction,lifecycle_status.eq.confirmed)');
     if (filter) query = query.eq(filter.column, filter.value);
     const { data, error } = await query;
     if (error) throw new InternalServerErrorException('Unable to load commissions');

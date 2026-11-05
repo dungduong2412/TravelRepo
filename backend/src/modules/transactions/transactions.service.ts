@@ -4,9 +4,10 @@ import {
   ForbiddenException,
   Injectable,
   InternalServerErrorException,
+  NotFoundException,
 } from '@nestjs/common';
 import { SupabaseService } from '../../infrastructure/supabase/supabase.service';
-import { CreateUatSimulationTransaction, TransactionReportQuery } from './transactions.dto';
+import { CreateRealTransaction, CreateUatSimulationTransaction, TransactionAction, TransactionReportQuery } from './transactions.dto';
 
 const COLUMNS = [
   'id', 'legacy_transaction_id', 'merchant_id', 'collaborator_id',
@@ -218,6 +219,54 @@ export class TransactionsService {
       payment_status: 'unverified',
       external_settlement_enabled: false,
     };
+  }
+
+  async createRealTransaction(userId: string, dto: CreateRealTransaction) {
+    const { data, error } = await this.supabase.getClient().rpc('create_real_transaction', {
+      p_actor_user_id: userId,
+      p_collaborator_code: dto.collaborator_code,
+      p_gross_amount: dto.gross_amount,
+      p_idempotency_key: dto.idempotency_key,
+    }).single();
+    if (error) {
+      if (error.code === '42501') throw new ForbiddenException(error.message);
+      if (error.code === '23505') throw new ConflictException(error.message);
+      if (['22003', '22023', '23514'].includes(error.code || '')) throw new BadRequestException(error.message);
+      throw new InternalServerErrorException('Unable to create real transaction');
+    }
+    return { ...(data as Record<string, unknown>), record_kind: 'real_transaction', payment_status: 'unverified', external_settlement_enabled: false };
+  }
+
+  private async transitionTransaction(
+    rpc: string,
+    userId: string,
+    transactionId: string,
+    dto: TransactionAction,
+  ) {
+    const { data, error } = await this.supabase.getClient().rpc(rpc, {
+      p_actor_user_id: userId,
+      p_transaction_id: transactionId,
+      p_idempotency_key: dto.idempotency_key,
+    }).single();
+    if (error) {
+      if (error.code === '42501') throw new ForbiddenException(error.message);
+      if (['22023', '23514'].includes(error.code || '')) throw new BadRequestException(error.message);
+      if (error.code === 'P0001' || error.message?.includes('not found')) throw new NotFoundException(error.message);
+      throw new InternalServerErrorException('Unable to update transaction');
+    }
+    return data;
+  }
+
+  async confirmTransaction(userId: string, transactionId: string, dto: TransactionAction) {
+    return this.transitionTransaction('confirm_real_transaction', userId, transactionId, dto);
+  }
+
+  async cancelTransaction(userId: string, transactionId: string, dto: TransactionAction) {
+    return this.transitionTransaction('cancel_real_transaction', userId, transactionId, dto);
+  }
+
+  async reverseTransaction(userId: string, transactionId: string, dto: TransactionAction) {
+    return this.transitionTransaction('reverse_real_transaction', userId, transactionId, dto);
   }
 
   async upsertImported(rows: Record<string, unknown>[]) {

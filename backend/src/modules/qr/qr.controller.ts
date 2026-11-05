@@ -7,6 +7,6 @@ export class QrController {
 
   @Get(':qrToken')
   async resolve(@Param('qrToken') qrToken: string) {
-    return this.collaboratorsService.resolveByQrToken(qrToken);
+    return this.collaboratorsService.resolveByQrTokenPublic(qrToken);
   }
 }
