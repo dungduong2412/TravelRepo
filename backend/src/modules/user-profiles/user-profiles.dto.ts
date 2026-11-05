@@ -62,8 +62,9 @@ export type UpdateManagedUserProfileDto = {
 
 export const CreateManagedUserProfileSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(12)
-    .regex(/[a-z]/).regex(/[A-Z]/).regex(/\d/).regex(/[^A-Za-z0-9]/),
+  // Policy: min 8 chars, at least one letter (a-z / A-Z) and one digit. No uppercase/special requirement.
+  // Keep in sync with frontend/lib/password-policy.ts and Supabase Auth Dashboard password settings.
+  password: z.string().min(8).regex(/[a-zA-Z]/, 'Password must contain at least one letter').regex(/\d/, 'Password must contain at least one digit'),
   role: z.enum(['admin', 'merchant', 'collaborator']),
   merchant_id: PostgresUuidSchema.nullable().optional(),
   collaborator_id: PostgresUuidSchema.nullable().optional(),

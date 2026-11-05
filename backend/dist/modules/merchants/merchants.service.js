@@ -14,10 +14,13 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.MerchantsService = void 0;
 const common_1 = require("@nestjs/common");
+const postgres_uuid_1 = require("../../common/validation/postgres-uuid");
 const crypto_1 = require("crypto");
 const supabase_service_1 = require("../../infrastructure/supabase/supabase.service");
 const user_profiles_service_1 = require("../user-profiles/user-profiles.service");
 const audit_service_1 = require("../audit/audit.service");
+const public_catalog_projection_1 = require("../public-catalog/public-catalog.projection");
+const main_media_1 = require("../media/main-media");
 let MerchantsService = class MerchantsService {
     constructor(supabase, userProfilesService, audit) {
         this.supabase = supabase;
@@ -83,13 +86,49 @@ let MerchantsService = class MerchantsService {
             .range(from, from + filter.page_size - 1);
         if (error)
             throw new Error(`Failed to fetch merchant directory: ${error.message}`);
+        const rows = (data || []).map((row) => this.withoutPassword(row));
+        const summaries = await this.directorySummaries(rows.map((row) => row.merchant_system_id));
         return {
-            items: (data || []).map((row) => this.withoutPassword(row)),
+            items: rows.map((row) => ({ ...row, ...summaries.get(row.merchant_system_id) })),
             page: filter.page,
             page_size: filter.page_size,
             total: count || 0,
             page_count: Math.ceil((count || 0) / filter.page_size),
         };
+    }
+    async directorySummaries(merchantIds) {
+        const summaries = new Map();
+        for (const id of merchantIds)
+            summaries.set(id, { category_names: [], main_image: null });
+        if (!merchantIds.length)
+            return summaries;
+        const client = this.supabase.getClient();
+        const [links, media] = await Promise.all([
+            client.from('merchant_category_links')
+                .select('merchant_id,category:categories!merchant_category_links_category_id_fkey(category_name,category_name_vi)')
+                .in('merchant_id', merchantIds),
+            client.from('media_assets').select('id,merchant_id,bucket_id,object_path,is_hero,display_order,created_at')
+                .in('merchant_id', merchantIds).in('publication_status', [...main_media_1.EFFECTIVE_MEDIA_STATUSES]).eq('transfer_status', 'verified'),
+        ]);
+        for (const link of (links.data || [])) {
+            const category = Array.isArray(link.category) ? link.category[0] : link.category;
+            const name = category?.category_name_vi || category?.category_name;
+            if (name)
+                summaries.get(link.merchant_id)?.category_names.push(name);
+        }
+        const byMerchant = new Map();
+        for (const asset of (media.data || []))
+            byMerchant.set(asset.merchant_id, [...(byMerchant.get(asset.merchant_id) || []), asset]);
+        const mains = [...byMerchant.entries()].map(([merchantId, assets]) => [merchantId, (0, main_media_1.pickMainMedia)(assets)]);
+        await Promise.all(mains.map(async ([merchantId, main]) => {
+            if (!main)
+                return;
+            const { data: signed } = await client.storage.from(main.bucket_id).createSignedUrl(main.object_path, 600, {
+                transform: { width: 160, height: 160, resize: 'cover', quality: 70 },
+            });
+            summaries.get(merchantId).main_image = { id: main.id, thumb_url: signed?.signedUrl ?? null };
+        }));
+        return summaries;
     }
     async findById(id) {
         const { data, error } = await this.supabase.getClient()
@@ -160,13 +199,15 @@ let MerchantsService = class MerchantsService {
     async findVerified() {
         const { data, error } = await this.supabase.getClient()
             .from('merchant_details')
-            .select('*')
+            .select(public_catalog_projection_1.PUBLIC_MERCHANT_COLUMNS.join(','))
             .eq('merchant_verified', true)
             .order('merchant_registered_date', { ascending: false });
         if (error) {
             throw new Error(`Failed to fetch verified merchants: ${error.message}`);
         }
-        return (data || []).map((row) => this.withoutPassword(row));
+        return (data || [])
+            .filter((row) => row.legacy_is_banned !== true)
+            .map(public_catalog_projection_1.toLegacyVerifiedMerchant);
     }
     async create(actor, dto) {
         const identity = await this.userProfilesService.requireVerifiedSignupIdentity(actor.id, dto.owner_email);
@@ -185,7 +226,9 @@ let MerchantsService = class MerchantsService {
             .select()
             .single();
         if (error) {
-            throw new Error(`Failed to create merchant: ${error.message}`);
+            if (error.code === '23505')
+                throw new common_1.ConflictException('A merchant application already exists for this identity');
+            throw new common_1.BadRequestException(`Failed to create merchant: ${error.message}`);
         }
         try {
             await this.userProfilesService.createOrUpdate({
@@ -196,20 +239,31 @@ let MerchantsService = class MerchantsService {
                 user_id: identity.userId,
                 status: 'pending',
             });
-            if (categoryIds) {
-                const { error: categoryError } = await this.supabase.getClient().rpc('set_merchant_categories', {
-                    p_merchant_id: data.merchant_system_id,
-                    p_actor_user_id: identity.userId,
-                    p_category_ids: categoryIds,
-                });
-                if (categoryError)
-                    throw categoryError;
+            if (categoryIds?.length) {
+                const links = categoryIds.map((cid) => ({
+                    merchant_id: data.merchant_system_id,
+                    category_id: cid,
+                    legacy_tenant_id: null,
+                    association_source: 'v2',
+                }));
+                const { error: categoryError } = await this.supabase.getClient()
+                    .from('merchant_category_links')
+                    .insert(links);
+                if (categoryError) {
+                    if (categoryError.code === '23503')
+                        throw new common_1.BadRequestException('One or more category ids are invalid');
+                    if (categoryError.code === '23514' || categoryError.code === '23505')
+                        throw new common_1.BadRequestException('Category limit exceeded or duplicate category');
+                    throw new common_1.BadRequestException(`Failed to set categories: ${categoryError.message}`);
+                }
             }
             await this.audit.record({ id: identity.userId, role: 'merchant' }, 'merchant.application_submitted', 'merchant', data.merchant_system_id, {
                 email_verified: true,
+                category_ids: categoryIds ?? [],
             });
         }
         catch (identityError) {
+            await this.supabase.getClient().from('merchant_category_links').delete().eq('merchant_id', data.merchant_system_id);
             await this.supabase.getClient().from('merchant_user_links').delete().eq('merchant_id', data.merchant_system_id);
             await this.supabase.getClient().from('user_profiles').delete().eq('user_id', identity.userId);
             await this.supabase.getClient().from('merchant_details')
@@ -378,19 +432,26 @@ let MerchantsService = class MerchantsService {
         return this.withoutPassword(data);
     }
     async approve(actor, id) {
-        const merchant = await this.findById(id);
-        if (!merchant) {
-            console.error(`[MerchantsService] Merchant not found: ${id}`);
-            throw new Error('Merchant not found');
+        if (!postgres_uuid_1.PostgresUuidSchema.safeParse(id).success) {
+            throw new common_1.BadRequestException({ code: 'INVALID_ID', message: 'Merchant id must be a UUID' });
         }
+        const { data: row, error: fetchError } = await this.supabase.getClient().from('merchant_details')
+            .select('*').eq('merchant_system_id', id).maybeSingle();
+        if (fetchError)
+            throw new Error(`Failed to fetch merchant: ${fetchError.message}`);
+        const merchant = row ? this.withoutPassword(row) : null;
+        if (!merchant)
+            throw new common_1.NotFoundException({ code: 'MERCHANT_NOT_FOUND', message: 'Merchant not found' });
         if (!merchant.owner_email) {
-            console.error(`[MerchantsService] Missing owner_email for merchant ${id}`);
-            throw new Error('Cannot approve merchant: owner_email is required');
+            throw new common_1.UnprocessableEntityException({ code: 'OWNER_EMAIL_REQUIRED', message: 'Cannot approve merchant: owner_email is required' });
         }
         const { data: linkedProfile, error: linkedProfileError } = await this.supabase.getClient().from('user_profiles')
             .select('user_id').eq('merchant_id', id).eq('role', 'merchant').maybeSingle();
-        if (linkedProfileError || !linkedProfile?.user_id)
-            throw new Error('Cannot approve merchant: verified Auth identity is required');
+        if (linkedProfileError)
+            throw new Error(`Failed to load owner link: ${linkedProfileError.message}`);
+        if (!linkedProfile?.user_id) {
+            throw new common_1.ConflictException({ code: 'OWNER_NOT_CLAIMED', message: 'Cannot approve merchant: the owner has not claimed this record with a verified Auth identity' });
+        }
         await this.userProfilesService.assertLinkedAuthEmailConfirmed(linkedProfile.user_id);
         const { data, error } = await this.supabase.getClient()
             .from('merchant_details')

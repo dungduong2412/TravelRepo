@@ -5,15 +5,13 @@ export declare class MerchantsController {
     constructor(service: MerchantsService);
     findAll(): Promise<Omit<any, "owner_password">[]>;
     findDirectory(query: MerchantDirectoryQuery): Promise<{
-        items: Omit<{
-            error: true;
-        } & "Received a generic string", "owner_password">[];
+        items: any[];
         page: number;
         page_size: number;
         total: number;
         page_count: number;
     }>;
-    findVerified(): Promise<Omit<any, "owner_password">[]>;
+    findVerified(): Promise<Record<string, unknown>[]>;
     listMembers(actor: {
         id: string;
     }): Promise<{

@@ -47,8 +47,7 @@ exports.UpdateManagedUserProfileSchema = zod_1.z.object({
 });
 exports.CreateManagedUserProfileSchema = zod_1.z.object({
     email: zod_1.z.string().email(),
-    password: zod_1.z.string().min(12)
-        .regex(/[a-z]/).regex(/[A-Z]/).regex(/\d/).regex(/[^A-Za-z0-9]/),
+    password: zod_1.z.string().min(8).regex(/[a-zA-Z]/, 'Password must contain at least one letter').regex(/\d/, 'Password must contain at least one digit'),
     role: zod_1.z.enum(['admin', 'merchant', 'collaborator']),
     merchant_id: postgres_uuid_1.PostgresUuidSchema.nullable().optional(),
     collaborator_id: postgres_uuid_1.PostgresUuidSchema.nullable().optional(),

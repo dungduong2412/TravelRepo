@@ -5,8 +5,7 @@ import { supabase } from '../lib/supabase';
 import { Field } from './ui/Form';
 import { Alert } from './ui/Feedback';
 import { Button } from './ui/Button';
-
-const strongPassword = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{12,}$/;
+import { isValidPassword, PASSWORD_ERROR, PASSWORD_HINT } from '../lib/password-policy';
 
 /**
  * An account created by an admin invitation has no password. This form is rendered only after the server has accepted the claim for the
@@ -22,7 +21,7 @@ export function FirstPasswordForm({ required, onDone }: { required: boolean; onD
 
   const submit = async (e: FormEvent) => {
     e.preventDefault(); setError('');
-    if (!strongPassword.test(password)) return setError('Mật khẩu phải có ít nhất 12 ký tự, gồm chữ hoa, chữ thường, số và ký tự đặc biệt.');
+    if (!isValidPassword(password)) return setError(PASSWORD_ERROR);
     if (password !== confirmation) return setError('Hai mật khẩu không khớp.');
     setBusy(true);
     const { error: updateError } = await supabase.auth.updateUser({ password, data: { password_set: true } });
@@ -38,7 +37,7 @@ export function FirstPasswordForm({ required, onDone }: { required: boolean; onD
         ? <Alert tone="warning" title="Cần đặt mật khẩu để hoàn tất">Tài khoản được tạo từ lời mời chưa có mật khẩu. Hãy đặt mật khẩu để có thể đăng nhập lần sau.</Alert>
         : <p className="text-sm text-ink-muted">Đặt mật khẩu để đăng nhập những lần sau. Bạn cũng có thể bỏ qua và dùng &quot;Quên mật khẩu&quot; khi cần.</p>}
       <Field id="first-password" label="Mật khẩu" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} required
-        hint="Ít nhất 12 ký tự, gồm chữ hoa, chữ thường, số và ký tự đặc biệt." />
+        hint={PASSWORD_HINT} />
       <Field id="first-password-confirm" label="Xác nhận mật khẩu" type="password" autoComplete="new-password" value={confirmation} onChange={(e) => setConfirmation(e.target.value)} required />
       {error && <Alert tone="danger">{error}</Alert>}
       <Button type="submit" disabled={busy} className="w-full">{busy ? 'Đang lưu…' : 'Đặt mật khẩu'}</Button>

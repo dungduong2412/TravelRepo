@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { isValidPassword, PASSWORD_ERROR } from '../lib/password-policy';
 
 export default function AccountSettings() {
   const [password, setPassword] = useState('');
@@ -11,7 +12,7 @@ export default function AccountSettings() {
 
   async function submit(event: FormEvent) {
     event.preventDefault(); setMessage(null);
-    if (password.length < 12 || !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/\d/.test(password)) return setMessage({ type: 'error', text: 'Mật khẩu cần ít nhất 12 ký tự, chữ hoa, chữ thường và chữ số.' });
+    if (!isValidPassword(password)) return setMessage({ type: 'error', text: PASSWORD_ERROR });
     if (password !== confirmPassword) return setMessage({ type: 'error', text: 'Mật khẩu xác nhận không khớp.' });
     setBusy(true);
     const { error } = await supabase.auth.updateUser({ password });

@@ -3,9 +3,9 @@ export declare const UserProfileSchema: z.ZodObject<{
     id: z.ZodString;
     email: z.ZodString;
     role: z.ZodEnum<{
+        admin: "admin";
         merchant: "merchant";
         collaborator: "collaborator";
-        admin: "admin";
     }>;
     merchant_id: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     collaborator_id: z.ZodOptional<z.ZodNullable<z.ZodString>>;
@@ -19,9 +19,9 @@ export type UserProfileDto = z.infer<typeof UserProfileSchema>;
 export declare const CreateUserProfileSchema: z.ZodObject<{
     email: z.ZodString;
     role: z.ZodEnum<{
+        admin: "admin";
         merchant: "merchant";
         collaborator: "collaborator";
-        admin: "admin";
     }>;
     merchant_id: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     collaborator_id: z.ZodOptional<z.ZodNullable<z.ZodString>>;
@@ -29,20 +29,20 @@ export declare const CreateUserProfileSchema: z.ZodObject<{
 }, z.core.$strip>;
 export type CreateUserProfileDto = z.infer<typeof CreateUserProfileSchema>;
 export declare const ManagedUserStatusSchema: z.ZodEnum<{
-    pending: "pending";
     active: "active";
+    pending: "pending";
     inactive: "inactive";
     blocked: "blocked";
 }>;
 export declare const UpdateManagedUserProfileSchema: z.ZodObject<{
     role: z.ZodEnum<{
+        admin: "admin";
         merchant: "merchant";
         collaborator: "collaborator";
-        admin: "admin";
     }>;
     user_profiles_status: z.ZodEnum<{
-        pending: "pending";
         active: "active";
+        pending: "pending";
         inactive: "inactive";
         blocked: "blocked";
     }>;
@@ -59,9 +59,9 @@ export declare const CreateManagedUserProfileSchema: z.ZodObject<{
     email: z.ZodString;
     password: z.ZodString;
     role: z.ZodEnum<{
+        admin: "admin";
         merchant: "merchant";
         collaborator: "collaborator";
-        admin: "admin";
     }>;
     merchant_id: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     collaborator_id: z.ZodOptional<z.ZodNullable<z.ZodString>>;

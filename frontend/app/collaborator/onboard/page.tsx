@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiFetch } from '../../../lib/api';
 import { signUp, supabase } from '../../../lib/supabase';
+import { isValidPassword, PASSWORD_ERROR } from '../../../lib/password-policy';
 
 const DRAFT_KEY = 'vno-collaborator-onboarding-draft';
 
@@ -75,8 +76,8 @@ export default function CollaboratorOnboardPage() {
 
     if (!hasVerifiedSession && !formData.password) {
       errors.password = 'Mật khẩu là bắt buộc';
-    } else if (!hasVerifiedSession && !/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{12,}$/.test(formData.password)) {
-      errors.password = 'Mật khẩu phải có ít nhất 12 ký tự, gồm chữ hoa, chữ thường, số và ký tự đặc biệt';
+    } else if (!hasVerifiedSession && !isValidPassword(formData.password)) {
+      errors.password = PASSWORD_ERROR;
     }
 
     if (!hasVerifiedSession && formData.password !== formData.confirmPassword) {
@@ -207,7 +208,7 @@ export default function CollaboratorOnboardPage() {
               value={formData.password}
               onChange={handleChange}
               style={styles.input}
-              placeholder="Ít nhất 12 ký tự"
+              placeholder="Ít nhất 8 ký tự, gồm chữ cái và chữ số"
             />
             {validationErrors.password && (
               <span style={styles.errorText}>{validationErrors.password}</span>
@@ -289,7 +290,7 @@ export default function CollaboratorOnboardPage() {
               style={styles.primaryButton}
               disabled={isSubmitting}
             >
-              {isSubmitting ? 'Đang gửi...' : hasVerifiedSession ? 'Gửi Hồ Sơ Để Duyệt' : 'Xác Nhận Email'}
+              {isSubmitting ? 'Đang gửi...' : hasVerifiedSession ? 'Gửi hồ sơ' : 'Xác nhận email'}
             </button>
           </div>
         </form>

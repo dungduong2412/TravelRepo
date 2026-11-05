@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiFetch } from '../../../lib/api';
 import { signUp, supabase } from '../../../lib/supabase';
+import { isValidPassword, PASSWORD_ERROR, PASSWORD_HINT } from '../../../lib/password-policy';
 
 type Category = { id: string; category_name?: string | null; category_name_vi?: string | null };
 const DRAFT_KEY = 'vno-merchant-onboarding-draft';
@@ -67,8 +68,8 @@ export default function MerchantOnboardPage() {
     setIsSubmitting(true);
     setError(null);
 
-    if (!hasVerifiedSession && !/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{12,}$/.test(formData.password)) {
-      setError('Mật khẩu phải có ít nhất 12 ký tự, gồm chữ hoa, chữ thường, số và ký tự đặc biệt');
+    if (!hasVerifiedSession && !isValidPassword(formData.password)) {
+      setError(PASSWORD_ERROR);
       setIsSubmitting(false);
       return;
     }
@@ -159,7 +160,7 @@ export default function MerchantOnboardPage() {
               onChange={handleChange}
               style={styles.input}
             />
-            <small style={styles.hint}>Ít nhất 12 ký tự, gồm chữ hoa, chữ thường, số và ký tự đặc biệt.</small>
+            <small style={styles.hint}>{PASSWORD_HINT}</small>
           </div>
 
           <div style={styles.formGroup}>
@@ -240,7 +241,7 @@ export default function MerchantOnboardPage() {
               style={styles.primaryButton}
               disabled={isSubmitting}
             >
-              {isSubmitting ? 'Đang gửi...' : hasVerifiedSession ? 'Gửi Hồ Sơ Để Duyệt' : 'Xác Nhận Email'}
+              {isSubmitting ? 'Đang gửi...' : hasVerifiedSession ? 'Gửi hồ sơ' : 'Xác nhận email'}
             </button>
           </div>
         </form>

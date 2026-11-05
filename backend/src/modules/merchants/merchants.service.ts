@@ -234,7 +234,8 @@ export class MerchantsService {
       .single();
 
     if (error) {
-      throw new Error(`Failed to create merchant: ${error.message}`);
+      if (error.code === '23505') throw new ConflictException('A merchant application already exists for this identity');
+      throw new BadRequestException(`Failed to create merchant: ${error.message}`);
     }
 
     try {
@@ -246,18 +247,31 @@ export class MerchantsService {
         user_id: identity.userId,
         status: 'pending',
       });
-      if (categoryIds) {
-        const { error: categoryError } = await this.supabase.getClient().rpc('set_merchant_categories', {
-          p_merchant_id: data.merchant_system_id,
-          p_actor_user_id: identity.userId,
-          p_category_ids: categoryIds,
-        });
-        if (categoryError) throw categoryError;
+      if (categoryIds?.length) {
+        // Use direct service-role insert instead of set_merchant_categories RPC, which
+        // requires an ACTIVE profile (security invoker, 42501). The signup actor has a
+        // pending profile at this point, so the RPC would throw and cause an HTTP 500.
+        const links = categoryIds.map((cid) => ({
+          merchant_id: data.merchant_system_id,
+          category_id: cid,
+          legacy_tenant_id: null,
+          association_source: 'v2',
+        }));
+        const { error: categoryError } = await this.supabase.getClient()
+          .from('merchant_category_links')
+          .insert(links);
+        if (categoryError) {
+          if (categoryError.code === '23503') throw new BadRequestException('One or more category ids are invalid');
+          if (categoryError.code === '23514' || categoryError.code === '23505') throw new BadRequestException('Category limit exceeded or duplicate category');
+          throw new BadRequestException(`Failed to set categories: ${categoryError.message}`);
+        }
       }
       await this.audit.record({ id: identity.userId, role: 'merchant' }, 'merchant.application_submitted', 'merchant', data.merchant_system_id, {
         email_verified: true,
+        category_ids: categoryIds ?? [],
       });
     } catch (identityError) {
+      await this.supabase.getClient().from('merchant_category_links').delete().eq('merchant_id', data.merchant_system_id);
       await this.supabase.getClient().from('merchant_user_links').delete().eq('merchant_id', data.merchant_system_id);
       await this.supabase.getClient().from('user_profiles').delete().eq('user_id', identity.userId);
       await this.supabase.getClient().from('merchant_details')

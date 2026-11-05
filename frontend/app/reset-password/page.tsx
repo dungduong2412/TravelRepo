@@ -7,8 +7,7 @@ import { AuthShell } from '../../components/ui/AuthShell';
 import { Field } from '../../components/ui/Form';
 import { Button, ButtonLink } from '../../components/ui/Button';
 import { Alert } from '../../components/ui/Feedback';
-
-const strongPassword = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{12,}$/;
+import { isValidPassword, PASSWORD_ERROR, PASSWORD_HINT } from '../../lib/password-policy';
 
 export default function ResetPasswordPage() {
   const [ready, setReady] = useState(false);
@@ -35,8 +34,8 @@ export default function ResetPasswordPage() {
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setError('');
-    if (!strongPassword.test(password)) {
-      setError('Mật khẩu phải có ít nhất 12 ký tự, gồm chữ hoa, chữ thường, số và ký tự đặc biệt.');
+    if (!isValidPassword(password)) {
+      setError(PASSWORD_ERROR);
       return;
     }
     if (password !== confirmation) {
@@ -66,7 +65,7 @@ export default function ResetPasswordPage() {
       ) : ready ? (
         <form className="space-y-4" onSubmit={submit}>
           <Field id="new-password" label="Mật khẩu mới" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} required
-            hint="Ít nhất 12 ký tự, gồm chữ hoa, chữ thường, số và ký tự đặc biệt." />
+            hint={PASSWORD_HINT} />
           <Field id="confirm-password" label="Xác nhận mật khẩu" type="password" autoComplete="new-password" value={confirmation} onChange={(e) => setConfirmation(e.target.value)} required />
           {error && <Alert tone="danger">{error}</Alert>}
           <Button type="submit" disabled={loading} className="w-full">{loading ? 'Đang cập nhật…' : 'Cập nhật mật khẩu'}</Button>

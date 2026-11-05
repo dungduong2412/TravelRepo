@@ -11,14 +11,13 @@ export declare class MerchantsService {
     private withoutPassword;
     findAll(): Promise<Omit<any, "owner_password">[]>;
     findDirectory(filter: MerchantDirectoryQuery): Promise<{
-        items: Omit<{
-            error: true;
-        } & "Received a generic string", "owner_password">[];
+        items: any[];
         page: number;
         page_size: number;
         total: number;
         page_count: number;
     }>;
+    private directorySummaries;
     findById(id: string): Promise<Omit<any, "owner_password">>;
     findByIdForActor(userId: string, id: string): Promise<{
         category_ids: any[];
@@ -67,7 +66,7 @@ export declare class MerchantsService {
         }[];
     }>;
     findByEmail(email: string): Promise<any>;
-    findVerified(): Promise<Omit<any, "owner_password">[]>;
+    findVerified(): Promise<Record<string, unknown>[]>;
     create(actor: {
         id: string;
         email?: string;
