@@ -80,7 +80,7 @@ console.log('── T01 Resolve Partner QR ──');
 const resolveRes = await call('/qr/resolve', {
   token: merchantToken, method: 'POST',
   body: { payload: PARTNER_CODE },
-  expectStatus: 200,
+  expectStatus: 201,
 });
 check('T01-a', 'QR resolves for merchant', resolveRes.json?.association === 'assigned_to_this_merchant', resolveRes.json);
 check('T01-b', 'collaborator_code present', typeof resolveRes.json?.collaborator_code === 'string', resolveRes.json);
@@ -248,7 +248,7 @@ console.log('\n── T12 Legacy raw QR code backwards compatibility ──');
 const legacyRes = await call('/qr/resolve', {
   token: merchantToken, method: 'POST',
   body: { payload: PARTNER_CODE }, // raw code, not URL
-  expectStatus: 200,
+  expectStatus: 201,
 });
 check('T12-a', 'legacy raw code resolves via /qr/resolve', legacyRes.json?.collaborator_code === partnerCode, legacyRes.json);
 
