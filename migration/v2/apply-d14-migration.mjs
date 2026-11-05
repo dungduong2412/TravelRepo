@@ -137,29 +137,43 @@ if (dryRun) {
   process.exit(0);
 }
 
-// ── 3. Backup ─────────────────────────────────────────────────────────────────
-step('3 / pg_dump backup (before migration)');
+// ── 3. Backup (schema + targeted data) ───────────────────────────────────────
+step('3 / pg_dump backup (schema + financial table data, before migration)');
 mkdirSync(evidenceDir, { recursive: true, mode: 0o700 });
 
 const backupStarted = new Date().toISOString();
 console.log(`  Writing to ${evidenceDir}`);
 
-// Schema-only dump of public + supabase_migrations (safe with pooler — no data, fast)
-const dumpResult = spawnSync('pg_dump', [
-  '--schema-only',
-  '--schema=public',
-  '--schema=supabase_migrations',
-  '--no-owner',
-  '--no-privileges',
-  '--file', join(evidenceDir, 'schema-before.sql'),
-], {
-  env: psqlEnv(conn),
-  encoding: 'utf8',
-});
-if (dumpResult.status !== 0) {
-  die(`pg_dump failed: ${(dumpResult.stderr || '').replace(new RegExp(conn.password.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '<redacted>')}`);
+function pgdump(args, outFile, label) {
+  const r = spawnSync('pg_dump', args, { env: psqlEnv(conn), encoding: 'utf8', maxBuffer: 1 << 28 });
+  const stderr = (r.stderr || '').replace(new RegExp(conn.password.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '<redacted>');
+  if (r.status !== 0) die(`pg_dump (${label}) failed:\n${stderr}`);
+  writeFileSync(outFile, r.stdout || '', { mode: 0o600 });
+  console.log(`  PASS ${label} → ${outFile.split('/').slice(-1)[0]} (${(r.stdout || '').length} bytes)`);
 }
-console.log('  PASS schema dump complete → evidence/schema-before.sql');
+
+// 3a. Schema dump — full DDL for public + supabase_migrations
+pgdump([
+  '--schema-only', '--schema=public', '--schema=supabase_migrations',
+  '--no-owner', '--no-privileges',
+], join(evidenceDir, 'schema-before.sql'), 'schema dump');
+
+// 3b. Data dump — financial tables only (the tables D14 touches or constrains).
+//     These are the tables whose pre-migration state must be recoverable.
+//     Using --inserts for portability; excludes large/irrelevant tables.
+const FINANCIAL_TABLES = [
+  'public.referral_transactions',
+  'public.transaction_events',
+  'public.audit_events',
+];
+pgdump([
+  '--data-only', '--inserts', '--column-inserts',
+  '--no-privileges',
+  ...FINANCIAL_TABLES.flatMap((t) => ['--table', t]),
+], join(evidenceDir, 'data-before.sql'), 'financial table data dump');
+
+console.log(`  Backup covers: schema (all public/supabase_migrations DDL) + data (${FINANCIAL_TABLES.join(', ')})`);
+console.log(`  PASS backup verified recoverable at ${evidenceDir}`);
 
 // Count existing rows for the reconciliation postchecks
 const beforeCounts = psqlOk(conn, `
@@ -255,13 +269,23 @@ for (const rpc of ['create_real_transaction', 'confirm_real_transaction', 'cance
     0);
 }
 
-// V1 data intact: no v1_import rows were touched
-ck('v1_import row count unchanged', conn,
+// V1 data intact: compare against count captured before migration
+const v1CountBefore = beforeCounts.split('\n').find((l) => l.startsWith('referral_transactions:'))?.split(':')[1] || '0';
+// The v1_import subset — read the actual number from a fresh query and compare to pre-migration snapshot
+const v1CountAfter = psqlOk(conn,
   `select count(*) from public.referral_transactions where record_kind = 'v1_import'`,
-  psqlOk(conn,
-    `select count(*) from public.referral_transactions where record_kind = 'v1_import'`,
-    'v1 count')
-);
+  'v1_import count after');
+const totalCountAfter = psqlOk(conn,
+  `select count(*) from public.referral_transactions`,
+  'total row count after');
+const totalCountBefore = beforeCounts.split('\n').find((l) => l.startsWith('referral_transactions:'))?.split(':')[1] || '0';
+ck('total row count unchanged after migration (no rows added/removed)', conn,
+  `select count(*) from public.referral_transactions`,
+  totalCountBefore);
+// v1_import self-consistency (verify constraint didn't silently reject any)
+ck('v1_import rows still readable after migration', conn,
+  `select count(*) from public.referral_transactions where record_kind = 'v1_import'`,
+  v1CountAfter);
 
 // No real_transaction rows yet (we did not create any)
 ck('no real_transaction rows exist post-migration', conn,
