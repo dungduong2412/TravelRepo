@@ -14,6 +14,7 @@ import { UserProfilesService } from '../user-profiles/user-profiles.service';
 import { AuditActor, AuditService } from '../audit/audit.service';
 import { PUBLIC_MERCHANT_COLUMNS, toLegacyVerifiedMerchant } from '../public-catalog/public-catalog.projection';
 import { EFFECTIVE_MEDIA_STATUSES, pickMainMedia } from '../media/main-media';
+import { ApplicationEmailService } from '../auth-email-hook/application-email.service';
 
 @Injectable()
 export class MerchantsService {
@@ -22,6 +23,7 @@ export class MerchantsService {
     @Inject(forwardRef(() => UserProfilesService))
     private readonly userProfilesService: UserProfilesService,
     private readonly audit: AuditService,
+    private readonly appEmail: ApplicationEmailService,
   ) {}
 
   private generateMerchantCode(): string {
@@ -278,6 +280,9 @@ export class MerchantsService {
         .delete().eq('merchant_system_id', data.merchant_system_id);
       throw identityError;
     }
+    // Fire-and-forget: welcome email must never block the response or roll back the merchant.
+    // In UAT this is suppressed unless the recipient is on AUTH_EMAIL_ALLOWLIST (and not a migrated V1 identity).
+    void this.appEmail.sendMerchantWelcome(identity.email, data.merchant_name || identity.email);
     return this.withoutPassword(data);
   }
 

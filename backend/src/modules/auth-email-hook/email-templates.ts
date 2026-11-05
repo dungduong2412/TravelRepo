@@ -71,6 +71,57 @@ export function esc(v: string): string {
   return v.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
 }
 
+/**
+ * Renders the Merchant welcome email sent after a successful profile creation.
+ * Separate from renderEmail because it carries application-level context (merchant name, workspace URL)
+ * that the hook-triggered auth emails do not have.
+ */
+export function renderWelcomeEmail(opts: { merchantName: string; workspaceUrl: string; subjectPrefix: string }): { subject: string; html: string; text: string } {
+  const subject = `${opts.subjectPrefix}VNO – Hồ sơ Nhà cung cấp đã được tạo thành công / Merchant profile created`;
+  const preheader = 'Hồ sơ Nhà cung cấp đã được tạo · Merchant profile created';
+  const link = opts.workspaceUrl;
+
+  const html = `<!doctype html>
+<html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><title>${esc(subject)}</title></head>
+<body style="margin:0;padding:0;background:#f7f7f8;-webkit-text-size-adjust:100%">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:#f7f7f8">${esc(preheader)}</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f7f7f8"><tr><td align="center" style="padding:16px 12px">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;background:#ffffff;border:1px solid #e5e7eb;border-radius:16px;overflow:hidden">
+<tr><td style="background:#d91e4a;padding:18px 24px;font-family:Arial,Helvetica,sans-serif;font-size:18px;font-weight:700;color:#ffffff">Vietnam Number One</td></tr>
+<tr><td style="padding:24px;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:24px;color:#1b1f27">
+<h1 style="margin:0 0 12px;font-size:22px;line-height:28px;color:#1b1f27">Hồ sơ Nhà cung cấp đã được tạo thành công</h1>
+<p style="margin:0 0 12px">Chào mừng <strong>${esc(opts.merchantName)}</strong> đến với Vietnam Number One!</p>
+<p style="margin:0 0 12px">Hồ sơ Nhà cung cấp của bạn đã được tạo thành công. Bạn có thể truy cập Không gian làm việc ngay bây giờ. Việc xem xét và phê duyệt hồ sơ là quy trình riêng do Platform Admin thực hiện — bạn sẽ được thông báo khi có cập nhật.</p>
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0 8px"><tr><td align="center" bgcolor="#d91e4a" style="border-radius:12px"><a href="${esc(link)}" target="_blank" style="display:inline-block;min-height:24px;line-height:24px;padding:12px 24px;font-family:Arial,Helvetica,sans-serif;font-size:16px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:12px">Vào Không gian làm việc / Go to Workspace</a></td></tr></table>
+<h2 style="margin:20px 0 8px;font-size:16px;line-height:24px;color:#5b6472;font-weight:700">Merchant profile created successfully</h2>
+<p style="margin:0 0 4px;color:#1b1f27">Welcome <strong>${esc(opts.merchantName)}</strong> to Vietnam Number One!</p>
+<p style="margin:0 0 12px;color:#1b1f27">Your Merchant profile has been created. You can access your Workspace now. Profile review and approval is a separate process carried out by the Platform Admin — you will be notified when there are updates.</p>
+<p style="margin:16px 0 0;font-size:13px;line-height:20px;color:#5b6472">Nếu nút không hoạt động, sao chép liên kết này vào trình duyệt / If the button does not work, copy this link:<br><a href="${esc(link)}" style="color:#b3153b;word-break:break-all">${esc(link)}</a></p>
+<hr style="border:0;border-top:1px solid #e5e7eb;margin:24px 0 16px">
+<p style="margin:0;font-size:12px;line-height:18px;color:#93370d;background:#fffaeb;border-radius:8px;padding:8px 10px">${esc(UAT_NOTE[0])}<br>${esc(UAT_NOTE[1])}</p>
+</td></tr></table></td></tr></table></body></html>`;
+
+  const text = [
+    'Vietnam Number One',
+    '',
+    'Hồ sơ Nhà cung cấp đã được tạo thành công',
+    `Chào mừng ${opts.merchantName} đến với Vietnam Number One!`,
+    'Hồ sơ Nhà cung cấp của bạn đã được tạo thành công. Bạn có thể truy cập Không gian làm việc ngay bây giờ.',
+    'Việc xem xét và phê duyệt hồ sơ là quy trình riêng do Platform Admin thực hiện.',
+    '',
+    'Merchant profile created successfully',
+    `Welcome ${opts.merchantName} to Vietnam Number One!`,
+    'Your Merchant profile has been created. You can access your Workspace now.',
+    'Profile review and approval is a separate process carried out by the Platform Admin.',
+    '',
+    `Workspace: ${opts.workspaceUrl}`,
+    '',
+    UAT_NOTE[0], UAT_NOTE[1],
+  ].join('\n');
+
+  return { subject, html, text };
+}
+
 export function renderEmail(opts: { type: string; link?: string; code?: string; subjectPrefix: string }): { subject: string; html: string; text: string } {
   const kind = templateKind(opts.type);
   const c = COPY[kind];
