@@ -41,3 +41,21 @@ With 1–4 in place, U3 and U5 are one sitting; then the PASS/FAIL report and yo
 - **TLS:** `mail.oxmail.vn` 587 (STARTTLS) and 465: `Verification: OK`, `Verify return code: 0`, `CN=mail.oxmail.vn`, Let's Encrypt, expires 2026-12-27 (`gate-b-preflight-20261104/tls-mail.oxmail.vn-587-after-host-change.txt`, local).
 - **Unchanged behaviour:** hosted anonymous privacy 10/10 (144 merchant details); Playwright `00-unauth`+`20-regression`+`40-experience` 38/38. No data written.
 - **Still blocked:** `SMTP_PASS` (U3), tester allowlist, hook secret and Dashboard hook (U4/U5).
+
+## Addendum 2026-11-05 (2) — U3 and hosted U5 executed, delivery still disabled
+Hook secret and `SMTP_PASS` were entered by the owner (values never read or printed; secret format `v1,whsec_…` checked, password length only). API deployment SUCCESS at 01:07Z on `1471baa`. `AUTH_EMAIL_DELIVERY=disabled`, `INVITATION_DELIVERY=capture`, `AUTH_EMAIL_ALLOWLIST` **not set** (no owner-confirmed tester list yet — the E2E accounts in `e2e-uat/.env.uat.local` are public-provider plus-aliases and were NOT used as an allowlist).
+
+| Check | Result |
+|---|---|
+| **U3** `npm run smtp:check` via `railway run` (`mail.oxmail.vn:587 starttls`, certificate verification on) | **PASS** — encrypted channel + authentication accepted, no message sent |
+| Supabase hook configuration (hook enabled, URL, Custom SMTP empty) | **NOT VERIFIABLE with available tokens** — owner screenshot required |
+| Hosted U5 — signature: none / wrong / other-body / stale (−1 h) / future (+1 h) | **PASS** — 401 `Invalid hook signature` (5/5) |
+| Hosted U5 — valid signature, payload without email/action | **PASS** — 401 `Malformed hook payload` |
+| Hosted U5 — valid signature, malformed JSON | **Safe reject, expectation mismatch** — HTTP 400 from the framework body parser before the gateway; nothing processed |
+| Hosted U5 — valid signature, non-allowlisted recipient; all six action types (signup, recovery, invite, magiclink, email_change, reauthentication) | **PASS** — 200 `{"suppressed":true}` (7/7) |
+| Hosted U5 — 3 real migrated Auth user ids, delivery disabled | **PASS** — 200 suppressed (vacuously by `delivery_disabled`, see next row) |
+| Migrated-identity protection (real gateway code + real UAT `legacy_identity_map`, **stub sender**, delivery "enabled" only inside the local process, address deliberately allowlisted) | **PASS 8/8** — 5 real migrated ids → `suppressed migrated_identity`, 0 sends; control (non-migrated + allowlisted) reaches the stub once; not-allowlisted → suppressed. Hash-of-address path covered offline only (hook 12/12); no real V1 address was read |
+| Hosted logs | 10 `suppressed … delivery_disabled` lines = the 10 calls that reached the policy; **0** `sent`, `delivery failed` or SMTP lines |
+| Data integrity | `legacy_identity_map` 451; migrated profiles 451, **0** with login tracking; reconcile `--uat --no-db` 20 PASS / 1 FAIL / 2 NOT_RUN, the single FAIL being C21 on `user_profiles` only (11 synthetic accounts' login tracking from the Playwright runs, as in every release since 11-03); `audit_events` since test start: 0 |
+
+Not run / open: `AUTH_EMAIL_ALLOWLIST` (needs owner-confirmed addresses); enabled-delivery, real-mailbox UAT (needs separate approval); the Supabase-side proof that Auth really calls the hook (needs the owner's Dashboard screenshot, then one live Auth event with an allowlisted tester while delivery is still disabled → expect a `suppressed … delivery_disabled` log line). The local pre-run baseline capture was cut off by my own timeout; the last verified baseline (`gate-b-blockers-20261104/state-after.json`) was used. Evidence (local): `migration/v2/evidence/gate-b-preflight-20261104/`.
