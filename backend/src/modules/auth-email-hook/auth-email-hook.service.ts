@@ -1,7 +1,7 @@
 import { Injectable, Logger, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
 import { SupabaseService } from '../../infrastructure/supabase/supabase.service';
 import { RecipientPolicy, isRecipientAllowed, maskEmail, parseAllowlist } from '../../common/email/recipient-policy';
-import { AuthEmailPayload, composeMessage, decide, verifyHookSignature } from './email-policy';
+import { AuthEmailPayload, UnsafeAuthLinkError, composeMessage, decide, verifyHookSignature } from './email-policy';
 import { SmtpConfigError, classifySmtpError, createSmtpTransport, readSmtpSettings } from './smtp-config';
 
 type Outgoing = { to: string; from: string | { name?: string; address: string }; subject: string; html: string; text: string; replyTo?: string; headers?: Record<string, string> };
@@ -60,7 +60,15 @@ export class AuthEmailHookService {
       this.log.warn(`suppressed ${action} to ${masked}: ${decision.reason}`);
       return { suppressed: true };
     }
-    const message = composeMessage(process.env.SUPABASE_URL || '', payload, process.env.AUTH_EMAIL_SUBJECT_PREFIX ?? '[UAT] ', process.env.FRONTEND_URL || '');
+    let message: ReturnType<typeof composeMessage>;
+    try {
+      message = composeMessage(process.env.SUPABASE_URL || '', payload, process.env.AUTH_EMAIL_SUBJECT_PREFIX ?? '[UAT] ', process.env.FRONTEND_URL || '');
+    } catch (err) {
+      if (!(err instanceof UnsafeAuthLinkError)) throw err;
+      // Misconfigured redirect/web origin: refuse rather than mail the consumable Supabase verify link. Stable reason only (no URL, no token).
+      this.log.error(`refused ${action} to ${masked}: unsafe_link reason=${err.reason}`);
+      throw new ServiceUnavailableException('Email link configuration is unsafe');
+    }
     const send = this.getSender();
     let info: unknown;
     try {

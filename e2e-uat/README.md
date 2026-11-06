@@ -50,3 +50,9 @@ Fresh pair for a new first-time run: create two Auto-Confirmed Auth users (no pr
 `E2E_TARGET=candidate npm run test:e2e:candidate` runs `00-unauth` + `40-experience` against a LOCAL build of the release candidate (web `http://localhost:3011`, API `http://localhost:3100`) while the data stays the hosted UAT project (Supabase host still hard-pinned). Use it to test a build before it is deployed. The default hosted mode is unchanged.
 
 `40-experience` is read-only for discovery (actual migrated records) and signs in only with the dedicated synthetic identities; X10 uses the verified paired fixture Partner from `.auth/fixture.json`. It sends no e-mail. Real-mailbox signup/reset/invitation scenarios are not part of it until a UAT SMTP is approved.
+
+## Credential rotation and guarded specs
+
+- Tests that change a password never restore a shared value: `lib/credential-store.ts` rotates the account to a fresh random password stored only in the git-ignored, 0600 `.env.uat.local` (never printed; masked by `redact()`).
+- `tests/50-auth-recovery.spec.ts` issues recovery tokens for the approved accounts, which supersedes any recovery mail already sent. It is skipped unless `E2E_ALLOW_TOKEN_ISSUE=1`; do not set it while an owner mailbox test is in progress.
+- `tests/70-auth-recovery-mail-request.spec.ts` and the real-mail signup spec send real mail and require `E2E_REAL_MAIL=1`.

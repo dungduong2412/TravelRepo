@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { createHash, createHmac } from 'node:crypto';
 import { composeMessage } from '../src/modules/auth-email-hook/email-policy';
 import { AuthEmailHookService } from '../src/modules/auth-email-hook/auth-email-hook.service';
-import { actionLink, appActionLink, decide, isAllowlisted, parseAllowlist, verifyHookSignature } from '../src/modules/auth-email-hook/email-policy';
+import { UnsafeAuthLinkError, actionLink, appActionLink, decide, isAllowlisted, parseAllowlist, verifyHookSignature } from '../src/modules/auth-email-hook/email-policy';
 
 let n = 0;
 const t = async (name: string, fn: () => void | Promise<void>) => { await fn(); n++; console.log(`PASS ${name}`); };
@@ -12,7 +12,7 @@ const t = async (name: string, fn: () => void | Promise<void>) => { await fn(); 
 const key = Buffer.from('unit-test-secret-bytes-0123456789');
 const SECRET = `v1,whsec_${key.toString('base64')}`;
 const sign = (id: string, ts: number, body: string) => `v1,${createHmac('sha256', key).update(`${id}.${ts}.${body}`).digest('base64')}`;
-const body = (email: string, id = 'u-1', type = 'recovery') => Buffer.from(JSON.stringify({ user: { id, email }, email_data: { token_hash: 'th', email_action_type: type, redirect_to: 'https://web/reset-password' } }));
+const body = (email: string, id = 'u-1', type = 'recovery') => Buffer.from(JSON.stringify({ user: { id, email }, email_data: { token_hash: 'th', email_action_type: type, redirect_to: 'https://web.example/reset-password' } }));
 const hdr = (b: Buffer, ts = Math.floor(Date.now() / 1000)) => ({ 'webhook-id': 'msg_1', 'webhook-timestamp': String(ts), 'webhook-signature': sign('msg_1', ts, b.toString()) });
 
 // Mirrors the REAL schema: legacy_identity_map(auth_user_id, source_email_sha256, legacy_user_id); the gateway filters with .or("auth_user_id.eq.<id>,source_email_sha256.eq.<hash>").
@@ -62,8 +62,8 @@ const env = (o: Record<string, string | undefined>) => { for (const [k, v] of Ob
     assert.equal(actionLink('https://p.supabase.co/', { token_hash: 'abc', email_action_type: 'recovery', redirect_to: 'https://w/x' }), 'https://p.supabase.co/auth/v1/verify?token=abc&type=recovery&redirect_to=https%3A%2F%2Fw%2Fx');
   });
 
-  env({ AUTH_EMAIL_HOOK_SECRET: SECRET, AUTH_EMAIL_ALLOWLIST: 'tester+uat1@example.com', AUTH_EMAIL_DELIVERY: 'enabled', SMTP_FROM: 'VNO UAT <uat@example.org>', SUPABASE_URL: 'https://p.supabase.co' });
-  await t('app link: recovery/signup point at the web app (token spent only after a click); foreign or missing origin falls back; token never in Supabase GET', () => {
+  env({ AUTH_EMAIL_HOOK_SECRET: SECRET, AUTH_EMAIL_ALLOWLIST: 'tester+uat1@example.com', AUTH_EMAIL_DELIVERY: 'enabled', SMTP_FROM: 'VNO UAT <uat@example.org>', SUPABASE_URL: 'https://p.supabase.co', FRONTEND_URL: 'https://web.example' });
+  await t('app link: recovery/signup point at the web app (token spent only after a click); token never in a Supabase GET link', () => {
     const web = 'https://vno-web-uat.up.railway.app';
     assert.equal(appActionLink(web, { token_hash: 'th', email_action_type: 'recovery', redirect_to: `${web}/reset-password` }), `${web}/reset-password?token_hash=th&type=recovery`);
     assert.equal(appActionLink(web, { token_hash: 'th', email_action_type: 'signup', redirect_to: `${web}/merchant/onboard?confirmed=1` }), `${web}/auth/confirm?token_hash=th&type=signup&next=%2Fmerchant%2Fonboard%3Fconfirmed%3D1`);
@@ -75,21 +75,45 @@ const env = (o: Record<string, string | undefined>) => { for (const [k, v] of Ob
     assert.equal(appActionLink(web, { email_action_type: 'recovery' }), null, 'no token');
     const m = composeMessage('https://p.supabase.co', { user: { id: 'u', email: 'a@x.com' }, email_data: { token_hash: 'th', email_action_type: 'recovery', redirect_to: `${web}/reset-password` } }, '[UAT] ', web);
     assert.ok(m.html.includes(`${web}/reset-password?token_hash=th`) && !m.html.includes('/auth/v1/verify'), 'recovery e-mail must not contain the consuming verify URL');
-    const legacy = composeMessage('https://p.supabase.co', { user: { id: 'u', email: 'a@x.com' }, email_data: { token_hash: 'th', email_action_type: 'recovery', redirect_to: `${web}/reset-password` } }, '[UAT] ');
-    assert.ok(legacy.html.includes('/auth/v1/verify'), 'no web base: legacy link');
+  });
+  await t('misconfigured redirect fails safe: recovery/signup are never built from the Supabase verify URL', () => {
+    const web = 'https://vno-web-uat.up.railway.app';
+    const cases: Array<[string, string, any, string]> = [
+      ['web base unset', '', { redirect_to: `${web}/reset-password` }, 'web_base_unset'],
+      ['web base not a URL', 'not a url', { redirect_to: `${web}/reset-password` }, 'web_base_unset'],
+      ['web base plain http', 'http://vno.example', { redirect_to: 'http://vno.example/reset-password' }, 'web_base_insecure'],
+      ['redirect on another origin', web, { redirect_to: 'https://evil.example/reset-password' }, 'redirect_origin_mismatch'],
+      ['redirect on a sibling subdomain', web, { redirect_to: 'https://x.vno-web-uat.up.railway.app/reset-password' }, 'redirect_origin_mismatch'],
+      ['redirect is not a URL', web, { redirect_to: 'javascript:alert(1)//' }, 'redirect_origin_mismatch'],
+      ['redirect unparsable', web, { redirect_to: '//' }, 'redirect_invalid'],
+      ['no token', web, { token_hash: '' }, 'no_token'],
+    ];
+    for (const type of ['recovery', 'signup']) {
+      for (const [label, base, extra, reason] of cases) {
+        const payload = { user: { id: 'u', email: 'a@x.com' }, email_data: { token_hash: 'th', email_action_type: type, ...extra } };
+        assert.throws(() => composeMessage('https://p.supabase.co', payload, '[UAT] ', base), (e: any) => e instanceof UnsafeAuthLinkError && e.reason === reason, `${type}: ${label}`);
+      }
+    }
+    // other action types are unchanged (not part of the app-link scope)
+    assert.ok(composeMessage('https://p.supabase.co', { user: { id: 'u', email: 'a@x.com' }, email_data: { token_hash: 'th', email_action_type: 'magiclink' } }, '[UAT] ', '').html.includes('/auth/v1/verify'));
   });
   await t('templates: bilingual VI+EN, branded, mobile-safe, escaped, with plain-text and fallback link for every Auth action type', () => {
+    const WEB = 'https://web.example';
     for (const type of ['signup', 'invite', 'magiclink', 'recovery', 'email_change', 'reauthentication', 'unknown_future_type']) {
-      const m = composeMessage('https://p.supabase.co', { user: { id: 'u', email: 'a@x.com' }, email_data: { token: '123456', token_hash: 'th"><script>', email_action_type: type, redirect_to: 'https://web/reset?x=1&y=2' } }, '[UAT] ');
+      const appType = type === 'signup' || type === 'recovery';
+      const m = composeMessage('https://p.supabase.co', { user: { id: 'u', email: 'a@x.com' }, email_data: { token: '123456', token_hash: 'th"><script>', email_action_type: type, redirect_to: `${WEB}/reset?x=1&y=2` } }, '[UAT] ', WEB);
       assert.ok(m.subject.startsWith('[UAT] ') && m.subject.includes(' / '), `${type}: bilingual subject`);
       assert.ok(/lang="vi"/.test(m.html) && /name="viewport"/.test(m.html) && /Vietnam Number One/.test(m.html), `${type}: html shell`);
       assert.ok(!m.html.includes('<script>'), `${type}: user-controlled values are escaped`);
       assert.ok(/UAT/.test(m.html) && /UAT/.test(m.text), `${type}: UAT notice`);
       if (type === 'reauthentication') { assert.ok(m.html.includes('123456') && m.text.includes('123456') && !m.html.includes('/auth/v1/verify')); continue; }
       assert.ok(/padding:12px 24px/.test(m.html) && /line-height:24px/.test(m.html), `${type}: >=48px tap target (24px line + 2x12px padding)`);
-      assert.equal((m.html.match(/href="https:\/\/p\.supabase\.co\/auth\/v1\/verify\?token=/g) || []).length, 2, `${type}: button + visible fallback link`);
-      assert.ok(m.text.includes('https://p.supabase.co/auth/v1/verify?token='), `${type}: plain-text link`);
-      assert.ok(m.html.includes('&amp;redirect_to=') && !m.html.includes('&redirect_to='), `${type}: ampersands escaped in href`);
+      const prefix = appType ? `${WEB}/${type === 'recovery' ? 'reset-password' : 'auth/confirm'}?token_hash=` : 'https://p.supabase.co/auth/v1/verify?token=';
+      const re = new RegExp(`href="${prefix.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}`, 'g');
+      assert.equal((m.html.match(re) || []).length, 2, `${type}: button + visible fallback link`);
+      assert.ok(m.text.includes(prefix), `${type}: plain-text link`);
+      if (appType) assert.ok(!m.html.includes('/auth/v1/verify') && !m.text.includes('/auth/v1/verify'), `${type}: never the consumable Supabase URL`);
+      else assert.ok(m.html.includes('&amp;redirect_to=') && !m.html.includes('&redirect_to='), `${type}: ampersands escaped in href`);
     }
   });
   await t('gateway sends to an allowlisted recipient (subject carries the [UAT] marker)', async () => {
@@ -123,6 +147,22 @@ const env = (o: Record<string, string | undefined>) => { for (const [k, v] of Ob
     const b = body('tester+uat1@example.com');
     env({ AUTH_EMAIL_DELIVERY: undefined }); { const { s, sent } = service(); assert.deepEqual(await s.handle(hdr(b), b), { suppressed: true }); assert.equal(sent.length, 0); }
     env({ AUTH_EMAIL_HOOK_SECRET: undefined }); { const { s } = service(); await assert.rejects(() => s.handle(hdr(b), b), /not configured/); }
+  });
+  await t('gateway refuses (503, nothing sent) a recovery/signup when FRONTEND_URL is wrong or the redirect is foreign; no token in the error', async () => {
+    env({ AUTH_EMAIL_HOOK_SECRET: SECRET, AUTH_EMAIL_DELIVERY: 'enabled' }); // earlier test removed these
+    const forged = (type: string, redirect: string) => Buffer.from(JSON.stringify({ user: { id: 'u-9', email: 'tester+uat1@example.com' }, email_data: { token_hash: 'SECRETTOKEN', email_action_type: type, redirect_to: redirect } }));
+    for (const type of ['recovery', 'signup']) {
+      for (const [frontend, redirect] of [['https://web.example', 'https://evil.example/reset-password'], ['', 'https://web.example/reset-password'], ['http://web.example', 'http://web.example/reset-password']]) {
+        env({ FRONTEND_URL: frontend || undefined });
+        const { s, sent } = service(); const b = forged(type, redirect);
+        await assert.rejects(() => s.handle(hdr(b), b), (e: any) => !/SECRETTOKEN/.test(String(e.message)) && /unsafe/i.test(String(e.message)) && e.getStatus() === 503);
+        assert.equal(sent.length, 0, `${type} frontend=${frontend || '(unset)'} redirect=${redirect}: nothing sent`);
+      }
+    }
+    env({ FRONTEND_URL: 'https://web.example' });
+    // a suppressed (non-allowlisted) recipient still gets the uniform 200 even when the link configuration is broken
+    env({ FRONTEND_URL: undefined }); { const { s, sent } = service(); const b = body('customer@real-business.vn'); assert.deepEqual(await s.handle(hdr(b), b), { suppressed: true }); assert.equal(sent.length, 0); }
+    env({ FRONTEND_URL: 'https://web.example' });
   });
   console.log(`${n} passed`);
 })().catch((e) => { console.error('FAIL', e.message); process.exit(1); });

@@ -4,14 +4,17 @@ import { config, creds } from '../lib/env';
 import { record } from '../lib/evidence';
 import { issueRecoveryToken, passwordGrantStatus, setPasswordAsAdmin, verifyTokenStatus } from '../lib/admin-auth';
 import { randomBytes } from 'node:crypto';
+import { rotateAccountPassword } from '../lib/credential-store';
 
 // Recovery behaviour of the web app, driven with admin-issued tokens (no mailbox). Mail delivery is verified separately.
-// Passwords of the two approved synthetic accounts are changed during the run and ALWAYS restored in afterAll.
+// Passwords of the two approved synthetic accounts are changed during the run and ROTATED to fresh random values in afterAll (never restored).
+// WARNING: issuing recovery tokens supersedes any recovery mail already sent to these accounts. Do not run this spec while an owner mailbox test is in progress.
 const step = async (id: string, title: string, fn: () => Promise<void>) => { try { await fn(); record(id, title, 'PASS'); } catch (e: any) { record(id, title, 'FAIL', e?.message?.split('\n')[0]); throw e; } };
 const newPassword = () => `Uat${randomBytes(4).toString('hex')}9`;
 const INVALID = /Liên kết không hợp lệ hoặc đã hết hạn/;
 
 test.describe.serial('Recovery safety (admin-issued tokens)', () => {
+  test.skip(process.env.E2E_ALLOW_TOKEN_ISSUE !== '1', 'GUARDED: issues recovery tokens for the approved accounts (supersedes any mail already sent). Set E2E_ALLOW_TOKEN_ISSUE=1 only when no owner mailbox test is in progress');
   test.skip(!process.env.SUPABASE_SERVICE_ROLE_KEY || !hasCreds('merchant', 'partner'), 'BLOCKED: run via `railway run --service vno-api` with merchant+partner credentials');
   let anon = '';
   let merchant = { email: '', original: '', current: '', id: '' };
@@ -25,12 +28,13 @@ test.describe.serial('Recovery safety (admin-issued tokens)', () => {
     partner = { email: p.email, original: p.password, current: p.password, id: '' };
   });
 
+  // The two long-lived accounts are NEVER put back to a shared/previously known password: each is rotated to a fresh random one that is
+  // written only to the git-ignored 0600 .env.uat.local (never printed). If a run aborts before this point the account keeps its last password.
   test.afterAll(async () => {
-    for (const a of [merchant, partner]) {
+    for (const [key, a] of [['E2E_MERCHANT_PASSWORD', merchant], ['E2E_PARTNER_PASSWORD', partner]] as const) {
       if (!a.id) continue;
-      await setPasswordAsAdmin(a.id, a.original).catch(() => undefined);
-      const ok = await passwordGrantStatus(a.email, a.original, anon);
-      record('RESTORE', `original password restored for ${a.email.replace(/^(.{3}).*(@.*)$/, '$1***$2')}`, ok === 200 ? 'PASS' : 'FAIL', `HTTP ${ok}`);
+      const ok = await rotateAccountPassword({ envKey: key, userId: a.id, email: a.email, anon }).catch(() => 0);
+      record('ROTATE', `fresh credential issued for ${a.email.replace(/^(.{3}).*(@.*)$/, '$1***$2')} (stored in the local git-ignored env file only)`, ok === 200 ? 'PASS' : 'FAIL', `HTTP ${ok}`);
     }
   });
 

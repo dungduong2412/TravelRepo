@@ -57,36 +57,57 @@ export function actionLink(supabaseUrl: string, data: AuthEmailPayload['email_da
   return `${supabaseUrl.replace(/\/$/, '')}/auth/v1/verify?${qs}`;
 }
 
+export type AppLinkRefusal = 'no_token' | 'web_base_unset' | 'web_base_insecure' | 'redirect_invalid' | 'redirect_origin_mismatch';
+export type AppLinkResult = { link: string } | { refused: AppLinkRefusal };
+
+/** Raised when a recovery/signup message cannot be given a safe application link. The caller must NOT send anything. */
+export class UnsafeAuthLinkError extends Error {
+  constructor(readonly reason: AppLinkRefusal) { super(`unsafe_auth_link:${reason}`); }
+}
+
 /**
  * Application-level confirmation link for signup and recovery. Supabase's own /auth/v1/verify consumes the one-time token on the first GET,
  * so a mail scanner, link preview or browser prefetch can burn it before the person clicks. This link points at the web app instead; the token
- * is only spent when the page calls verifyOtp after an explicit click. Returns null (caller falls back to the Supabase link) when the
- * redirect_to origin is not the configured web origin, so a forged redirect can never point the email at another host.
+ * is only spent when the page calls verifyOtp after an explicit click. When the link cannot be built safely (web base unset or not https,
+ * redirect_to on another origin, no token) the result carries a stable refusal reason; composeMessage turns that into an error so nothing is
+ * sent. It never falls back to the Supabase verify URL for these two actions.
  */
-export function appActionLink(webBaseUrl: string, data: AuthEmailPayload['email_data']): string | null {
+export function appActionLinkResult(webBaseUrl: string, data: AuthEmailPayload['email_data']): AppLinkResult {
   const type = data.email_action_type;
-  if (!data.token_hash || (type !== 'recovery' && type !== 'signup')) return null;
+  if (!data.token_hash) return { refused: 'no_token' };
+  if (!webBaseUrl) return { refused: 'web_base_unset' };
   let base: URL;
-  try { base = new URL(webBaseUrl); } catch { return null; }
-  if (base.protocol !== 'https:' && base.hostname !== 'localhost') return null;
+  try { base = new URL(webBaseUrl); } catch { return { refused: 'web_base_unset' }; }
+  if (base.protocol !== 'https:' && base.hostname !== 'localhost') return { refused: 'web_base_insecure' };
   let next = '/login';
   if (data.redirect_to) {
-    try {
-      const target = new URL(data.redirect_to);
-      if (target.origin !== base.origin) return null;
-      next = `${target.pathname}${target.search}`;
-    } catch { return null; }
+    let target: URL;
+    try { target = new URL(data.redirect_to); } catch { return { refused: 'redirect_invalid' }; }
+    if (target.origin !== base.origin) return { refused: 'redirect_origin_mismatch' };
+    next = `${target.pathname}${target.search}`;
   }
   const qs = new URLSearchParams({ token_hash: data.token_hash, type });
-  if (type === 'recovery') return `${base.origin}/reset-password?${qs}`;
+  if (type === 'recovery') return { link: `${base.origin}/reset-password?${qs}` };
   qs.set('next', next);
-  return `${base.origin}/auth/confirm?${qs}`;
+  return { link: `${base.origin}/auth/confirm?${qs}` };
+}
+
+/** Link or null for the two app-link actions; any other action type keeps the Supabase link and returns null here. */
+export function appActionLink(webBaseUrl: string, data: AuthEmailPayload['email_data']): string | null {
+  const type = data.email_action_type;
+  if (type !== 'recovery' && type !== 'signup') return null;
+  const r = appActionLinkResult(webBaseUrl, data);
+  return 'link' in r ? r.link : null;
 }
 
 export function composeMessage(supabaseUrl: string, payload: AuthEmailPayload, uatBanner: string, webBaseUrl = '') {
   const type = payload.email_data.email_action_type;
-  const link = type === 'reauthentication'
-    ? undefined
-    : (appActionLink(webBaseUrl, payload.email_data) ?? actionLink(supabaseUrl, payload.email_data));
+  let link: string | undefined;
+  if (type === 'reauthentication') link = undefined;
+  else if (type === 'recovery' || type === 'signup') {
+    const r = appActionLinkResult(webBaseUrl, payload.email_data);
+    if (!('link' in r)) throw new UnsafeAuthLinkError(r.refused); // fail safe: never degrade to the scanner-consumable Supabase URL
+    link = r.link;
+  } else link = actionLink(supabaseUrl, payload.email_data);
   return renderEmail({ type, link, code: payload.email_data.token, subjectPrefix: uatBanner });
 }
