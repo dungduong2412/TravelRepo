@@ -5,6 +5,9 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiFetch } from '../../../lib/api';
 import { signUp, supabase } from '../../../lib/supabase';
+import { errorCode } from '../../../lib/auth-diagnostics';
+import { signupErrorMessage } from '../../../lib/auth-errors';
+import { clearDraft, loadDraft, saveDraft } from '../../../lib/onboarding-draft';
 import { isValidPassword, PASSWORD_ERROR, PASSWORD_HINT } from '../../../lib/password-policy';
 
 type Category = { id: string; category_name?: string | null; category_name_vi?: string | null };
@@ -30,7 +33,7 @@ export default function MerchantOnboardPage() {
 
   useEffect(() => {
     try {
-      const draft = JSON.parse(sessionStorage.getItem(DRAFT_KEY) || 'null');
+      const draft = loadDraft<{ formData?: any; categoryIds?: string[] }>(DRAFT_KEY);
       if (draft?.formData) setFormData((current) => ({ ...current, ...draft.formData, password: '', confirmPassword: '' }));
       if (Array.isArray(draft?.categoryIds)) setCategoryIds(draft.categoryIds.slice(0, 3));
     } catch { /* Invalid local draft is ignored. */ }
@@ -50,7 +53,7 @@ export default function MerchantOnboardPage() {
     setFormData(prev => {
       const next = { ...prev, [name]: value };
       const { password: _password, confirmPassword: _confirmPassword, ...safe } = next;
-      sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ formData: safe, categoryIds }));
+      saveDraft(DRAFT_KEY, { formData: safe, categoryIds });
       return next;
     });
   };
@@ -60,7 +63,7 @@ export default function MerchantOnboardPage() {
     if (next.length > 3) { setError('Chỉ được chọn tối đa 3 danh mục'); return; }
     setCategoryIds(next); setError(null);
     const { password: _password, confirmPassword: _confirmPassword, ...safe } = formData;
-    sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ formData: safe, categoryIds: next }));
+    saveDraft(DRAFT_KEY, { formData: safe, categoryIds: next });
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -114,10 +117,10 @@ export default function MerchantOnboardPage() {
           category_ids: categoryIds,
         }),
       });
-      sessionStorage.removeItem(DRAFT_KEY);
+      clearDraft(DRAFT_KEY);
       router.push('/success?type=merchant');
     } catch (err: any) {
-      setError(err.message || 'Failed to submit merchant');
+      setError(signupErrorMessage(errorCode(err)) ?? (err.message || 'Failed to submit merchant'));
     } finally {
       setIsSubmitting(false);
     }

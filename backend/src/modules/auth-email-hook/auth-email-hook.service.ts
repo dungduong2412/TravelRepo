@@ -60,16 +60,19 @@ export class AuthEmailHookService {
       this.log.warn(`suppressed ${action} to ${masked}: ${decision.reason}`);
       return { suppressed: true };
     }
-    const message = composeMessage(process.env.SUPABASE_URL || '', payload, process.env.AUTH_EMAIL_SUBJECT_PREFIX ?? '[UAT] ');
+    const message = composeMessage(process.env.SUPABASE_URL || '', payload, process.env.AUTH_EMAIL_SUBJECT_PREFIX ?? '[UAT] ', process.env.FRONTEND_URL || '');
     const send = this.getSender();
+    let info: unknown;
     try {
-      await send({ to: email, from: process.env.SMTP_FROM || '', ...message });
+      info = await send({ to: email, from: process.env.SMTP_FROM || '', ...message });
     } catch (err) {
       const failure = classifySmtpError(err);
       this.log.error(`delivery failed for ${action} to ${masked}: ${failure}`);
       throw new ServiceUnavailableException(`Email delivery failed (${failure})`);
     }
-    this.log.log(`sent ${action} to ${masked}`);
+    const receipt = info as { messageId?: unknown; accepted?: unknown[] } | undefined;
+    const messageId = typeof receipt?.messageId === 'string' ? receipt.messageId.replace(/[^\w<>@.\-+]/g, '').slice(0, 120) : 'n/a';
+    this.log.log(`sent ${action} to ${masked} accepted=${Array.isArray(receipt?.accepted) ? receipt!.accepted!.length : 'n/a'} message_id=${messageId}`);
     return { sent: true };
   }
 }

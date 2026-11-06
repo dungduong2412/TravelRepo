@@ -57,8 +57,36 @@ export function actionLink(supabaseUrl: string, data: AuthEmailPayload['email_da
   return `${supabaseUrl.replace(/\/$/, '')}/auth/v1/verify?${qs}`;
 }
 
-export function composeMessage(supabaseUrl: string, payload: AuthEmailPayload, uatBanner: string) {
+/**
+ * Application-level confirmation link for signup and recovery. Supabase's own /auth/v1/verify consumes the one-time token on the first GET,
+ * so a mail scanner, link preview or browser prefetch can burn it before the person clicks. This link points at the web app instead; the token
+ * is only spent when the page calls verifyOtp after an explicit click. Returns null (caller falls back to the Supabase link) when the
+ * redirect_to origin is not the configured web origin, so a forged redirect can never point the email at another host.
+ */
+export function appActionLink(webBaseUrl: string, data: AuthEmailPayload['email_data']): string | null {
+  const type = data.email_action_type;
+  if (!data.token_hash || (type !== 'recovery' && type !== 'signup')) return null;
+  let base: URL;
+  try { base = new URL(webBaseUrl); } catch { return null; }
+  if (base.protocol !== 'https:' && base.hostname !== 'localhost') return null;
+  let next = '/login';
+  if (data.redirect_to) {
+    try {
+      const target = new URL(data.redirect_to);
+      if (target.origin !== base.origin) return null;
+      next = `${target.pathname}${target.search}`;
+    } catch { return null; }
+  }
+  const qs = new URLSearchParams({ token_hash: data.token_hash, type });
+  if (type === 'recovery') return `${base.origin}/reset-password?${qs}`;
+  qs.set('next', next);
+  return `${base.origin}/auth/confirm?${qs}`;
+}
+
+export function composeMessage(supabaseUrl: string, payload: AuthEmailPayload, uatBanner: string, webBaseUrl = '') {
   const type = payload.email_data.email_action_type;
-  const link = type === 'reauthentication' ? undefined : actionLink(supabaseUrl, payload.email_data);
+  const link = type === 'reauthentication'
+    ? undefined
+    : (appActionLink(webBaseUrl, payload.email_data) ?? actionLink(supabaseUrl, payload.email_data));
   return renderEmail({ type, link, code: payload.email_data.token, subjectPrefix: uatBanner });
 }

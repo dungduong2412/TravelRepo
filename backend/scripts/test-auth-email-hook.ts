@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { createHash, createHmac } from 'node:crypto';
 import { composeMessage } from '../src/modules/auth-email-hook/email-policy';
 import { AuthEmailHookService } from '../src/modules/auth-email-hook/auth-email-hook.service';
-import { actionLink, decide, isAllowlisted, parseAllowlist, verifyHookSignature } from '../src/modules/auth-email-hook/email-policy';
+import { actionLink, appActionLink, decide, isAllowlisted, parseAllowlist, verifyHookSignature } from '../src/modules/auth-email-hook/email-policy';
 
 let n = 0;
 const t = async (name: string, fn: () => void | Promise<void>) => { await fn(); n++; console.log(`PASS ${name}`); };
@@ -63,6 +63,21 @@ const env = (o: Record<string, string | undefined>) => { for (const [k, v] of Ob
   });
 
   env({ AUTH_EMAIL_HOOK_SECRET: SECRET, AUTH_EMAIL_ALLOWLIST: 'tester+uat1@example.com', AUTH_EMAIL_DELIVERY: 'enabled', SMTP_FROM: 'VNO UAT <uat@example.org>', SUPABASE_URL: 'https://p.supabase.co' });
+  await t('app link: recovery/signup point at the web app (token spent only after a click); foreign or missing origin falls back; token never in Supabase GET', () => {
+    const web = 'https://vno-web-uat.up.railway.app';
+    assert.equal(appActionLink(web, { token_hash: 'th', email_action_type: 'recovery', redirect_to: `${web}/reset-password` }), `${web}/reset-password?token_hash=th&type=recovery`);
+    assert.equal(appActionLink(web, { token_hash: 'th', email_action_type: 'signup', redirect_to: `${web}/merchant/onboard?confirmed=1` }), `${web}/auth/confirm?token_hash=th&type=signup&next=%2Fmerchant%2Fonboard%3Fconfirmed%3D1`);
+    assert.equal(appActionLink(web, { token_hash: 'th', email_action_type: 'signup' }), `${web}/auth/confirm?token_hash=th&type=signup&next=%2Flogin`);
+    assert.equal(appActionLink(web, { token_hash: 'th', email_action_type: 'recovery', redirect_to: 'https://evil.example/reset-password' }), null, 'foreign redirect origin');
+    assert.equal(appActionLink('', { token_hash: 'th', email_action_type: 'recovery' }), null, 'no web base configured');
+    assert.equal(appActionLink('http://vno.example', { token_hash: 'th', email_action_type: 'recovery' }), null, 'non-https base');
+    assert.equal(appActionLink(web, { token_hash: 'th', email_action_type: 'magiclink' }), null, 'other actions keep the Supabase link');
+    assert.equal(appActionLink(web, { email_action_type: 'recovery' }), null, 'no token');
+    const m = composeMessage('https://p.supabase.co', { user: { id: 'u', email: 'a@x.com' }, email_data: { token_hash: 'th', email_action_type: 'recovery', redirect_to: `${web}/reset-password` } }, '[UAT] ', web);
+    assert.ok(m.html.includes(`${web}/reset-password?token_hash=th`) && !m.html.includes('/auth/v1/verify'), 'recovery e-mail must not contain the consuming verify URL');
+    const legacy = composeMessage('https://p.supabase.co', { user: { id: 'u', email: 'a@x.com' }, email_data: { token_hash: 'th', email_action_type: 'recovery', redirect_to: `${web}/reset-password` } }, '[UAT] ');
+    assert.ok(legacy.html.includes('/auth/v1/verify'), 'no web base: legacy link');
+  });
   await t('templates: bilingual VI+EN, branded, mobile-safe, escaped, with plain-text and fallback link for every Auth action type', () => {
     for (const type of ['signup', 'invite', 'magiclink', 'recovery', 'email_change', 'reauthentication', 'unknown_future_type']) {
       const m = composeMessage('https://p.supabase.co', { user: { id: 'u', email: 'a@x.com' }, email_data: { token: '123456', token_hash: 'th"><script>', email_action_type: type, redirect_to: 'https://web/reset?x=1&y=2' } }, '[UAT] ');

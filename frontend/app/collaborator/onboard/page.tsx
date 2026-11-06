@@ -4,6 +4,9 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiFetch } from '../../../lib/api';
 import { signUp, supabase } from '../../../lib/supabase';
+import { errorCode } from '../../../lib/auth-diagnostics';
+import { signupErrorMessage } from '../../../lib/auth-errors';
+import { clearDraft, loadDraft, saveDraft } from '../../../lib/onboarding-draft';
 import { isValidPassword, PASSWORD_ERROR } from '../../../lib/password-policy';
 
 const DRAFT_KEY = 'vno-collaborator-onboarding-draft';
@@ -28,7 +31,7 @@ export default function CollaboratorOnboardPage() {
 
   useEffect(() => {
     try {
-      const draft = JSON.parse(sessionStorage.getItem(DRAFT_KEY) || 'null');
+      const draft = loadDraft<Record<string, string>>(DRAFT_KEY);
       if (draft) setFormData((current) => ({ ...current, ...draft, password: '', confirmPassword: '' }));
     } catch { /* Invalid local draft is ignored. */ }
     supabase.auth.getSession().then(({ data }) => setHasVerifiedSession(Boolean(data.session?.user?.email_confirmed_at)));
@@ -44,7 +47,7 @@ export default function CollaboratorOnboardPage() {
     setFormData(prev => {
       const next = { ...prev, [name]: value };
       const { password: _password, confirmPassword: _confirmPassword, ...safe } = next;
-      sessionStorage.setItem(DRAFT_KEY, JSON.stringify(safe));
+      saveDraft(DRAFT_KEY, safe);
       return next;
     });
   };
@@ -120,12 +123,12 @@ export default function CollaboratorOnboardPage() {
         body: JSON.stringify(payload),
       });
 
-      sessionStorage.removeItem(DRAFT_KEY);
+      clearDraft(DRAFT_KEY);
 
       // Redirect to success page
       router.push('/success?type=collaborator');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Đã xảy ra lỗi khi gửi đơn đăng ký');
+      setError(signupErrorMessage(errorCode(err)) ?? (err instanceof Error ? err.message : 'Đã xảy ra lỗi khi gửi đơn đăng ký'));
       setIsSubmitting(false);
     }
   };

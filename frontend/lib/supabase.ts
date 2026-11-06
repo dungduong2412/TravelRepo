@@ -64,7 +64,37 @@ export async function signUp(email: string, password: string, role: 'merchant' |
   });
 
   if (error) throw error;
+  // With e-mail confirmation on, Auth answers a signup for an already-registered address with an obfuscated user that has no identities.
+  if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+    const duplicate = new Error('User already registered') as Error & { code: string };
+    duplicate.code = 'user_already_exists';
+    throw duplicate;
+  }
   return data;
+}
+
+/**
+ * Spend an emailed one-time token (token_hash) for the given purpose and return the user the resulting session belongs to.
+ * Call only after an explicit user action: mail scanners and prefetchers must not be able to trigger it.
+ */
+export async function verifyEmailToken(tokenHash: string, type: 'recovery' | 'signup') {
+  const { data, error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type });
+  if (error) throw error;
+  if (!data.session || !data.user) {
+    const missing = new Error('No session') as Error & { code: string };
+    missing.code = 'session_not_found';
+    throw missing;
+  }
+  // Confirm with the Auth server that the session we now hold is the user the token was issued for.
+  const { data: current, error: userError } = await supabase.auth.getUser();
+  if (userError) throw userError;
+  if (!current.user || current.user.id !== data.user.id) {
+    await supabase.auth.signOut({ scope: 'local' });
+    const mismatch = new Error('Session user mismatch') as Error & { code: string };
+    mismatch.code = 'session_not_found';
+    throw mismatch;
+  }
+  return data.user;
 }
 
 /**
