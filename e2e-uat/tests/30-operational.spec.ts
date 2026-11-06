@@ -63,17 +63,22 @@ test.describe.serial('Operational (reusable): governed rate change, QR → trans
       });
     });
 
-    test('P03 Partner QR page → Merchant scan → synthetic transaction with exact amounts', async ({ browser }) => {
-      await step('P03', 'QR shown to partner; merchant scan assigned_to_this_merchant; exact 4-decimal discount and commission', async () => {
+    test('P03 Partner QR page → Merchant scan → real transaction with exact amounts', async ({ browser }) => {
+      await step('P03', 'QR shown to partner; merchant manual scan assigned_to_this_merchant; exact 4-decimal discount and commission', async () => {
         const gross = `${1000 + (Date.now() % 9000)}.${String(Date.now() % 10000).padStart(4, '0')}`;
         const pctx = await browser.newContext(); const ppg = await pctx.newPage(); await uiLogin(ppg, fx!.partner, /collaborator\/dashboard/);
         await ppg.goto('/collaborator/dashboard/qr-code'); await expect(ppg.locator('img').first()).toBeVisible({ timeout: 20_000 });
         await expect(ppg.getByText(fx!.partnerCode).first()).toBeVisible(); await pctx.close();
         const mctx = await browser.newContext(); const m = await mctx.newPage(); await uiLogin(m, fx!.merchant, /merchant\/dashboard/);
-        await m.goto('/merchant/dashboard/qr-scan'); await m.getByLabel(/Mã QR/).fill(fx!.partnerCode); await m.getByRole('button', { name: /Xác minh/ }).click();
-        await expect(m.getByText('Đúng Merchant')).toBeVisible(); await m.getByLabel(/Tổng giá trị/).fill(gross);
-        await m.getByRole('button', { name: /Ghi giao dịch UAT/ }).click(); await expect(m.getByText(/MÔ PHỎNG/)).toBeVisible({ timeout: 30_000 }); await mctx.close();
-        const rep = items((await api('admin', 'GET', `/transactions/report?record_kind=uat_simulation&merchant_id=${fx!.merchantId}&page_size=100`)).body).filter((t) => eq4(t.document_total, gross));
+        // new-transaction page: camera tab is default; switch to manual entry
+        await m.goto('/merchant/dashboard/new-transaction');
+        await m.getByRole('button', { name: /Nhập thủ công/ }).click();
+        await m.getByPlaceholder(/COL-/).fill(fx!.partnerCode); await m.getByRole('button', { name: /Xác minh/ }).click();
+        await expect(m.getByText('Đúng cửa hàng')).toBeVisible({ timeout: 20_000 });
+        await m.getByPlaceholder(/Ví dụ: 1250000/).fill(gross);
+        await m.getByRole('button', { name: /Tạo giao dịch/ }).click();
+        await expect(m.getByText(/Đã ghi nhận|Đã xác nhận/)).toBeVisible({ timeout: 30_000 }); await mctx.close();
+        const rep = items((await api('admin', 'GET', `/transactions/report?record_kind=real_transaction&merchant_id=${fx!.merchantId}&page_size=100`)).body).filter((t) => eq4(t.document_total, gross));
         expect(rep.length, 'exactly one transaction for this gross').toBe(1);
         expect(eq4(rep[0].document_discount_amount, mul(gross, rates.d)), `discount ${rep[0].document_discount_amount} vs ${mul(gross, rates.d)}`).toBe(true);
         expect(eq4(rep[0].commission_amount, mul(gross, rates.c)), `commission ${rep[0].commission_amount} vs ${mul(gross, rates.c)}`).toBe(true);
