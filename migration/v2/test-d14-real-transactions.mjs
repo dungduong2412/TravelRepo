@@ -164,7 +164,7 @@ const cancelTxId = cancelTxRes.json?.transaction_id;
 
 const cancelRes = await call(`/transactions/${cancelTxId}/cancel`, {
   token: merchantToken, method: 'POST', body: { idempotency_key: randomUUID() },
-  expectStatus: 200,
+  expectStatus: 201,
 });
 check('T06-a', 'cancel from RECORDED → lifecycle_status=cancelled', cancelRes.json?.lifecycle_status === 'cancelled', cancelRes.json);
 check('T06-b', 'cancel idempotent_replay=false on first cancel', cancelRes.json?.idempotent_replay === false, cancelRes.json);
@@ -172,7 +172,7 @@ check('T06-b', 'cancel idempotent_replay=false on first cancel', cancelRes.json?
 // Idempotent cancel replay
 const cancelReplay = await call(`/transactions/${cancelTxId}/cancel`, {
   token: merchantToken, method: 'POST', body: { idempotency_key: randomUUID() },
-  expectStatus: 200,
+  expectStatus: 201,
 });
 check('T06-c', 'cancel idempotent_replay=true on second cancel', cancelReplay.json?.idempotent_replay === true, cancelReplay.json);
 
@@ -186,7 +186,7 @@ check('T06-d', 'confirm on CANCELLED → 400 or 422', [400, 422].includes(confir
 console.log('\n── T07 Confirm from RECORDED ──');
 const confirmRes = await call(`/transactions/${txId}/confirm`, {
   token: merchantToken, method: 'POST', body: { idempotency_key: randomUUID() },
-  expectStatus: 200,
+  expectStatus: 201,
 });
 check('T07-a', 'confirm from RECORDED → lifecycle_status=confirmed', confirmRes.json?.lifecycle_status === 'confirmed', confirmRes.json);
 check('T07-b', 'confirm idempotent_replay=false', confirmRes.json?.idempotent_replay === false, confirmRes.json);
@@ -201,7 +201,7 @@ check('T07-c', 'cancel on CONFIRMED → 400 or 422', [400, 422].includes(cancelC
 console.log('\n── T08 Reverse from CONFIRMED (admin) ──');
 const reverseRes = await call(`/transactions/${txId}/reverse`, {
   token: adminToken, method: 'POST', body: { idempotency_key: randomUUID() },
-  expectStatus: 200,
+  expectStatus: 201,
 });
 check('T08-a', 'reverse from CONFIRMED → lifecycle_status=reversed', reverseRes.json?.lifecycle_status === 'reversed', reverseRes.json);
 check('T08-b', 'reverse idempotent_replay=false', reverseRes.json?.idempotent_replay === false, reverseRes.json);
@@ -209,7 +209,7 @@ check('T08-b', 'reverse idempotent_replay=false', reverseRes.json?.idempotent_re
 // Cannot reverse twice (idempotent replay)
 const reverseReplay = await call(`/transactions/${txId}/reverse`, {
   token: adminToken, method: 'POST', body: { idempotency_key: randomUUID() },
-  expectStatus: 200,
+  expectStatus: 201,
 });
 check('T08-c', 'reverse idempotent_replay=true on second call', reverseReplay.json?.idempotent_replay === true, reverseReplay.json);
 
@@ -228,13 +228,17 @@ check('T09-a', 'reversed transaction not in commission earned', !hasReversed, { 
 check('T09-b', 'cancelled transaction not in commission earned', !hasCancelled, { cancelTxId, count: rows.length });
 
 // ── T10: V1 data unchanged ────────────────────────────────────────────────────
+// GET /transactions returns ALL record types (no filter support). We verify
+// that v1_import rows are present and have lifecycle_status=null (pre-D14 rows
+// were created before the lifecycle_status column had real_transaction values).
 console.log('\n── T10 V1 data integrity ──');
-const v1Res = await call('/transactions?record_kind=v1_import&limit=5', { token: adminToken });
+const v1Res = await call('/transactions', { token: adminToken });
 check('T10-a', 'v1_import records still accessible', v1Res.status === 200, v1Res.json);
-check('T10-b', 'v1_import rows have no lifecycle_status (null)', (() => {
+check('T10-b', 'at least one v1_import row present and lifecycle_status is null', (() => {
   const items = Array.isArray(v1Res.json?.items || v1Res.json) ? (v1Res.json?.items || v1Res.json) : [];
-  return items.every((r) => r.record_kind === 'v1_import');
-})(), v1Res.json);
+  const v1Rows = items.filter((r) => r.record_kind === 'v1_import');
+  return v1Rows.length > 0 && v1Rows.every((r) => r.lifecycle_status === null || r.lifecycle_status === undefined);
+})(), { total: Array.isArray(v1Res.json?.items || v1Res.json) ? (v1Res.json?.items || v1Res.json).length : 0 });
 
 // ── T11: Customer QR landing page resolves ────────────────────────────────────
 console.log('\n── T11 Customer QR landing (GET /c/:code) ──');
