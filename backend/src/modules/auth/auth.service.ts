@@ -31,6 +31,10 @@ export class AuthService {
       .select('id,user_id,email,role,full_name,user_profiles_status,merchant_id,collaborator_id,login_count')
       .eq('user_id', session.user.id)
       .maybeSingle();
+    // A freshly onboarded owner is 'pending' until Admin approval: say so instead of implying the account is suspended.
+    if (!profileError && profile?.user_profiles_status === 'pending') {
+      throw new UnauthorizedException('Account is not approved');
+    }
     if (profileError || !profile || profile.user_profiles_status !== 'active') {
       throw new UnauthorizedException('Account is not active');
     }

@@ -76,7 +76,7 @@ for (const kind of KINDS) {
         expect((await request.get(config().web + url)).status()).toBe(200);
         expect((await getUserAsAdmin(userId)).email_confirmed_at, 'a plain GET must not confirm the e-mail').toBeFalsy();
         const tabB: Page = await ctx.newPage(); await tabB.goto(url);
-        expect(tabB.url()).not.toContain('token_hash');
+        await expect.poll(() => tabB.url()).not.toContain('token_hash');
         await tabB.getByRole('button', { name: 'Xác nhận email' }).click();
         await expect(tabB).toHaveURL(new RegExp(`${path}\\?confirmed=1`), { timeout: 30_000 });
         expect((await getUserAsAdmin(userId)).email_confirmed_at, 'Auth recorded email_confirmed_at').toBeTruthy();
