@@ -85,3 +85,62 @@ No other recovery request was made for these two accounts after these sends, so 
 - `frontend/app/page_old.tsx`/`page_backup.tsx` and other unrelated clutter were not touched.
 
 No Production cutover. Authentication stays **NOT ACCEPTED** until the mailbox step is confirmed.
+
+
+---
+
+# Addendum — final-acceptance preparation (2026-11-06, evening)
+
+Owner instructions: no new recovery tokens until the controlled test starts; a misconfigured redirect must fail safely; prepare two owner-approved
+real-mail signup aliases; never reset test accounts to previously exposed shared passwords; collect real-mail evidence before any Production cutover.
+**Authentication is still NOT ACCEPTED.** No recovery token has been generated since the two mails of 17:36 (the live tokens are untouched).
+
+## 1. Misconfigured redirect now fails safe (code `64c4a10`, vno-api only; Railway deployment `41e3459f-6daa-4be1-93bd-0f3194384c0a` SUCCESS 22:22 +07; vno-web unchanged at `9372708`)
+
+Before: when `FRONTEND_URL` was unset/not https or `redirect_to` pointed at another origin, `composeMessage` silently fell back to
+`https://<project>.supabase.co/auth/v1/verify?...`, the scanner-consumable URL this release removes.
+Now, for `recovery` and `signup`, `composeMessage` throws `UnsafeAuthLinkError` and the hook **sends nothing**, logs
+`refused <action> to <masked>: unsafe_link reason=<code>` and returns 503 (Auth reports a failed request; the forgot-password page shows its generic
+"cannot send right now" message). Stable reasons: `no_token`, `web_base_unset`, `web_base_insecure`, `redirect_invalid`, `redirect_origin_mismatch`.
+The error never contains the token, the URL or the address. Suppressed (non-allowlisted / disabled / migrated) recipients still get the uniform 200 before this step.
+Other action types (`magiclink`, `invite`, `email_change`) are not used by the app and keep the Supabase link; they remain outside this scope.
+
+Unit evidence (`npm run test:auth-email-hook`, 15/15 PASS): 8 misconfiguration cases x {recovery, signup} each raise the expected reason
+(unset base, non-URL base, http base, foreign origin, sibling subdomain, `javascript:` redirect, unparsable redirect, no token); the gateway test shows 503 + zero messages sent
+for wrong/unset/insecure `FRONTEND_URL` and a foreign redirect, with the token absent from the error; app-link recovery/signup mails contain no `/auth/v1/verify` in HTML or text.
+Hosted configuration check: `FRONTEND_URL=https://vno-web-uat.up.railway.app` equals the origin the web app sends as `redirectTo` (`window.location.origin`).
+**Caveat:** if someone opens UAT from another origin (custom domain, localhost) the request now fails visibly instead of mailing a consumable link.
+Whether the two mails already sent at 17:36 carried the app link (and not the Supabase URL) is only provable from the mailbox: owner step 1 below.
+
+## 2. Credentials: nothing is restored to a shared password
+
+* `e2e-uat/lib/credential-store.ts` rotates an account to a fresh random 24-character password (admin API), proves the grant works and writes it **only** to the
+  git-ignored, owner-only (0600) `e2e-uat/.env.uat.local`; the value is masked by `redact()` and never printed. The old values are not in any tracked file (checked by exact-value search, nothing printed).
+* `tests/50-auth-recovery.spec.ts` now **rotates** in `afterAll` instead of restoring, and is skipped unless `E2E_ALLOW_TOKEN_ISSUE=1`
+  because issuing tokens supersedes mailed ones. It was **not run** this evening.
+* After the owner completes the two real recovery tests, the owner-chosen passwords are the new credentials. They are not recorded anywhere by me; run a
+  rotation (or tell me to) only when the harness needs the accounts back, and the new value goes to the local file only.
+* Real-mail signup accounts: the owner chooses the password in their own browser; the evidence spec never sees it.
+
+## 3. Real-mail signup: prepared, waiting for the two aliases
+
+Not applied yet, because the aliases must be the owner's exact, approved mailboxes. Exact-recipient allowlist (currently 4 entries) and migrated-V1 protection are unchanged.
+
+1. Owner provides two fresh mailboxes (plus-aliases of an owner mailbox are fine; each is matched literally): one Merchant, one Partner.
+2. Preflight (read-only, prints masked output only):
+   `cd e2e-uat && railway run --service vno-api -- npx tsx tools/signup-alias-preflight.ts <merchant-alias> <partner-alias>`
+   (checks: single well-formed mailbox, not already allowlisted, no Auth user yet, not a migrated V1 identity by e-mail hash). Dry-run with synthetic addresses: PASS; negative cases (`@gmail.com`, wildcard) FAIL as intended.
+3. After approval: append the two exact addresses to `AUTH_EMAIL_ALLOWLIST` on `vno-api` (4 -> 6 entries) and redeploy vno-api.
+4. Owner signs up each alias in their own browser (ideally Merchant on desktop, Partner on phone to cover the cross-device case: the confirmation page restores a verified session,
+   password fields are hidden and the business fields are re-entered), clicks the real mail once, finishes onboarding.
+5. Evidence: `E2E_REAL_SIGNUP_MERCHANT=<alias> E2E_REAL_SIGNUP_PARTNER=<alias> railway run --service vno-api -- npx playwright test tests/80-real-mail-signup-verify.spec.ts`
+   records Auth `email_confirmed_at`, creation-to-confirmation time and the pending record; with `E2E_APPROVE_REAL_SIGNUP=1` it approves as Admin; the owner then signs in and confirms the right workspace.
+   Duplicate registration and unverified-sign-in rejection were already proven on hosted UAT (SG2/SG5); the owner may repeat the duplicate attempt after confirmation (UI message "đã được đăng ký").
+6. Hook log gives the OxMail `message_id` and send time for each signup mail.
+
+## 4. Still open before acceptance
+
+* Mailbox receipt + manual completion of both 17:36 recovery mails (Merchant `<1649df1d-...>`, Partner `<8175f67d-...>`). They may have expired; if so, the owner starts a fresh controlled request (one per account) and I do not generate any other token.
+* Two real-mail signups (Merchant, Partner) per section 3.
+* SPF/DKIM/DMARC for `vietnamnumberone.com` (not checkable from this environment).
+* Production native-SMTP templates must use the `token_hash` link pattern (above).
