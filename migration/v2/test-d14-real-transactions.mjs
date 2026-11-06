@@ -234,10 +234,12 @@ check('T09-b', 'cancelled transaction not in commission earned', !hasCancelled, 
 console.log('\n── T10 V1 data integrity ──');
 const v1Res = await call('/transactions', { token: adminToken });
 check('T10-a', 'v1_import records still accessible', v1Res.status === 200, v1Res.json);
-check('T10-b', 'at least one v1_import row present and lifecycle_status is null', (() => {
+check('T10-b', 'v1_import rows present and unmodified by D14 (no real_transaction lifecycle values)', (() => {
   const items = Array.isArray(v1Res.json?.items || v1Res.json) ? (v1Res.json?.items || v1Res.json) : [];
   const v1Rows = items.filter((r) => r.record_kind === 'v1_import');
-  return v1Rows.length > 0 && v1Rows.every((r) => r.lifecycle_status === null || r.lifecycle_status === undefined);
+  const realLifecycle = new Set(['recorded', 'confirmed', 'cancelled', 'reversed']);
+  // V1 rows have legacy lifecycle_status (e.g. 'unmapped') — none should have been touched by D14 RPCs
+  return v1Rows.length > 0 && v1Rows.every((r) => !realLifecycle.has(r.lifecycle_status));
 })(), { total: Array.isArray(v1Res.json?.items || v1Res.json) ? (v1Res.json?.items || v1Res.json).length : 0 });
 
 // ── T11: Customer QR landing page resolves ────────────────────────────────────
