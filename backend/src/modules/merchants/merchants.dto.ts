@@ -85,7 +85,9 @@ export const AdminCreateMerchantSchema = CreateMerchantSchema.extend({
 
 export type AdminCreateMerchantDto = z.infer<typeof AdminCreateMerchantSchema>;
 
-export const UpdateMerchantSchema = z.object({
+// Base shape shared by merchant self-service and admin updates.
+// Kept as a ZodObject so AdminUpdateMerchantSchema can call .extend() on it.
+const UpdateMerchantBaseSchema = z.object({
   merchant_name: z.string().min(1).max(200).optional(),
   merchant_description: z.string().max(20000).nullable().optional(),
   merchant_description_format: z.enum(['plain_text', 'markdown']).optional(),
@@ -103,13 +105,17 @@ export const UpdateMerchantSchema = z.object({
   new_address_ward: z.string().max(200).nullable().optional(),
   new_address_line: z.string().max(1000).nullable().optional(),
   category_ids: MerchantCategoryIdsSchema.optional(),
-}).strict();
-
-export const AdminUpdateMerchantSchema = UpdateMerchantSchema.extend({
+  // Merchant-owned commercial rates. Stored as fractions (0.1000 = 10%).
+  // New transactions snapshot rates at creation; editing never alters historical amounts.
   merchant_commission_type: z.enum(['percentage', 'fixed']).nullable().optional(),
   merchant_commission_value: ExactNonNegativeDecimalSchema.nullable().optional(),
   merchant_discount_type: z.enum(['percentage', 'fixed']).nullable().optional(),
   merchant_discount_value: ExactNonNegativeDecimalSchema.nullable().optional(),
+}).strict();
+
+export const UpdateMerchantSchema = UpdateMerchantBaseSchema.superRefine(validateFractionalCommercialRates);
+
+export const AdminUpdateMerchantSchema = UpdateMerchantBaseSchema.extend({
   merchant_priority: z.number().int().nullable().optional(),
   merchant_verified: z.boolean().optional(),
   merchants_status: z.enum(['pending', 'active', 'inactive', 'blocked']).optional(),

@@ -70,7 +70,7 @@ exports.AdminCreateMerchantSchema = exports.CreateMerchantSchema.extend({
     merchant_discount_type: zod_1.z.enum(['percentage', 'fixed']).optional(),
     merchant_discount_value: ExactNonNegativeDecimalSchema.optional(),
 }).superRefine(validateFractionalCommercialRates);
-exports.UpdateMerchantSchema = zod_1.z.object({
+const UpdateMerchantBaseSchema = zod_1.z.object({
     merchant_name: zod_1.z.string().min(1).max(200).optional(),
     merchant_description: zod_1.z.string().max(20000).nullable().optional(),
     merchant_description_format: zod_1.z.enum(['plain_text', 'markdown']).optional(),
@@ -88,12 +88,13 @@ exports.UpdateMerchantSchema = zod_1.z.object({
     new_address_ward: zod_1.z.string().max(200).nullable().optional(),
     new_address_line: zod_1.z.string().max(1000).nullable().optional(),
     category_ids: MerchantCategoryIdsSchema.optional(),
-}).strict();
-exports.AdminUpdateMerchantSchema = exports.UpdateMerchantSchema.extend({
     merchant_commission_type: zod_1.z.enum(['percentage', 'fixed']).nullable().optional(),
     merchant_commission_value: ExactNonNegativeDecimalSchema.nullable().optional(),
     merchant_discount_type: zod_1.z.enum(['percentage', 'fixed']).nullable().optional(),
     merchant_discount_value: ExactNonNegativeDecimalSchema.nullable().optional(),
+}).strict();
+exports.UpdateMerchantSchema = UpdateMerchantBaseSchema.superRefine(validateFractionalCommercialRates);
+exports.AdminUpdateMerchantSchema = UpdateMerchantBaseSchema.extend({
     merchant_priority: zod_1.z.number().int().nullable().optional(),
     merchant_verified: zod_1.z.boolean().optional(),
     merchants_status: zod_1.z.enum(['pending', 'active', 'inactive', 'blocked']).optional(),

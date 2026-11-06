@@ -84,6 +84,16 @@ export declare const UpdateMerchantSchema: z.ZodObject<{
     new_address_ward: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     new_address_line: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     category_ids: z.ZodOptional<z.ZodArray<z.ZodString>>;
+    merchant_commission_type: z.ZodOptional<z.ZodNullable<z.ZodEnum<{
+        fixed: "fixed";
+        percentage: "percentage";
+    }>>>;
+    merchant_commission_value: z.ZodOptional<z.ZodNullable<z.ZodUnion<readonly [z.ZodNumber, z.ZodString]>>>;
+    merchant_discount_type: z.ZodOptional<z.ZodNullable<z.ZodEnum<{
+        fixed: "fixed";
+        percentage: "percentage";
+    }>>>;
+    merchant_discount_value: z.ZodOptional<z.ZodNullable<z.ZodUnion<readonly [z.ZodNumber, z.ZodString]>>>;
 }, z.core.$strict>;
 export declare const AdminUpdateMerchantSchema: z.ZodObject<{
     merchant_name: z.ZodOptional<z.ZodString>;
@@ -144,12 +154,12 @@ export declare const MerchantDirectoryQuerySchema: z.ZodObject<{
         false: "false";
     }>, z.ZodTransform<boolean, "true" | "false">>>;
     sort: z.ZodDefault<z.ZodEnum<{
-        merchant_registered_date: "merchant_registered_date";
         merchant_name: "merchant_name";
+        merchant_discount_value: "merchant_discount_value";
+        merchant_registered_date: "merchant_registered_date";
         merchant_code: "merchant_code";
         merchant_priority: "merchant_priority";
         merchant_commission_value: "merchant_commission_value";
-        merchant_discount_value: "merchant_discount_value";
     }>>;
     direction: z.ZodDefault<z.ZodEnum<{
         asc: "asc";

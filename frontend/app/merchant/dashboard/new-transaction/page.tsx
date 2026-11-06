@@ -3,6 +3,7 @@
 import { FormEvent, useState } from "react";
 import { apiFetch } from "../../../../lib/api";
 import { fractionToPercentagePoints } from "../../../../lib/rates";
+import QrCameraScanner from "../../../../components/QrCameraScanner";
 
 type QrResult = {
   collaborator_id: string;
@@ -33,7 +34,10 @@ type ActionResult = {
   idempotent_replay: boolean;
 };
 
+type InputMode = "camera" | "manual";
+
 export default function MerchantNewTransactionPage() {
+  const [inputMode, setInputMode] = useState<InputMode>("camera");
   const [payload, setPayload] = useState("");
   const [qrResult, setQrResult] = useState<QrResult | null>(null);
   const [grossAmount, setGrossAmount] = useState("");
@@ -43,15 +47,25 @@ export default function MerchantNewTransactionPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  async function resolveQr(event: FormEvent) {
-    event.preventDefault();
+  async function resolvePartner(code: string) {
     setBusy(true); setError(null); setQrResult(null); setTransaction(null); setActionResult(null);
     try {
-      const resolved = await apiFetch("/qr/resolve", { method: "POST", body: JSON.stringify({ payload }) });
+      const resolved = await apiFetch("/qr/resolve", { method: "POST", body: JSON.stringify({ payload: code }) });
       setQrResult(resolved);
     } catch (err: any) {
-      setError(err.message || "Mã không hợp lệ");
+      setError(err.message || "Không thể xác minh mã QR");
     } finally { setBusy(false); }
+  }
+
+  // Called when camera successfully decodes a QR code
+  function handleCameraScan(decoded: string) {
+    resolvePartner(decoded);
+  }
+
+  // Called when merchant submits the manual text form
+  async function handleManualResolve(event: FormEvent) {
+    event.preventDefault();
+    if (payload.trim()) resolvePartner(payload.trim());
   }
 
   async function createTransaction(event: FormEvent) {
@@ -105,51 +119,88 @@ export default function MerchantNewTransactionPage() {
   return (
     <div className="mx-auto max-w-2xl pb-24">
       <h1 className="text-2xl font-bold sm:text-3xl">Giao dịch mới</h1>
-      <p className="mt-2 text-slate-600">Ghi nhận giao dịch thực tế. Sau khi tạo, xác nhận để ghi nhận hoa hồng cho đối tác.</p>
+      <p className="mt-2 text-slate-600">Quét mã QR của Đối tác, nhập giá trị hoá đơn, rồi xác nhận để ghi nhận hoa hồng.</p>
 
-      {/* Step 1 — resolve QR */}
-      {!transaction && (
-        <form onSubmit={resolveQr} className="mt-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-          <label className="block text-sm font-semibold">
-            Mã QR đối tác
-            <input
-              value={payload}
-              onChange={(e) => setPayload(e.target.value)}
-              autoCapitalize="characters"
-              autoComplete="off"
-              className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 px-4 text-base"
-              placeholder="Quét hoặc nhập mã đối tác"
-              required
-            />
-          </label>
-          <button disabled={busy} className="mt-4 min-h-12 w-full rounded-xl bg-slate-800 px-5 font-semibold text-white disabled:opacity-60">
-            {busy ? "Đang xác minh…" : "Xác minh đối tác"}
-          </button>
-        </form>
+      {/* Step 1 — scan / enter partner QR */}
+      {!transaction && !qrResult && (
+        <>
+          {/* Mode tabs */}
+          <div className="mt-5 flex rounded-xl border border-slate-200 bg-slate-50 p-1 gap-1">
+            <button
+              type="button"
+              onClick={() => setInputMode("camera")}
+              className={`flex-1 rounded-lg py-2 text-sm font-semibold transition-colors ${inputMode === "camera" ? "bg-white shadow text-slate-900" : "text-slate-500"}`}
+            >
+              📷 Quét camera
+            </button>
+            <button
+              type="button"
+              onClick={() => setInputMode("manual")}
+              className={`flex-1 rounded-lg py-2 text-sm font-semibold transition-colors ${inputMode === "manual" ? "bg-white shadow text-slate-900" : "text-slate-500"}`}
+            >
+              ⌨️ Nhập thủ công
+            </button>
+          </div>
+
+          {inputMode === "camera" && (
+            <div className="mt-3">
+              <QrCameraScanner onDecode={handleCameraScan} />
+            </div>
+          )}
+
+          {inputMode === "manual" && (
+            <form onSubmit={handleManualResolve} className="mt-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+              <label className="block text-sm font-semibold">
+                Mã đối tác hoặc URL QR
+                <input
+                  value={payload}
+                  onChange={(e) => setPayload(e.target.value)}
+                  autoCapitalize="characters"
+                  autoComplete="off"
+                  className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 px-4 text-base"
+                  placeholder="COL-… hoặc dán URL từ mã QR"
+                  required
+                />
+              </label>
+              <button disabled={busy} className="mt-4 min-h-12 w-full rounded-xl bg-slate-800 px-5 font-semibold text-white disabled:opacity-60">
+                {busy ? "Đang xác minh…" : "Xác minh đối tác"}
+              </button>
+            </form>
+          )}
+        </>
       )}
 
       {error && <p role="alert" className="mt-4 rounded-xl bg-rose-50 p-4 text-rose-800">{error}</p>}
 
-      {/* Step 1 result */}
+      {/* Step 1 result — partner verified */}
       {qrResult && !transaction && (
         <section className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 sm:p-5">
-          <div className="font-bold text-emerald-900">{qrResult.collaborator_code}</div>
-          <div className="mt-1 text-emerald-950">{qrResult.collaborator_name}</div>
+          <div className="font-bold text-emerald-900">{qrResult.collaborator_name || qrResult.collaborator_code}</div>
+          <div className="mt-1 font-mono text-sm text-emerald-800">{qrResult.collaborator_code}</div>
           <dl className="mt-3 grid grid-cols-2 gap-2 text-sm">
-            <dt>Liên kết</dt>
-            <dd className="font-semibold">{associationLabel(qrResult.association)}</dd>
+            <dt className="text-emerald-700">Liên kết</dt>
+            <dd className="font-semibold text-emerald-900">{associationLabel(qrResult.association)}</dd>
           </dl>
           {!assigned && (
-            <p className="mt-3 rounded-lg bg-amber-100 p-3 text-sm text-amber-900">Đối tác chưa được gán đúng Merchant. Không thể tạo giao dịch.</p>
+            <p className="mt-3 rounded-lg bg-amber-100 p-3 text-sm text-amber-900">Đối tác chưa được gán cho cửa hàng này. Không thể tạo giao dịch.</p>
           )}
+          <button
+            type="button"
+            onClick={startAnother}
+            className="mt-3 text-sm text-emerald-700 underline underline-offset-2"
+          >
+            Quét lại
+          </button>
         </section>
       )}
 
-      {/* Step 2 — enter amount */}
+      {/* Step 2 — enter gross amount */}
       {qrResult && assigned && !transaction && (
         <form onSubmit={createTransaction} className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
           <h2 className="text-lg font-bold">Nhập giá trị hoá đơn</h2>
-          <p className="mt-1 text-sm text-slate-600">Giảm giá và hoa hồng được tính từ tỷ lệ đã Admin duyệt. Chính xác đến 4 chữ số thập phân.</p>
+          <p className="mt-1 text-sm text-slate-600">
+            Giảm giá cho Khách hàng và hoa hồng cho Đối tác được tính từ tỷ lệ cấu hình của cửa hàng.
+          </p>
           <label className="mt-4 block text-sm font-semibold">
             Tổng giá trị (VND)
             <input
@@ -177,9 +228,9 @@ export default function MerchantNewTransactionPage() {
             <StatusBadge status={finalStatus ?? "recorded"} />
           </div>
           <dl className="mt-4 grid grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)] gap-2 text-sm">
-            <dt>Tổng</dt>       <dd className="text-right font-semibold">{money(transaction.gross_amount)}</dd>
-            <dt>Giảm giá</dt>  <dd className="text-right">{rate(transaction.discount_rate)} · {money(transaction.discount_amount)}</dd>
-            <dt>Hoa hồng</dt>  <dd className="text-right">{rate(transaction.commission_rate)} · {money(transaction.commission_amount)}</dd>
+            <dt>Tổng hoá đơn</dt>    <dd className="text-right font-semibold">{money(transaction.gross_amount)}</dd>
+            <dt>Giảm giá KH</dt>     <dd className="text-right">{rate(transaction.discount_rate)} · {money(transaction.discount_amount)}</dd>
+            <dt>Hoa hồng ĐT</dt>     <dd className="text-right">{rate(transaction.commission_rate)} · {money(transaction.commission_amount)}</dd>
           </dl>
 
           {(finalStatus === "confirmed" || finalStatus === "cancelled" || finalStatus === "reversed") ? (
@@ -188,7 +239,7 @@ export default function MerchantNewTransactionPage() {
                 Xem trong báo cáo
               </a>
               <button type="button" onClick={startAnother} className="min-h-12 rounded-xl border border-violet-300 bg-white px-4 font-semibold text-violet-900">
-                Tạo giao dịch khác
+                Giao dịch mới
               </button>
             </div>
           ) : (
@@ -242,7 +293,7 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 function associationLabel(a: QrResult["association"]) {
-  return a === "assigned_to_this_merchant" ? "Đúng Merchant" : a === "assigned_elsewhere" ? "Merchant khác" : "Chưa liên kết";
+  return a === "assigned_to_this_merchant" ? "Đúng cửa hàng" : a === "assigned_elsewhere" ? "Cửa hàng khác" : "Chưa liên kết";
 }
 function rate(value: string) { return `${fractionToPercentagePoints(value)}%`; }
-function money(value: string) { return `${new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 4 }).format(Number(value))} VND`; }
+function money(value: string) { return `${new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 0 }).format(Number(value))} VND`; }

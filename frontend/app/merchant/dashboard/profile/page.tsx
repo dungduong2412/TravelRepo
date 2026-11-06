@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { apiFetch } from '../../../../lib/api';
-import { fractionToPercentagePoints } from '../../../../lib/rates';
+import { fractionToPercentagePoints, percentagePointsToFraction } from '../../../../lib/rates';
 import MediaManager from '../../../../components/MediaManager';
 
 export default function MerchantProfilePage() {
@@ -30,7 +30,11 @@ export default function MerchantProfilePage() {
     new_address_country: '',
     new_address_province: '',
     new_address_district: '',
+    // Commercial rates shown as human-readable percentages (e.g. "10" means 10%)
+    discount_pct: '',
+    commission_pct: '',
   });
+  const [commercialError, setCommercialError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchProfile();
@@ -71,6 +75,10 @@ export default function MerchantProfilePage() {
         new_address_country: data.new_address_country || '',
         new_address_province: data.new_address_province || '',
         new_address_district: data.new_address_district || '',
+        discount_pct: data.merchant_discount_type === 'percentage' && data.merchant_discount_value != null
+          ? fractionToPercentagePoints(data.merchant_discount_value) : '',
+        commission_pct: data.merchant_commission_type === 'percentage' && data.merchant_commission_value != null
+          ? fractionToPercentagePoints(data.merchant_commission_value) : '',
       });
     } catch (err: any) {
       setError(err.message || 'Không thể tải thông tin');
@@ -89,10 +97,36 @@ export default function MerchantProfilePage() {
     setSaving(true);
     setError(null);
     setSuccess(false);
+    setCommercialError(null);
 
     try {
       if (!merchant?.merchant_system_id) throw new Error('Không tìm thấy hồ sơ nhà cung cấp');
-      const payload: Record<string, unknown> = { ...formData };
+
+      // Convert human-readable percentages to fractional rates for the API
+      const commercialFields: Record<string, unknown> = {};
+      if (formData.discount_pct.trim() !== '') {
+        try {
+          commercialFields.merchant_discount_type = 'percentage';
+          commercialFields.merchant_discount_value = percentagePointsToFraction(formData.discount_pct.trim());
+        } catch {
+          setCommercialError('Tỷ lệ giảm giá không hợp lệ. Nhập số từ 0 đến 100 (tối đa 2 chữ số thập phân, ví dụ: 10 hoặc 5.5).');
+          setSaving(false);
+          return;
+        }
+      }
+      if (formData.commission_pct.trim() !== '') {
+        try {
+          commercialFields.merchant_commission_type = 'percentage';
+          commercialFields.merchant_commission_value = percentagePointsToFraction(formData.commission_pct.trim());
+        } catch {
+          setCommercialError('Tỷ lệ hoa hồng không hợp lệ. Nhập số từ 0 đến 100 (tối đa 2 chữ số thập phân, ví dụ: 10 hoặc 5.5).');
+          setSaving(false);
+          return;
+        }
+      }
+
+      const { discount_pct: _d, commission_pct: _c, ...baseFields } = formData;
+      const payload: Record<string, unknown> = { ...baseFields, ...commercialFields };
       if (sameCategoryIds(formData.category_ids, merchant?.category_ids || [])) {
         delete payload.category_ids;
       }
@@ -289,10 +323,51 @@ export default function MerchantProfilePage() {
         </div>
 
         <div style={styles.card}>
-          <h2 style={styles.cardTitle}>Hoa Hồng & Giảm Giá</h2>
-          <p style={{ color: '#64748b', margin: 0 }}>Các điều khoản này do Platform Admin quản trị.</p>
-          <p>Hoa hồng: {commercialRate(merchant?.merchant_commission_type, merchant?.merchant_commission_value)}</p>
-          <p>Giảm giá: {commercialRate(merchant?.merchant_discount_type, merchant?.merchant_discount_value)}</p>
+          <h2 style={styles.cardTitle}>Điều Khoản Thương Mại</h2>
+          <p style={{ color: '#64748b', marginBottom: 20, marginTop: 0 }}>
+            Nhập tỷ lệ phần trăm (ví dụ: <strong>10</strong> cho 10%). Để trống nếu chưa muốn thay đổi.
+            Các giao dịch cũ không bị ảnh hưởng khi bạn chỉnh sửa tỷ lệ này.
+          </p>
+
+          <div style={styles.formGroup}>
+            <label style={styles.label}>
+              Tỷ lệ Giảm giá cho Khách hàng (%)
+              <small style={styles.hint}>
+                Phần trăm giảm giá Khách hàng được hưởng trên giá trị hoá đơn gốc.
+                {merchant?.merchant_discount_type === 'percentage' && merchant?.merchant_discount_value != null
+                  ? ` Hiện tại: ${fractionToPercentagePoints(merchant.merchant_discount_value)}%` : ''}
+              </small>
+            </label>
+            <input
+              name="discount_pct"
+              value={formData.discount_pct}
+              onChange={handleChange}
+              inputMode="decimal"
+              placeholder="Ví dụ: 5 (tức 5%)"
+              style={styles.input}
+            />
+          </div>
+
+          <div style={styles.formGroup}>
+            <label style={styles.label}>
+              Tỷ lệ Hoa hồng cho Đối tác (%)
+              <small style={styles.hint}>
+                Phần trăm hoa hồng Đối tác nhận được tính trên giá trị hoá đơn gốc.
+                {merchant?.merchant_commission_type === 'percentage' && merchant?.merchant_commission_value != null
+                  ? ` Hiện tại: ${fractionToPercentagePoints(merchant.merchant_commission_value)}%` : ''}
+              </small>
+            </label>
+            <input
+              name="commission_pct"
+              value={formData.commission_pct}
+              onChange={handleChange}
+              inputMode="decimal"
+              placeholder="Ví dụ: 10 (tức 10%)"
+              style={styles.input}
+            />
+          </div>
+
+          {commercialError && <div style={styles.error}>{commercialError}</div>}
         </div>
 
         <MediaManager title="Hình ảnh doanh nghiệp" />
@@ -306,11 +381,6 @@ export default function MerchantProfilePage() {
       </form>
     </div>
   );
-}
-
-function commercialRate(type?: string | null, value?: string | number | null) {
-  if (value === null || value === undefined || value === '') return 'chưa cấu hình';
-  return type === 'percentage' ? `${fractionToPercentagePoints(value)}%` : `${value} VND`;
 }
 
 function sameCategoryIds(left: string[], right: string[]) {
