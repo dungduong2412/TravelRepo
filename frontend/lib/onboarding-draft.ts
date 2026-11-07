@@ -20,3 +20,19 @@ export function loadDraft<T = unknown>(key: string): T | null {
 export function clearDraft(key: string) {
   try { localStorage.removeItem(key); } catch { /* storage unavailable */ }
 }
+
+export const DRAFT_KEYS = { collaborator: 'vno-collaborator-onboarding-draft', merchant: 'vno-merchant-onboarding-draft' } as const;
+
+/**
+ * Normal login of a verified, profile-less account lands on the onboarding page. The person just proved they are this e-mail, so the e-mail
+ * remembered in an older local draft must not make that page treat the session as a stranger's. Only the e-mail field changes; no password is stored.
+ */
+export function adoptDraftEmail(role: keyof typeof DRAFT_KEYS, email: string) {
+  const key = DRAFT_KEYS[role];
+  if (role === 'collaborator') {
+    saveDraft(key, { ...(loadDraft<Record<string, unknown>>(key) || {}), email });
+  } else {
+    const d = loadDraft<{ formData?: Record<string, unknown> }>(key);
+    saveDraft(key, { ...(d || {}), formData: { ...(d?.formData || {}), ownerEmail: email } });
+  }
+}

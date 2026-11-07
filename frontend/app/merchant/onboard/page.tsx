@@ -7,14 +7,14 @@ import { apiFetch } from '../../../lib/api';
 import { signUp } from '../../../lib/supabase';
 import { useOnboardingIdentity } from '../../../lib/onboarding-identity';
 import OnboardingIdentityNotice from '../../../components/OnboardingIdentityNotice';
-import ResumeOnboarding from '../../../components/ResumeOnboarding';
+import AlreadyRegisteredLinks from '../../../components/AlreadyRegisteredLinks';
 import { errorCode } from '../../../lib/auth-diagnostics';
-import { ALREADY_REGISTERED_RESUME_TEXT, signupErrorMessage } from '../../../lib/auth-errors';
-import { clearDraft, loadDraft, saveDraft } from '../../../lib/onboarding-draft';
+import { signupErrorMessage } from '../../../lib/auth-errors';
+import { clearDraft, DRAFT_KEYS, loadDraft, saveDraft } from '../../../lib/onboarding-draft';
 import { isValidPassword, PASSWORD_ERROR, PASSWORD_HINT } from '../../../lib/password-policy';
 
 type Category = { id: string; category_name?: string | null; category_name_vi?: string | null };
-const DRAFT_KEY = 'vno-merchant-onboarding-draft';
+const DRAFT_KEY = DRAFT_KEYS.merchant;
 const intendedEmail = () => loadDraft<{ formData?: { ownerEmail?: string } }>(DRAFT_KEY)?.formData?.ownerEmail || undefined;
 
 export default function MerchantOnboardPage() {
@@ -31,12 +31,19 @@ export default function MerchantOnboardPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [categoryIds, setCategoryIds] = useState<string[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
-  const { identity, switchAccount, stillCurrent, resume, refresh } = useOnboardingIdentity('merchant', intendedEmail);
-  const [resumeForce, setResumeForce] = useState(false);
+  const { identity, switchAccount, stillCurrent, refresh } = useOnboardingIdentity('merchant', intendedEmail);
   const hasVerifiedSession = identity.kind === 'ready';
   const formVisible = identity.kind === 'anonymous' || identity.kind === 'ready';
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // A confirmed (or otherwise resolved) session supersedes whatever the sign-up attempt said before it: never show a green "email verified" banner
+  // next to a red "already registered" / "check your e-mail" message from an earlier submit.
+  useEffect(() => {
+    if (identity.kind === 'ready' || identity.kind === 'existing' || identity.kind === 'mismatch') {
+      setError(null); setNotice(null);
+    }
+  }, [identity.kind]);
 
   useEffect(() => {
     try {
@@ -133,7 +140,7 @@ export default function MerchantOnboardPage() {
       router.push('/success?type=merchant');
     } catch (err: any) {
       const code = errorCode(err);
-      if (code === 'user_already_exists' || code === 'email_exists') { setError(ALREADY_REGISTERED_RESUME_TEXT); setResumeForce(true); }
+      if (code === 'user_already_exists' || code === 'email_exists') setError(signupErrorMessage(code));
       else if (/already exists/i.test(err?.message || '')) {
         // This verified identity already has an application: show its status instead of a raw API message.
         setError('Email này đã có hồ sơ. Không thể tạo thêm hồ sơ mới.'); refresh();
@@ -153,8 +160,6 @@ export default function MerchantOnboardPage() {
         <p style={styles.hint}>Email phải được xác nhận trước khi hồ sơ được tạo. Tỷ lệ thương mại chỉ do Platform Admin thiết lập.</p>
 
         <OnboardingIdentityNotice identity={identity} role="merchant" onSwitch={switchAccount} />
-        {identity.kind === 'anonymous' && <ResumeOnboarding role="merchant" defaultEmail={formData.ownerEmail} forceOpen={resumeForce} resume={resume}
-          onAttempt={(email) => { const d = loadDraft<{ formData?: Record<string, unknown>; categoryIds?: string[] }>(DRAFT_KEY); saveDraft(DRAFT_KEY, { ...(d || {}), formData: { ...(d?.formData || {}), ownerEmail: email } }); setFormData((c) => ({ ...c, ownerEmail: email })); }} />}
         {identity.kind === 'loading' && <p style={styles.hint} aria-live="polite">Đang kiểm tra phiên đăng nhập…</p>}
 
         {formVisible && <form onSubmit={handleSubmit} style={styles.form}>
@@ -270,6 +275,7 @@ export default function MerchantOnboardPage() {
             </button>
           </div>
         </form>}
+        {identity.kind === 'anonymous' && <AlreadyRegisteredLinks />}
       </div>
     </main>
   );

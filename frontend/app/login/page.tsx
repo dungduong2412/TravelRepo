@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { publicApiFetch } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
+import { resolveFailedLogin } from '../../lib/login-resolve';
 import { AuthShell } from '../../components/ui/AuthShell';
 import { Field } from '../../components/ui/Form';
 import { Button, buttonClass } from '../../components/ui/Button';
@@ -51,7 +52,18 @@ export default function LoginPage() {
         setNotice(loginMessage('unsupported'));
       }
     } catch (err) {
-      setNotice(loginMessage(err instanceof Error ? err.message : ''));
+      const raw = err instanceof Error ? err.message : '';
+      const m = raw.toLowerCase();
+      // The login API only accepts approved profiles and reports "wrong password", "e-mail not confirmed" and "never submitted a profile"
+      // alike. Ask Supabase Auth (same credentials) so the person lands where they can actually continue, instead of a dead-end failure.
+      if (m.includes('invalid email or password') || m.includes('not active')) {
+        const next = await resolveFailedLogin(email, password);
+        if (next.kind === 'onboarding') { router.push(next.path); return; }
+        if (next.kind === 'email_not_confirmed') { setNotice(loginMessage('confirm')); return; }
+        if (next.kind === 'pending') { setNotice(loginMessage('not approved')); return; }
+        if (next.kind === 'inactive') { setNotice(loginMessage('not active')); return; }
+      }
+      setNotice(loginMessage(raw));
     } finally {
       setLoading(false);
     }

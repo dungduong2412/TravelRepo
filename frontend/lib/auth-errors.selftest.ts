@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
-import { ALREADY_REGISTERED_RESUME_TEXT, classifyRecoveryError, classifyVerifyError, resumeErrorMessage } from './auth-errors';
+import { classifyRecoveryError, classifyVerifyError, signupErrorMessage } from './auth-errors';
 import { errorCode } from './auth-diagnostics';
+import { decideLoginFollowUp } from './login-followup';
 assert.equal(classifyRecoveryError('weak_password').kind, 'policy');
 // weak_password reaches here only AFTER the client policy passed: it must say so, and must never ask for a more complex password.
 assert.match(classifyRecoveryError('weak_password').text, /đã đáp ứng quy tắc/);
@@ -19,13 +20,18 @@ assert.equal(errorCode({ code: 'otp_expired' }), 'otp_expired');
 assert.equal(errorCode({ status: 422 }), 'http_422');
 assert.equal(errorCode(new Error('secret token abc')), 'unknown_error');
 assert.equal(errorCode({ code: 'Bad Code With Spaces & token=abc' }), 'unknown_error', 'free text can never become a code');
-// Resume onboarding: distinct, accurate messages; wrong password and unknown address are indistinguishable; nothing says "link expired".
-assert.match(resumeErrorMessage('invalid_credentials'), /không đúng/);
-assert.equal(resumeErrorMessage('user_not_found'), resumeErrorMessage('invalid_credentials'));
-assert.match(resumeErrorMessage('email_not_confirmed'), /chưa được xác nhận/);
-assert.match(resumeErrorMessage('over_request_rate_limit'), /quá nhanh/);
-assert.match(resumeErrorMessage('network_error'), /kết nối/);
-assert.ok(!/hết hạn/.test(resumeErrorMessage('invalid_credentials')));
-assert.match(ALREADY_REGISTERED_RESUME_TEXT, /đã được đăng ký/);
-assert.match(ALREADY_REGISTERED_RESUME_TEXT, /Tiếp tục hồ sơ/);
+// Registered e-mail on a sign-up form: one calm message that names Login + Forgot password; never a second sign-up, never "link expired".
+for (const c of ['user_already_exists', 'email_exists']) {
+  const m = signupErrorMessage(c) || '';
+  assert.match(m, /đã được đăng ký/); assert.match(m, /đăng nhập/); assert.match(m, /Quên mật khẩu/); assert.ok(!/hết hạn/.test(m));
+}
+// Failed normal login of a VALID password: where does the person go? (decideLoginFollowUp is pure; the network part lives in login-followup.ts)
+assert.deepEqual(decideLoginFollowUp({ confirmed: true, profile: null, requestedRole: 'collaborator' }), { kind: 'onboarding', role: 'collaborator', path: '/collaborator/onboard' });
+assert.deepEqual(decideLoginFollowUp({ confirmed: true, profile: null, requestedRole: 'merchant' }), { kind: 'onboarding', role: 'merchant', path: '/merchant/onboard' });
+assert.equal(decideLoginFollowUp({ confirmed: true, profile: null, requestedRole: undefined }).kind, 'none', 'unknown role: no guessing');
+assert.equal(decideLoginFollowUp({ confirmed: true, profile: null, requestedRole: 'admin' }).kind, 'none', 'never route to onboarding for another role');
+assert.equal(decideLoginFollowUp({ confirmed: false, profile: null, requestedRole: 'merchant' }).kind, 'email_not_confirmed');
+assert.equal(decideLoginFollowUp({ confirmed: true, profile: { role: 'merchant', user_profiles_status: 'pending' }, requestedRole: 'merchant' }).kind, 'pending');
+assert.equal(decideLoginFollowUp({ confirmed: true, profile: { role: 'collaborator', user_profiles_status: 'blocked' }, requestedRole: 'collaborator' }).kind, 'inactive');
+assert.equal(decideLoginFollowUp({ confirmed: true, profile: { role: 'collaborator', user_profiles_status: 'active' }, requestedRole: 'collaborator' }).kind, 'none', 'an approved profile is not this helper\'s business');
 console.log('auth-errors selftest: all passed');

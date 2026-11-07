@@ -2,8 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from './api';
-import { signIn, supabase } from './supabase';
-import { errorCode } from './auth-diagnostics';
+import { supabase } from './supabase';
 
 export type OnboardingRole = 'merchant' | 'collaborator';
 export type ExistingProfile = { role?: string; user_profiles_status?: string };
@@ -65,24 +64,11 @@ export function useOnboardingIdentity(role: OnboardingRole, intendedEmail: () =>
     setIdentity({ kind: 'anonymous' });
   }, []);
 
-  /**
-   * Resume an incomplete sign-up: password grant straight against Supabase Auth with the original e-mail and password. It never calls signUp
-   * and never touches the business-profile-gated /auth/login. Returns an error CODE or null; the session listener then re-resolves the identity
-   * (ready / existing / mismatch), so nothing is granted here beyond a confirmed, still-unapproved session.
-   */
-  const resume = useCallback(async (email: string, password: string): Promise<string | null> => {
-    try {
-      const data = await signIn(email.trim(), password);
-      if (!data.user?.email_confirmed_at) { await supabase.auth.signOut({ scope: 'local' }); return 'email_not_confirmed'; }
-      return null;
-    } catch (err) { return errorCode(err); }
-  }, []);
-
   /** True only while the live session is still the identity the page is showing (another tab may have changed it). */
   const stillCurrent = useCallback(async (email: string) => {
     const { data } = await supabase.auth.getUser();
     return same(data.user?.email, email);
   }, []);
 
-  return { identity, switchAccount, stillCurrent, resume, refresh: resolve };
+  return { identity, switchAccount, stillCurrent, refresh: resolve };
 }

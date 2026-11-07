@@ -6,13 +6,13 @@ import { apiFetch } from '../../../lib/api';
 import { signUp } from '../../../lib/supabase';
 import { useOnboardingIdentity } from '../../../lib/onboarding-identity';
 import OnboardingIdentityNotice from '../../../components/OnboardingIdentityNotice';
-import ResumeOnboarding from '../../../components/ResumeOnboarding';
+import AlreadyRegisteredLinks from '../../../components/AlreadyRegisteredLinks';
 import { errorCode } from '../../../lib/auth-diagnostics';
-import { ALREADY_REGISTERED_RESUME_TEXT, signupErrorMessage } from '../../../lib/auth-errors';
-import { clearDraft, loadDraft, saveDraft } from '../../../lib/onboarding-draft';
+import { signupErrorMessage } from '../../../lib/auth-errors';
+import { clearDraft, DRAFT_KEYS, loadDraft, saveDraft } from '../../../lib/onboarding-draft';
 import { isValidPassword, PASSWORD_ERROR, PASSWORD_HINT } from '../../../lib/password-policy';
 
-const DRAFT_KEY = 'vno-collaborator-onboarding-draft';
+const DRAFT_KEY = DRAFT_KEYS.collaborator;
 const intendedEmail = () => loadDraft<{ email?: string }>(DRAFT_KEY)?.email || undefined;
 
 export default function CollaboratorOnboardPage() {
@@ -31,10 +31,18 @@ export default function CollaboratorOnboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState<string | null>(null);
-  const { identity, switchAccount, stillCurrent, resume, refresh } = useOnboardingIdentity('collaborator', intendedEmail);
-  const [resumeForce, setResumeForce] = useState(false);
+  const { identity, switchAccount, stillCurrent, refresh } = useOnboardingIdentity('collaborator', intendedEmail);
   const hasVerifiedSession = identity.kind === 'ready';
   const formVisible = identity.kind === 'anonymous' || identity.kind === 'ready';
+
+  // A confirmed (or otherwise resolved) session supersedes whatever the sign-up attempt said before it: never show a green "email verified" banner
+  // next to a red "already registered" / "check your e-mail" message from an earlier submit.
+  useEffect(() => {
+    if (identity.kind === 'ready' || identity.kind === 'existing' || identity.kind === 'mismatch') {
+      setError(null); setNotice(null);
+      setValidationErrors({});
+    }
+  }, [identity.kind]);
 
   useEffect(() => {
     try {
@@ -142,7 +150,7 @@ export default function CollaboratorOnboardPage() {
       router.push('/success?type=collaborator');
     } catch (err) {
       const code = errorCode(err);
-      if (code === 'user_already_exists' || code === 'email_exists') { setError(ALREADY_REGISTERED_RESUME_TEXT); setResumeForce(true); }
+      if (code === 'user_already_exists' || code === 'email_exists') setError(signupErrorMessage(code));
       else if (err instanceof Error && /already exists/i.test(err.message)) {
         // This verified identity already has an application: show its status instead of a raw API message.
         setError('Email này đã có hồ sơ. Không thể tạo thêm hồ sơ mới.'); refresh();
@@ -159,8 +167,6 @@ export default function CollaboratorOnboardPage() {
         <p style={styles.hint}>Email phải được xác nhận trước khi hồ sơ được tạo. Quyền hoạt động và ảnh đại diện được Admin duyệt riêng.</p>
         <OnboardingIdentityNotice identity={identity} role="collaborator" onSwitch={switchAccount} />
 
-        {identity.kind === 'anonymous' && <ResumeOnboarding role="collaborator" defaultEmail={formData.email} forceOpen={resumeForce} resume={resume}
-          onAttempt={(email) => { saveDraft(DRAFT_KEY, { ...(loadDraft<Record<string, string>>(DRAFT_KEY) || {}), email }); setFormData((c) => ({ ...c, email })); }} />}
         {identity.kind === 'loading' && <p style={styles.hint} aria-live="polite">Đang kiểm tra phiên đăng nhập…</p>}
         {formVisible && <form onSubmit={handleSubmit} style={styles.form}>
           <div style={styles.formGroup}>
@@ -319,6 +325,7 @@ export default function CollaboratorOnboardPage() {
             </button>
           </div>
         </form>}
+        {identity.kind === 'anonymous' && <AlreadyRegisteredLinks />}
       </div>
     </main>
   );
