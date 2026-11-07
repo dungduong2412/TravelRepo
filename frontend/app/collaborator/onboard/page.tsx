@@ -6,8 +6,9 @@ import { apiFetch } from '../../../lib/api';
 import { signUp } from '../../../lib/supabase';
 import { useOnboardingIdentity } from '../../../lib/onboarding-identity';
 import OnboardingIdentityNotice from '../../../components/OnboardingIdentityNotice';
+import ResumeOnboarding from '../../../components/ResumeOnboarding';
 import { errorCode } from '../../../lib/auth-diagnostics';
-import { signupErrorMessage } from '../../../lib/auth-errors';
+import { ALREADY_REGISTERED_RESUME_TEXT, signupErrorMessage } from '../../../lib/auth-errors';
 import { clearDraft, loadDraft, saveDraft } from '../../../lib/onboarding-draft';
 import { isValidPassword, PASSWORD_ERROR, PASSWORD_HINT } from '../../../lib/password-policy';
 
@@ -30,7 +31,8 @@ export default function CollaboratorOnboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState<string | null>(null);
-  const { identity, switchAccount, stillCurrent } = useOnboardingIdentity('collaborator', intendedEmail);
+  const { identity, switchAccount, stillCurrent, resume, refresh } = useOnboardingIdentity('collaborator', intendedEmail);
+  const [resumeForce, setResumeForce] = useState(false);
   const hasVerifiedSession = identity.kind === 'ready';
   const formVisible = identity.kind === 'anonymous' || identity.kind === 'ready';
 
@@ -139,7 +141,12 @@ export default function CollaboratorOnboardPage() {
       // Redirect to success page
       router.push('/success?type=collaborator');
     } catch (err) {
-      setError(signupErrorMessage(errorCode(err)) ?? (err instanceof Error ? err.message : 'Đã xảy ra lỗi khi gửi đơn đăng ký'));
+      const code = errorCode(err);
+      if (code === 'user_already_exists' || code === 'email_exists') { setError(ALREADY_REGISTERED_RESUME_TEXT); setResumeForce(true); }
+      else if (err instanceof Error && /already exists/i.test(err.message)) {
+        // This verified identity already has an application: show its status instead of a raw API message.
+        setError('Email này đã có hồ sơ. Không thể tạo thêm hồ sơ mới.'); refresh();
+      } else setError(signupErrorMessage(code) ?? (err instanceof Error ? err.message : 'Đã xảy ra lỗi khi gửi đơn đăng ký'));
       setIsSubmitting(false);
     }
   };
@@ -152,6 +159,8 @@ export default function CollaboratorOnboardPage() {
         <p style={styles.hint}>Email phải được xác nhận trước khi hồ sơ được tạo. Quyền hoạt động và ảnh đại diện được Admin duyệt riêng.</p>
         <OnboardingIdentityNotice identity={identity} role="collaborator" onSwitch={switchAccount} />
 
+        {identity.kind === 'anonymous' && <ResumeOnboarding role="collaborator" defaultEmail={formData.email} forceOpen={resumeForce} resume={resume}
+          onAttempt={(email) => { saveDraft(DRAFT_KEY, { ...(loadDraft<Record<string, string>>(DRAFT_KEY) || {}), email }); setFormData((c) => ({ ...c, email })); }} />}
         {identity.kind === 'loading' && <p style={styles.hint} aria-live="polite">Đang kiểm tra phiên đăng nhập…</p>}
         {formVisible && <form onSubmit={handleSubmit} style={styles.form}>
           <div style={styles.formGroup}>

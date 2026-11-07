@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { classifyRecoveryError, classifyVerifyError } from './auth-errors';
+import { ALREADY_REGISTERED_RESUME_TEXT, classifyRecoveryError, classifyVerifyError, resumeErrorMessage } from './auth-errors';
 import { errorCode } from './auth-diagnostics';
 assert.equal(classifyRecoveryError('weak_password').kind, 'policy');
 // weak_password reaches here only AFTER the client policy passed: it must say so, and must never ask for a more complex password.
@@ -19,4 +19,13 @@ assert.equal(errorCode({ code: 'otp_expired' }), 'otp_expired');
 assert.equal(errorCode({ status: 422 }), 'http_422');
 assert.equal(errorCode(new Error('secret token abc')), 'unknown_error');
 assert.equal(errorCode({ code: 'Bad Code With Spaces & token=abc' }), 'unknown_error', 'free text can never become a code');
+// Resume onboarding: distinct, accurate messages; wrong password and unknown address are indistinguishable; nothing says "link expired".
+assert.match(resumeErrorMessage('invalid_credentials'), /không đúng/);
+assert.equal(resumeErrorMessage('user_not_found'), resumeErrorMessage('invalid_credentials'));
+assert.match(resumeErrorMessage('email_not_confirmed'), /chưa được xác nhận/);
+assert.match(resumeErrorMessage('over_request_rate_limit'), /quá nhanh/);
+assert.match(resumeErrorMessage('network_error'), /kết nối/);
+assert.ok(!/hết hạn/.test(resumeErrorMessage('invalid_credentials')));
+assert.match(ALREADY_REGISTERED_RESUME_TEXT, /đã được đăng ký/);
+assert.match(ALREADY_REGISTERED_RESUME_TEXT, /Tiếp tục hồ sơ/);
 console.log('auth-errors selftest: all passed');

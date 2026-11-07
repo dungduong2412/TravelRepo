@@ -60,3 +60,24 @@ export function signupErrorMessage(code: string): string | null {
   if (code === 'email_address_invalid' || code === 'validation_failed') return 'Địa chỉ email không hợp lệ.';
   return null;
 }
+
+/**
+ * Resume-onboarding sign-in (direct Supabase Auth password grant, NOT the business-profile-gated /auth/login).
+ * Invalid credentials and unknown address are deliberately indistinguishable.
+ */
+export function resumeErrorMessage(code: string): string {
+  if (code === 'invalid_credentials' || code === 'user_not_found' || code === 'http_400') {
+    return 'Email hoặc mật khẩu không đúng. Hãy kiểm tra lại, hoặc dùng "Quên mật khẩu" nếu bạn không nhớ mật khẩu đã đăng ký.';
+  }
+  if (code === 'email_not_confirmed') {
+    return 'Email này chưa được xác nhận. Hãy mở liên kết trong email xác nhận đã gửi cho bạn (kiểm tra cả thư mục spam), rồi quay lại đây.';
+  }
+  if (code === 'user_banned') return 'Tài khoản này đang bị khóa. Vui lòng liên hệ quản trị viên.';
+  if (code === 'over_request_rate_limit' || code === 'http_429') return 'Bạn thao tác quá nhanh. Vui lòng đợi khoảng một phút rồi thử lại.';
+  if (code === 'network_error' || code.startsWith('http_5')) return 'Không thể kết nối. Hãy kiểm tra mạng và thử lại.';
+  return 'Không thể tiếp tục hồ sơ lúc này. Hãy thử lại.';
+}
+
+/** Sign-up form hit an address that already has an Auth user: point to Resume instead of the generic login advice. */
+export const ALREADY_REGISTERED_RESUME_TEXT =
+  'Email này đã được đăng ký. Nếu bạn đã xác nhận email, hãy bấm “Tiếp tục hồ sơ” bên dưới và nhập mật khẩu đã đăng ký; không cần email xác nhận mới. Nếu không nhớ mật khẩu, hãy dùng "Quên mật khẩu".';

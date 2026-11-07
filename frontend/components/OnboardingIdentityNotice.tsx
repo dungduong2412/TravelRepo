@@ -8,7 +8,7 @@ const box = (bg: string, fg: string): CSSProperties => ({ padding: 12, borderRad
 const linkButton: CSSProperties = { alignSelf: 'flex-start', background: 'none', border: 'none', padding: 0, color: '#1d4ed8', textDecoration: 'underline', cursor: 'pointer', fontSize: 14 };
 
 const roleLabel = (role?: string) => ROLE_LABEL[role || ''] || 'khác';
-const statusLabel = (s?: string) => (s === 'active' ? 'đã được duyệt' : s === 'pending' ? 'Hồ sơ đang chờ phê duyệt' : s === 'blocked' ? 'cần chỉnh sửa hoặc đã bị từ chối' : s || 'chưa xác định');
+const statusLabel = (s?: string) => (s === 'active' ? 'đã được duyệt' : s === 'pending' ? 'đang chờ phê duyệt' : s === 'blocked' ? 'cần chỉnh sửa hoặc đã bị từ chối' : s || 'chưa xác định');
 
 /**
  * Explains, above the onboarding form, which verified identity the page is acting for. It deliberately never calls the confirmed
@@ -27,13 +27,20 @@ export default function OnboardingIdentityNotice({ identity, role, onSwitch }: {
 
   if (identity.kind === 'existing') {
     const own = identity.profile.role === role;
-    return <div role="alert" style={box(own && identity.profile.user_profiles_status === 'pending' ? '#eff6ff' : '#fffbeb', own && identity.profile.user_profiles_status === 'pending' ? '#1e3a8a' : '#92400e')}>
-      <strong>{own ? statusLabel(identity.profile.user_profiles_status) : `Bạn đang đăng nhập bằng ${identity.email}`}</strong>
+    const st = identity.profile.user_profiles_status;
+    const title = own
+      ? (st === 'pending' ? 'Hồ sơ đang chờ phê duyệt' : st === 'active' ? 'Hồ sơ đã được duyệt' : 'Hồ sơ cần chỉnh sửa hoặc đã bị từ chối')
+      : `Bạn đang đăng nhập bằng ${identity.email}`;
+    const calm = own && st === 'pending';
+    return <div role="alert" style={box(calm ? '#eff6ff' : '#fffbeb', calm ? '#1e3a8a' : '#92400e')}>
+      <strong>{title}</strong>
       <span>{own
-        ? `Email ${identity.email} đã có hồ sơ ${target} (${statusLabel(identity.profile.user_profiles_status)}). Không thể tạo thêm hồ sơ mới.`
-        : `Email này đã thuộc về một hồ sơ ${roleLabel(identity.profile.role)} (${statusLabel(identity.profile.user_profiles_status)}). Để đăng ký ${target} bằng email khác, hãy đăng xuất trước. Hồ sơ hiện tại không bị thay đổi.`}</span>
+        ? (st === 'active'
+          ? `Email ${identity.email} đã có hồ sơ ${target} được duyệt. Không thể tạo thêm hồ sơ mới; hãy đăng nhập để vào trang làm việc.`
+          : `Email ${identity.email} đã có hồ sơ ${target} (${statusLabel(st)}). Không thể tạo thêm hồ sơ mới.`)
+        : `Email này đã thuộc về một hồ sơ ${roleLabel(identity.profile.role)} (${statusLabel(st)}). Để đăng ký ${target} bằng email khác, hãy đăng xuất trước. Hồ sơ hiện tại không bị thay đổi.`}</span>
       <span style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-        <Link href={dashboardFor(identity.profile.role)} style={{ color: '#1d4ed8', textDecoration: 'underline' }}>Đến trang tài khoản của tôi</Link>
+        <Link href={st === 'active' ? '/login' : dashboardFor(identity.profile.role)} style={{ color: '#1d4ed8', textDecoration: 'underline' }}>{st === 'active' ? 'Đăng nhập' : 'Đến trang tài khoản của tôi'}</Link>
         <button type="button" style={linkButton} onClick={onSwitch}>Đăng xuất để dùng email khác</button>
       </span>
     </div>;
