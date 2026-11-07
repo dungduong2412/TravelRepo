@@ -92,7 +92,7 @@ export default function PendingApplicantMedia({ role }: { role: 'merchant' | 'co
   </section>;
 }
 
-function statusLabel(value?: string) { return value === 'active' ? 'Đã kích hoạt' : value === 'blocked' ? 'Cần chỉnh sửa / đã từ chối' : value === 'pending' ? 'Đang chờ Admin duyệt' : value || 'Đang tải'; }
+function statusLabel(value?: string) { return value === 'active' ? 'Đã kích hoạt' : value === 'blocked' ? 'Cần chỉnh sửa / đã từ chối' : value === 'pending' ? 'Hồ sơ đang chờ phê duyệt' : value || 'Đang tải'; }
 
 const styles: Record<string, React.CSSProperties> = {
   section: { width: '100%', borderTop: '1px solid #e5e7eb', paddingTop: 24, textAlign: 'left' },

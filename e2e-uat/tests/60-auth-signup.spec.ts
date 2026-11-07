@@ -44,7 +44,7 @@ for (const kind of KINDS) {
       await step(`SG1-${tag}`, 'signUp via UI; user exists, email_confirmed_at is null; draft saved without password', async () => {
         const ctx = await browser.newContext(); (globalThis as any).__ctx = (globalThis as any).__ctx || {}; (globalThis as any).__ctx[kind] = ctx;
         pageA = await ctx.newPage(); await pageA.goto(path); await fill(pageA);
-        await pageA.getByRole('button', { name: 'Xác nhận email' }).click();
+        await pageA.getByRole('button', { name: 'Đăng ký & xác nhận email' }).click();
         await expect(pageA.getByText(/Kiểm tra email/)).toBeVisible({ timeout: 30_000 });
         const draft = await pageA.evaluate(() => JSON.stringify(Object.entries(localStorage).filter(([k]) => /draft/i.test(k))));
         expect(draft.length, 'a draft is persisted for the confirmation round trip').toBeGreaterThan(10);
@@ -122,7 +122,7 @@ for (const kind of KINDS) {
     test(`SG5 ${kind}: registering the same (now confirmed) address again is rejected with a clear message`, async ({ browser }) => {
       await step(`SG5-${tag}`, 'duplicate registration -> "đã được đăng ký"; no second account', async () => {
         const ctx = await browser.newContext(); const p = await ctx.newPage(); await p.goto(path); await fill(p);
-        await p.getByRole('button', { name: 'Xác nhận email' }).click();
+        await p.getByRole('button', { name: 'Đăng ký & xác nhận email' }).click();
         await expect(p.getByText(/đã được đăng ký/)).toBeVisible({ timeout: 30_000 });
         await ctx.close();
       });

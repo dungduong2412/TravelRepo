@@ -63,12 +63,12 @@ test.describe.serial('Password policy (hosted UAT)', () => {
         await expect(page.getByText(/Ít nhất 8 ký tự, gồm ít nhất 1 chữ cái và 1 chữ số/).first()).toBeVisible();
         for (const bad of ['abcdef1', 'abcdefgh', '12345678']) {
           await fill(page, syn('ui'), bad);
-          await page.getByRole('button', { name: 'Xác nhận email' }).click();
+          await page.getByRole('button', { name: 'Đăng ký & xác nhận email' }).click();
           await expect(page.getByText(POLICY_TEXT).first()).toBeVisible();
         }
         const email = syn(`ui-${kind}`);
         await fill(page, email, LEAKED_STYLE);
-        await page.getByRole('button', { name: 'Xác nhận email' }).click();
+        await page.getByRole('button', { name: 'Đăng ký & xác nhận email' }).click();
         await expect(page.getByText(/Kiểm tra email/)).toBeVisible({ timeout: 30_000 });
         await expect(page.getByText(SERVER_TEXT)).toHaveCount(0);
         const issued = await issueSignupToken(email, LEAKED_STYLE); created.push(issued.userId);   // also gives the user id; no mail

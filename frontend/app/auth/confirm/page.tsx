@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { verifyEmailToken } from '../../../lib/supabase';
+import { supabase, verifyEmailToken } from '../../../lib/supabase';
 import { AuthShell } from '../../../components/ui/AuthShell';
 import { Button, ButtonLink } from '../../../components/ui/Button';
 import { Alert } from '../../../components/ui/Feedback';
@@ -23,11 +23,16 @@ export default function ConfirmEmailPage() {
   const router = useRouter();
   const cid = useRef(newCorrelationId());
   const token = useRef<string | null>(null);
+  const parsed = useRef(false);
   const next = useRef('/login');
   const [stage, setStage] = useState<Stage>('init');
   const [error, setError] = useState('');
+  const [otherSession, setOtherSession] = useState<string | null>(null);
 
   useEffect(() => {
+    // The token is removed from the address bar below, so a repeated effect run (React StrictMode in development) must not re-parse it.
+    if (parsed.current) return;
+    parsed.current = true;
     const params = new URLSearchParams(window.location.search);
     const t = params.get('token_hash');
     const requestedNext = params.get('next') || '/login';
@@ -41,6 +46,8 @@ export default function ConfirmEmailPage() {
       logAuthEvent(cid.current, 'signup_confirm', 'token_missing');
       setStage('invalid');
     }
+    // A sign-in left over in this browser must never be replaced without the person seeing it.
+    supabase.auth.getSession().then(({ data }) => setOtherSession(data.session?.user?.email ?? null));
   }, []);
 
   const confirm = async () => {
@@ -50,6 +57,7 @@ export default function ConfirmEmailPage() {
     setError('');
     logAuthEvent(cid.current, 'signup_confirm', 'verify_start');
     try {
+      if (otherSession) await supabase.auth.signOut({ scope: 'local' });
       await verifyEmailToken(t, 'signup');
       token.current = null;
       logAuthEvent(cid.current, 'signup_confirm', 'verify_ok');
@@ -77,7 +85,8 @@ export default function ConfirmEmailPage() {
         <p className="text-sm text-ink-muted" aria-live="polite">Đang kiểm tra liên kết…</p>
       ) : (
         <>
-          <p className="text-sm text-ink-muted">Nhấn nút bên dưới để xác nhận địa chỉ email và kích hoạt tài khoản. Liên kết chỉ dùng được một lần.</p>
+          <p className="text-sm text-ink-muted">Nhấn nút bên dưới để xác nhận địa chỉ email. Sau đó bạn hoàn tất hồ sơ; tài khoản chỉ hoạt động sau khi Admin phê duyệt. Liên kết chỉ dùng được một lần.</p>
+          {otherSession && <Alert tone="warning" title="Trình duyệt đang đăng nhập bằng tài khoản khác">Phiên của {otherSession} sẽ được đăng xuất khi bạn xác nhận, và hồ sơ sẽ tiếp tục với email vừa đăng ký.</Alert>}
           {error && <Alert tone="danger">{error}</Alert>}
           <Button type="button" className="w-full" disabled={stage === 'verifying'} onClick={confirm}>{stage === 'verifying' ? 'Đang xác nhận…' : 'Xác nhận email'}</Button>
         </>

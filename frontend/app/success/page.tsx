@@ -11,18 +11,18 @@ function SuccessContent() {
 
   const messages: Record<string, { title: string; description: string }> = {
     collaborator: {
-      title: 'Đã Gửi Đơn Đăng Ký Đối Tác!',
+      title: 'Hồ sơ đang chờ phê duyệt',
       description:
-        'Cảm ơn bạn đã đăng ký làm đối tác. Đơn đăng ký của bạn đã được tiếp nhận và đang ở trạng thái nháp. Bạn sẽ nhận được hướng dẫn chi tiết qua email.',
+        'Hồ sơ Đối tác của bạn đã được gửi. Tài khoản chưa hoạt động cho đến khi Admin phê duyệt; trong thời gian chờ, bạn chỉ xem được trạng thái hồ sơ và gửi ảnh đại diện để duyệt.',
     },
     merchant: {
-      title: 'Đã Gửi Đơn Đăng Ký Nhà Cung Cấp!',
+      title: 'Hồ sơ đang chờ phê duyệt',
       description:
-        'Đơn đăng ký nhà cung cấp của bạn đã được gửi thành công. Đội ngũ của chúng tôi sẽ xem xét đơn đăng ký và liên hệ với bạn sớm.',
+        'Hồ sơ Nhà cung cấp của bạn đã được gửi. Tài khoản chưa hoạt động cho đến khi Admin phê duyệt; trong thời gian chờ, bạn chỉ xem được trạng thái hồ sơ và gửi ảnh đại diện để duyệt.',
     },
     application: {
-      title: 'Thành Công!',
-      description: 'Đơn đăng ký của bạn đã được gửi thành công.',
+      title: 'Hồ sơ đang chờ phê duyệt',
+      description: 'Hồ sơ của bạn đã được gửi và đang chờ Admin phê duyệt.',
     },
   };
 

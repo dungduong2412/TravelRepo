@@ -3,13 +3,16 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiFetch } from '../../../lib/api';
-import { signUp, supabase } from '../../../lib/supabase';
+import { signUp } from '../../../lib/supabase';
+import { useOnboardingIdentity } from '../../../lib/onboarding-identity';
+import OnboardingIdentityNotice from '../../../components/OnboardingIdentityNotice';
 import { errorCode } from '../../../lib/auth-diagnostics';
 import { signupErrorMessage } from '../../../lib/auth-errors';
 import { clearDraft, loadDraft, saveDraft } from '../../../lib/onboarding-draft';
 import { isValidPassword, PASSWORD_ERROR, PASSWORD_HINT } from '../../../lib/password-policy';
 
 const DRAFT_KEY = 'vno-collaborator-onboarding-draft';
+const intendedEmail = () => loadDraft<{ email?: string }>(DRAFT_KEY)?.email || undefined;
 
 export default function CollaboratorOnboardPage() {
   const router = useRouter();
@@ -26,21 +29,22 @@ export default function CollaboratorOnboardPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
-  const [hasVerifiedSession, setHasVerifiedSession] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const { identity, switchAccount, stillCurrent } = useOnboardingIdentity('collaborator', intendedEmail);
+  const hasVerifiedSession = identity.kind === 'ready';
+  const formVisible = identity.kind === 'anonymous' || identity.kind === 'ready';
 
   useEffect(() => {
     try {
       const draft = loadDraft<Record<string, string>>(DRAFT_KEY);
       if (draft) setFormData((current) => ({ ...current, ...draft, password: '', confirmPassword: '' }));
     } catch { /* Invalid local draft is ignored. */ }
-    supabase.auth.getSession().then(({ data }) => setHasVerifiedSession(Boolean(data.session?.user?.email_confirmed_at)));
-    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
-      setHasVerifiedSession(Boolean(session?.user?.email_confirmed_at));
-      if (session?.user?.email) setFormData((current) => ({ ...current, email: session.user.email || current.email }));
-    });
-    return () => data.subscription.unsubscribe();
   }, []);
+
+  // The verified Auth e-mail is the only identity the profile is created for; it replaces whatever was typed, but only for a session that belongs to this sign-up.
+  useEffect(() => {
+    if (identity.kind === 'ready') setFormData((current) => ({ ...current, email: identity.email }));
+  }, [identity]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -54,6 +58,7 @@ export default function CollaboratorOnboardPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (identity.kind === 'loading' || identity.kind === 'existing' || identity.kind === 'mismatch') return;
     setIsSubmitting(true);
     setError(null);
     setValidationErrors({});
@@ -102,17 +107,23 @@ export default function CollaboratorOnboardPage() {
           `${window.location.origin}/collaborator/onboard?confirmed=1`,
         );
         if (!data.session) {
-          setNotice('Kiểm tra email để xác nhận địa chỉ. Sau khi xác nhận, quay lại trang này để hoàn tất hồ sơ.');
+          setNotice('Kiểm tra email và mở liên kết xác nhận. Sau khi xác nhận, bạn sẽ quay lại trang này để hoàn tất hồ sơ Đối tác; hồ sơ chưa được tạo cho đến khi bạn bấm “Gửi hồ sơ”.');
           setIsSubmitting(false);
           return;
         }
-        setHasVerifiedSession(Boolean(data.user?.email_confirmed_at));
+      }
+
+      // Another tab may have switched the browser session since this page resolved it: never submit for a different identity than the one shown.
+      if (identity.kind === 'ready' && !(await stillCurrent(identity.email))) {
+        setError('Phiên đăng nhập đã thay đổi. Vui lòng tải lại trang để tiếp tục.');
+        setIsSubmitting(false);
+        return;
       }
 
       const payload = {
         collaborators_name: formData.fullName,
         collaborators_phone: formData.phone,
-        collaborators_email: formData.email,
+        collaborators_email: identity.kind === 'ready' ? identity.email : formData.email,
         collaborators_bank_name: formData.bankName || undefined,
         collaborators_bank_acc_name: formData.bankAccountName || undefined,
         collaborators_bank_acc_number: formData.bankAccountNumber || undefined,
@@ -138,9 +149,11 @@ export default function CollaboratorOnboardPage() {
       <div style={styles.formContainer}>
         <h1 style={styles.title}>Đăng Ký Đối Tác</h1>
         <p style={styles.subtitle}>Tham gia với vai trò hướng dẫn viên du lịch và bắt đầu nhận hoa hồng</p>
-        <p style={styles.hint}>Email phải được Supabase xác nhận trước khi hồ sơ được tạo. Quyền hoạt động và ảnh đại diện được Admin duyệt riêng.</p>
+        <p style={styles.hint}>Email phải được xác nhận trước khi hồ sơ được tạo. Quyền hoạt động và ảnh đại diện được Admin duyệt riêng.</p>
+        <OnboardingIdentityNotice identity={identity} role="collaborator" onSwitch={switchAccount} />
 
-        <form onSubmit={handleSubmit} style={styles.form}>
+        {identity.kind === 'loading' && <p style={styles.hint} aria-live="polite">Đang kiểm tra phiên đăng nhập…</p>}
+        {formVisible && <form onSubmit={handleSubmit} style={styles.form}>
           <div style={styles.formGroup}>
             <label htmlFor="fullName" style={styles.label}>
               Họ và Tên *
@@ -293,10 +306,10 @@ export default function CollaboratorOnboardPage() {
               style={styles.primaryButton}
               disabled={isSubmitting}
             >
-              {isSubmitting ? 'Đang gửi...' : hasVerifiedSession ? 'Gửi hồ sơ' : 'Xác nhận email'}
+              {isSubmitting ? 'Đang gửi...' : hasVerifiedSession ? 'Gửi hồ sơ' : 'Đăng ký & xác nhận email'}
             </button>
           </div>
-        </form>
+        </form>}
       </div>
     </main>
   );

@@ -4,7 +4,9 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiFetch } from '../../../lib/api';
-import { signUp, supabase } from '../../../lib/supabase';
+import { signUp } from '../../../lib/supabase';
+import { useOnboardingIdentity } from '../../../lib/onboarding-identity';
+import OnboardingIdentityNotice from '../../../components/OnboardingIdentityNotice';
 import { errorCode } from '../../../lib/auth-diagnostics';
 import { signupErrorMessage } from '../../../lib/auth-errors';
 import { clearDraft, loadDraft, saveDraft } from '../../../lib/onboarding-draft';
@@ -12,6 +14,7 @@ import { isValidPassword, PASSWORD_ERROR, PASSWORD_HINT } from '../../../lib/pas
 
 type Category = { id: string; category_name?: string | null; category_name_vi?: string | null };
 const DRAFT_KEY = 'vno-merchant-onboarding-draft';
+const intendedEmail = () => loadDraft<{ formData?: { ownerEmail?: string } }>(DRAFT_KEY)?.formData?.ownerEmail || undefined;
 
 export default function MerchantOnboardPage() {
   const router = useRouter();
@@ -26,8 +29,10 @@ export default function MerchantOnboardPage() {
   });
   const [categories, setCategories] = useState<Category[]>([]);
   const [categoryIds, setCategoryIds] = useState<string[]>([]);
-  const [hasVerifiedSession, setHasVerifiedSession] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const { identity, switchAccount, stillCurrent } = useOnboardingIdentity('merchant', intendedEmail);
+  const hasVerifiedSession = identity.kind === 'ready';
+  const formVisible = identity.kind === 'anonymous' || identity.kind === 'ready';
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -38,13 +43,12 @@ export default function MerchantOnboardPage() {
       if (Array.isArray(draft?.categoryIds)) setCategoryIds(draft.categoryIds.slice(0, 3));
     } catch { /* Invalid local draft is ignored. */ }
     apiFetch('/categories/active').then(setCategories).catch(() => setCategories([]));
-    supabase.auth.getSession().then(({ data }) => setHasVerifiedSession(Boolean(data.session?.user?.email_confirmed_at)));
-    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
-      setHasVerifiedSession(Boolean(session?.user?.email_confirmed_at));
-      if (session?.user?.email) setFormData((current) => ({ ...current, ownerEmail: session.user.email || current.ownerEmail }));
-    });
-    return () => data.subscription.unsubscribe();
   }, []);
+
+  // The verified Auth e-mail is the only identity the application is created for, and only for a session that belongs to this sign-up.
+  useEffect(() => {
+    if (identity.kind === 'ready') setFormData((current) => ({ ...current, ownerEmail: identity.email }));
+  }, [identity]);
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
@@ -68,6 +72,7 @@ export default function MerchantOnboardPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (identity.kind === 'loading' || identity.kind === 'existing' || identity.kind === 'mismatch') return;
     setIsSubmitting(true);
     setError(null);
 
@@ -91,19 +96,24 @@ export default function MerchantOnboardPage() {
           `${window.location.origin}/merchant/onboard?confirmed=1`,
         );
         if (!data.session) {
-          setNotice('Kiểm tra email để xác nhận địa chỉ. Sau khi xác nhận, quay lại trang này để hoàn tất hồ sơ.');
+          setNotice('Kiểm tra email và mở liên kết xác nhận. Sau khi xác nhận, bạn sẽ quay lại trang này để hoàn tất hồ sơ Nhà cung cấp; hồ sơ chưa được tạo cho đến khi bạn bấm “Gửi hồ sơ”.');
           setIsSubmitting(false);
           return;
         }
-        setHasVerifiedSession(Boolean(data.user?.email_confirmed_at));
       }
+      // Another tab may have switched the browser session since this page resolved it: never submit for a different identity than the one shown.
+      if (identity.kind === 'ready' && !(await stillCurrent(identity.email))) {
+        setError('Phiên đăng nhập đã thay đổi. Vui lòng tải lại trang để tiếp tục.');
+        return;
+      }
+      const verifiedEmail = identity.kind === 'ready' ? identity.email : formData.ownerEmail;
       await apiFetch('/merchants', {
         method: 'POST',
         body: JSON.stringify({
-          owner_email: formData.ownerEmail,
+          owner_email: verifiedEmail,
           merchant_name: formData.name,
           merchant_description: formData.description || undefined,
-          merchant_email: formData.ownerEmail,
+          merchant_email: verifiedEmail,
           owner_name: formData.ownerName || undefined,
           owner_phone: formData.ownerPhone || undefined,
           owner_tax_code: formData.taxCode || undefined,
@@ -133,9 +143,12 @@ export default function MerchantOnboardPage() {
         <p style={styles.subtitle}>
           Đăng ký doanh nghiệp du lịch của bạn và bắt đầu hợp tác với đối tác
         </p>
-        <p style={styles.hint}>Email phải được Supabase xác nhận trước khi hồ sơ được tạo. Tỷ lệ thương mại chỉ do Platform Admin thiết lập.</p>
+        <p style={styles.hint}>Email phải được xác nhận trước khi hồ sơ được tạo. Tỷ lệ thương mại chỉ do Platform Admin thiết lập.</p>
 
-        <form onSubmit={handleSubmit} style={styles.form}>
+        <OnboardingIdentityNotice identity={identity} role="merchant" onSwitch={switchAccount} />
+        {identity.kind === 'loading' && <p style={styles.hint} aria-live="polite">Đang kiểm tra phiên đăng nhập…</p>}
+
+        {formVisible && <form onSubmit={handleSubmit} style={styles.form}>
           <div style={styles.formGroup}>
             <label htmlFor="ownerEmail" style={styles.label}>Email chủ tài khoản *</label>
             <input
@@ -229,6 +242,7 @@ export default function MerchantOnboardPage() {
               {error}
             </div>
           )}
+          {notice && <div style={{ ...styles.errorBox, backgroundColor: '#ecfdf5', color: '#065f46' }}>{notice}</div>}
 
           <div style={styles.buttonGroup}>
             <button
@@ -244,10 +258,10 @@ export default function MerchantOnboardPage() {
               style={styles.primaryButton}
               disabled={isSubmitting}
             >
-              {isSubmitting ? 'Đang gửi...' : hasVerifiedSession ? 'Gửi hồ sơ' : 'Xác nhận email'}
+              {isSubmitting ? 'Đang gửi...' : hasVerifiedSession ? 'Gửi hồ sơ' : 'Đăng ký & xác nhận email'}
             </button>
           </div>
-        </form>
+        </form>}
       </div>
     </main>
   );
