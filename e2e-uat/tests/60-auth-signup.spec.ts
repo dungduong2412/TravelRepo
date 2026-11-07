@@ -19,7 +19,7 @@ for (const kind of KINDS) {
     test.skip(!process.env.SUPABASE_SERVICE_ROLE_KEY || !hasCreds('admin'), 'BLOCKED: run via `railway run --service vno-api` with admin credentials');
     const tag = kind === 'merchant' ? 'M' : 'P';
     const email = `uat.e2e.auth.${kind}.${RUN_ID}@vno-uat-synthetic.example`;
-    const password = `Uat${randomBytes(4).toString('hex')}7`;
+    const password = process.env.E2E_SIGNUP_PASSWORD || `Uat${randomBytes(4).toString('hex')}7`; // override lets the owner-policy run use a leaked-list style password
     const bizName = `UAT-E2E-AUTH-${tag}-${RUN_ID}`;
     const path = kind === 'merchant' ? '/merchant/onboard' : '/collaborator/onboard';
     const landing = kind === 'merchant' ? /merchant\/dashboard/ : /collaborator\/dashboard/;
@@ -124,6 +124,23 @@ for (const kind of KINDS) {
         const ctx = await browser.newContext(); const p = await ctx.newPage(); await p.goto(path); await fill(p);
         await p.getByRole('button', { name: 'Xác nhận email' }).click();
         await expect(p.getByText(/đã được đăng ký/)).toBeVisible({ timeout: 30_000 });
+        await ctx.close();
+      });
+    });
+    test(`SG6 ${kind}: the approved owner changes the password from Account settings (same policy, accurate messages)`, async ({ browser }) => {
+      await step(`SG6-${tag}`, 'settings form shows the rule; 7-char rejected with the policy text; compliant leaked-style password saved; new password works', async () => {
+        const next = process.env.E2E_SIGNUP_PASSWORD_NEXT || 'password1234';
+        const ctx = await browser.newContext(); const p = await ctx.newPage(); await p.goto('/login');
+        await p.getByPlaceholder('email@example.com').fill(email); await p.locator('input[type="password"]').fill(password); await p.locator('button[type="submit"]').click();
+        await expect(p).toHaveURL(landing, { timeout: 30_000 });
+        await p.goto(`/${kind === 'merchant' ? 'merchant' : 'collaborator'}/dashboard/settings`);
+        await expect(p.getByText(/Ít nhất 8 ký tự, gồm ít nhất 1 chữ cái và 1 chữ số/)).toBeVisible();
+        const fields = p.locator('input[type="password"]');
+        await fields.nth(0).fill('abcdef1'); await fields.nth(1).fill('abcdef1'); await p.getByRole('button', { name: 'Đổi mật khẩu' }).click();
+        await expect(p.locator('p[role="alert"]')).toContainText(/ít nhất 8 ký tự, gồm ít nhất 1 chữ cái và 1 chữ số/);
+        await fields.nth(0).fill(next); await fields.nth(1).fill(next); await p.getByRole('button', { name: 'Đổi mật khẩu' }).click();
+        await expect(p.locator('p[role="alert"]')).toContainText('Đã cập nhật mật khẩu', { timeout: 20_000 });
+        expect(await passwordGrantStatus(email, next, anon)).toBe(200);
         await ctx.close();
       });
     });
