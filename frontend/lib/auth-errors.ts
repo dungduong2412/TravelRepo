@@ -2,7 +2,7 @@
  * Maps Supabase Auth error CODES (see errorCode() in auth-diagnostics) to the right user-facing outcome.
  * "Expired link" copy is reserved for genuine token/session failures; policy and transport problems get their own messages.
  */
-import { PASSWORD_ERROR } from './password-policy';
+import { PASSWORD_SERVER_REJECTED } from './password-policy';
 
 export type RecoveryFailure =
   | { kind: 'link_invalid'; text: string }
@@ -21,7 +21,8 @@ const LINK_CODES = new Set([
 const LINK_TEXT = 'Liên kết không hợp lệ hoặc đã hết hạn. Hãy yêu cầu liên kết mới.';
 
 export function classifyRecoveryError(code: string): RecoveryFailure {
-  if (code === 'weak_password') return { kind: 'policy', text: PASSWORD_ERROR };
+  // Every caller validates with isValidPassword() first, so a server weak_password means a Supabase setting is stricter than the app policy.
+  if (code === 'weak_password') return { kind: 'policy', text: PASSWORD_SERVER_REJECTED };
   if (code === 'same_password') return { kind: 'same_password', text: 'Mật khẩu mới phải khác mật khẩu hiện tại.' };
   if (code === 'over_request_rate_limit' || code === 'over_email_send_rate_limit' || code === 'http_429') {
     return { kind: 'rate_limited', text: 'Bạn thao tác quá nhanh. Vui lòng đợi khoảng một phút rồi thử lại.' };
@@ -31,6 +32,13 @@ export function classifyRecoveryError(code: string): RecoveryFailure {
   }
   if (LINK_CODES.has(code)) return { kind: 'link_invalid', text: LINK_TEXT };
   return { kind: 'unknown', text: 'Không thể cập nhật mật khẩu lúc này. Mật khẩu chưa được thay đổi, hãy thử lại.' };
+}
+
+/** Password change for a signed-in user (Account settings, First password): accurate text per Auth error code, never raw English. */
+export function passwordUpdateMessage(code: string): string {
+  const c = classifyRecoveryError(code);
+  if (c.kind === 'link_invalid') return 'Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại rồi thử đổi mật khẩu.';
+  return c.text;
 }
 
 /** A token that failed to verify is always a link problem unless the failure was transport/rate related. */
@@ -45,7 +53,7 @@ export function signupErrorMessage(code: string): string | null {
   if (code === 'user_already_exists' || code === 'email_exists') {
     return 'Email này đã được đăng ký. Hãy đăng nhập, hoặc dùng "Quên mật khẩu" nếu bạn không nhớ mật khẩu.';
   }
-  if (code === 'weak_password') return PASSWORD_ERROR;
+  if (code === 'weak_password') return PASSWORD_SERVER_REJECTED;
   if (code === 'over_email_send_rate_limit' || code === 'over_request_rate_limit' || code === 'http_429') {
     return 'Email xác nhận vừa được gửi. Vui lòng đợi khoảng một phút rồi thử lại, và kiểm tra cả thư mục spam.';
   }

@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import { classifyRecoveryError, classifyVerifyError } from './auth-errors';
 import { errorCode } from './auth-diagnostics';
 assert.equal(classifyRecoveryError('weak_password').kind, 'policy');
-assert.match(classifyRecoveryError('weak_password').text, /ít nhất 8 ký tự/);
+// weak_password reaches here only AFTER the client policy passed: it must say so, and must never ask for a more complex password.
+assert.match(classifyRecoveryError('weak_password').text, /đã đáp ứng quy tắc/);
+assert.ok(!/phức tạp|chữ hoa|ký tự đặc biệt/.test(classifyRecoveryError('weak_password').text));
 assert.ok(!/hết hạn/.test(classifyRecoveryError('weak_password').text), 'policy failure must not say expired');
 assert.equal(classifyRecoveryError('same_password').kind, 'same_password');
 for (const c of ['session_not_found', 'otp_expired', 'http_401', 'refresh_token_not_found']) assert.equal(classifyRecoveryError(c).kind, 'link_invalid', c);

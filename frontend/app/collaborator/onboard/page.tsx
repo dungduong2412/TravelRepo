@@ -7,7 +7,7 @@ import { signUp, supabase } from '../../../lib/supabase';
 import { errorCode } from '../../../lib/auth-diagnostics';
 import { signupErrorMessage } from '../../../lib/auth-errors';
 import { clearDraft, loadDraft, saveDraft } from '../../../lib/onboarding-draft';
-import { isValidPassword, PASSWORD_ERROR } from '../../../lib/password-policy';
+import { isValidPassword, PASSWORD_ERROR, PASSWORD_HINT } from '../../../lib/password-policy';
 
 const DRAFT_KEY = 'vno-collaborator-onboarding-draft';
 
@@ -211,8 +211,8 @@ export default function CollaboratorOnboardPage() {
               value={formData.password}
               onChange={handleChange}
               style={styles.input}
-              placeholder="Ít nhất 8 ký tự, gồm chữ cái và chữ số"
             />
+            <small style={styles.hint}>{PASSWORD_HINT}</small>
             {validationErrors.password && (
               <span style={styles.errorText}>{validationErrors.password}</span>
             )}

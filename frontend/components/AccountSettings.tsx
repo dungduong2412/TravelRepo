@@ -2,7 +2,9 @@
 
 import { FormEvent, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { isValidPassword, PASSWORD_ERROR } from '../lib/password-policy';
+import { isValidPassword, PASSWORD_ERROR, PASSWORD_HINT } from '../lib/password-policy';
+import { passwordUpdateMessage } from '../lib/auth-errors';
+import { errorCode } from '../lib/auth-diagnostics';
 
 export default function AccountSettings() {
   const [password, setPassword] = useState('');
@@ -17,7 +19,7 @@ export default function AccountSettings() {
     setBusy(true);
     const { error } = await supabase.auth.updateUser({ password });
     setBusy(false);
-    if (error) return setMessage({ type: 'error', text: error.message || 'Không thể đổi mật khẩu.' });
+    if (error) return setMessage({ type: 'error', text: passwordUpdateMessage(errorCode(error)) });
     setPassword(''); setConfirmPassword(''); setMessage({ type: 'success', text: 'Đã cập nhật mật khẩu.' });
   }
 
@@ -25,7 +27,7 @@ export default function AccountSettings() {
     <h1 className="text-2xl font-bold">Tài khoản & bảo mật</h1>
     <p className="mt-2 text-sm text-slate-600">Đổi mật khẩu cho tài khoản đang đăng nhập. Vai trò và đơn vị liên kết chỉ Platform Admin được quản lý.</p>
     <form onSubmit={submit} className="mt-6 space-y-4">
-      <label className="block text-sm font-semibold">Mật khẩu mới<input type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} className="mt-2 min-h-11 w-full rounded-xl border border-slate-300 px-3" required /></label>
+      <label className="block text-sm font-semibold">Mật khẩu mới<input type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} className="mt-2 min-h-11 w-full rounded-xl border border-slate-300 px-3" required /><span className="mt-1 block text-xs font-normal text-slate-500">{PASSWORD_HINT}</span></label>
       <label className="block text-sm font-semibold">Nhập lại mật khẩu<input type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} className="mt-2 min-h-11 w-full rounded-xl border border-slate-300 px-3" required /></label>
       {message && <p role="alert" className={`rounded-xl p-3 text-sm ${message.type === 'success' ? 'bg-emerald-50 text-emerald-800' : 'bg-rose-50 text-rose-800'}`}>{message.text}</p>}
       <button disabled={busy} className="min-h-11 rounded-xl bg-rose-600 px-5 font-semibold text-white disabled:opacity-60">{busy ? 'Đang cập nhật…' : 'Đổi mật khẩu'}</button>

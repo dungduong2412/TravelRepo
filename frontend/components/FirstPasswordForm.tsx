@@ -6,6 +6,8 @@ import { Field } from './ui/Form';
 import { Alert } from './ui/Feedback';
 import { Button } from './ui/Button';
 import { isValidPassword, PASSWORD_ERROR, PASSWORD_HINT } from '../lib/password-policy';
+import { passwordUpdateMessage } from '../lib/auth-errors';
+import { errorCode } from '../lib/auth-diagnostics';
 
 /**
  * An account created by an admin invitation has no password. This form is rendered only after the server has accepted the claim for the
@@ -26,7 +28,7 @@ export function FirstPasswordForm({ required, onDone }: { required: boolean; onD
     setBusy(true);
     const { error: updateError } = await supabase.auth.updateUser({ password, data: { password_set: true } });
     setBusy(false);
-    if (updateError) return setError('Không thể đặt mật khẩu lúc này. Hãy thử lại; nếu vẫn lỗi, đăng xuất rồi dùng "Quên mật khẩu".');
+    if (updateError) return setError(passwordUpdateMessage(errorCode(updateError)));
     setSaved(true);
   };
 

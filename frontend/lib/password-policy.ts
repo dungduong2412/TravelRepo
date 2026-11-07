@@ -14,6 +14,13 @@ export const PASSWORD_REGEX = /^(?=.*[a-zA-Z])(?=.*\d).{8,}$/;
 export const PASSWORD_ERROR =
   'Mật khẩu phải có ít nhất 8 ký tự, gồm ít nhất 1 chữ cái và 1 chữ số';
 
+/**
+ * Shown only when the client check already passed (so the password DOES meet the policy) but Supabase Auth still answered
+ * `weak_password`. That is a server-configuration mismatch, never a reason to ask for a more complex password.
+ */
+export const PASSWORD_SERVER_REJECTED =
+  'Hệ thống xác thực không chấp nhận mật khẩu này dù đã đáp ứng quy tắc (ít nhất 8 ký tự, 1 chữ cái, 1 chữ số). Mật khẩu chưa được lưu. Vui lòng liên hệ quản trị viên.';
+
 /** Short hint shown beneath the password field. */
 export const PASSWORD_HINT = 'Ít nhất 8 ký tự, gồm ít nhất 1 chữ cái và 1 chữ số.';
 
