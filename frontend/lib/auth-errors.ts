@@ -55,7 +55,8 @@ export function signupErrorMessage(code: string): string | null {
   }
   if (code === 'weak_password') return PASSWORD_SERVER_REJECTED;
   if (code === 'over_email_send_rate_limit' || code === 'over_request_rate_limit' || code === 'http_429') {
-    return 'Email xác nhận vừa được gửi. Vui lòng đợi khoảng một phút rồi thử lại, và kiểm tra cả thư mục spam.';
+    // Supabase uses these codes both for the hourly project e-mail cap and the per-address resend gap, so never claim a mail WAS sent.
+    return 'Hệ thống đang giới hạn việc gửi email xác nhận nên email có thể chưa được gửi. Hãy kiểm tra hộp thư và thư mục spam; nếu không thấy, vui lòng thử lại sau khoảng một giờ.';
   }
   if (code === 'email_address_invalid' || code === 'validation_failed') return 'Địa chỉ email không hợp lệ.';
   return null;

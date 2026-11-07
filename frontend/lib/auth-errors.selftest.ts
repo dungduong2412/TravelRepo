@@ -25,6 +25,11 @@ for (const c of ['user_already_exists', 'email_exists']) {
   const m = signupErrorMessage(c) || '';
   assert.match(m, /đã được đăng ký/); assert.match(m, /đăng nhập/); assert.match(m, /Quên mật khẩu/); assert.ok(!/hết hạn/.test(m));
 }
+// E-mail send rate limit: must not claim a mail was sent, must say what to do.
+for (const c of ['over_email_send_rate_limit', 'over_request_rate_limit', 'http_429']) {
+  const m = signupErrorMessage(c) || '';
+  assert.ok(!/vừa được gửi/.test(m), c); assert.match(m, /chưa được gửi/); assert.match(m, /thử lại/);
+}
 // Failed normal login of a VALID password: where does the person go? (decideLoginFollowUp is pure; the network part lives in login-followup.ts)
 assert.deepEqual(decideLoginFollowUp({ confirmed: true, profile: null, requestedRole: 'collaborator' }), { kind: 'onboarding', role: 'collaborator', path: '/collaborator/onboard' });
 assert.deepEqual(decideLoginFollowUp({ confirmed: true, profile: null, requestedRole: 'merchant' }), { kind: 'onboarding', role: 'merchant', path: '/merchant/onboard' });
