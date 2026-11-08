@@ -95,6 +95,18 @@ export class CollaboratorsController {
     return this.service.approve(actor, id);
   }
 
+  @Post(':id/activation-email')
+  @UseGuards(AdminGuard)
+  resendActivation(@User() actor: any, @Param('id') id: string) {
+    return this.service.resendActivation(actor, id);
+  }
+
+  @Get(':id/activation-status')
+  @UseGuards(AdminGuard)
+  activationStatus(@Param('id') id: string) {
+    return this.service.activationStatus(id);
+  }
+
   @Post(':id/reject')
   @UseGuards(AdminGuard)
   reject(@User() actor: any, @Param('id') id: string) {

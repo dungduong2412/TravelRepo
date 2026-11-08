@@ -41,6 +41,7 @@ import { UserProfilesService } from '../user-profiles/user-profiles.service';
 import * as QRCode from 'qrcode';
 import { AuditActor, AuditService } from '../audit/audit.service';
 import { publicOffer } from '../public-catalog/public-catalog.projection';
+import { ActivationService } from '../activation/activation.service';
 
 @Injectable()
 export class CollaboratorsService {
@@ -49,6 +50,7 @@ export class CollaboratorsService {
     @Inject(forwardRef(() => UserProfilesService))
     private readonly userProfilesService: UserProfilesService,
     private readonly audit: AuditService,
+    private readonly activation: ActivationService,
   ) {}
 
   async createCollaborator(actor: any, dto: CreateCollaboratorDto) {
@@ -395,6 +397,29 @@ export class CollaboratorsService {
     return (data || []).map((row) => this.withoutPassword(row));
   }
 
+  /**
+   * The applicant that approval would activate: exactly one account linked to this record, whose Auth identity, account e-mail and the
+   * e-mail on the application are the same address. E-mail CONFIRMATION is deliberately not required here: in the single-step registration the
+   * mailbox is proven by the activation link that approval sends, not before it.
+   */
+  private async verifyApplicantOwnership(collaborator: { id: string; collaborators_email?: string | null }) {
+    const { data: profiles, error } = await this.supabase.getClient().from('user_profiles')
+      .select('id,user_id,email,collaborator_id,role').eq('collaborator_id', collaborator.id).eq('role', 'collaborator');
+    if (error) throw new Error(error.message);
+    if (!profiles?.length) {
+      throw new ConflictException({ code: 'OWNER_NOT_CLAIMED', message: 'Cannot approve partner: the owner has not claimed this record with a verified Auth identity' });
+    }
+    if (profiles.length > 1) throw new ConflictException({ code: 'OWNER_AMBIGUOUS', message: 'Cannot approve partner: more than one account is linked to this record' });
+    const profile = profiles[0];
+    const { data: auth } = await this.supabase.getClient().auth.admin.getUserById(profile.user_id);
+    const same = (a?: string | null, b?: string | null) => Boolean(a && b && a.trim().toLowerCase() === b.trim().toLowerCase());
+    if (!auth?.user?.email) throw new ConflictException({ code: 'OWNER_IDENTITY_MISSING', message: 'Cannot approve partner: the linked Auth identity no longer exists' });
+    if (!same(auth.user.email, profile.email) || !same(profile.email, collaborator.collaborators_email)) {
+      throw new ConflictException({ code: 'OWNER_EMAIL_MISMATCH', message: 'Cannot approve partner: the application e-mail, the account e-mail and the Auth identity do not match' });
+    }
+    return { profile, authUser: auth.user };
+  }
+
   async approve(actor: AuditActor, id: string) {
     // Fetch collaborator first to get data for QR code
     const { data: collaborator, error: fetchError } = await this.supabase.getClient()
@@ -407,13 +432,13 @@ export class CollaboratorsService {
       throw new NotFoundException('Collaborator not found');
     }
 
-    const { data: linkedProfile, error: linkedProfileError } = await this.supabase.getClient().from('user_profiles')
-      .select('user_id').eq('collaborator_id', id).eq('role', 'collaborator').maybeSingle();
-    if (linkedProfileError) throw new Error(linkedProfileError.message);
-    if (!linkedProfile?.user_id) {
-      throw new ConflictException({ code: 'OWNER_NOT_CLAIMED', message: 'Cannot approve partner: the owner has not claimed this record with a verified Auth identity' });
+    await this.verifyApplicantOwnership(collaborator);
+
+    // Approving twice must not approve twice: no second audit event, no second QR, no second e-mail. A failed e-mail is retried through
+    // POST /collaborators/:id/activation-email, never by approving again.
+    if (collaborator.collaborators_status === 'active' && collaborator.collaborators_verified) {
+      return { ...this.withoutPassword(collaborator), already_approved: true };
     }
-    await this.userProfilesService.assertLinkedAuthEmailConfirmed(linkedProfile.user_id);
 
     // QR encodes a full navigable URL so customers can scan and land on the Partner's page.
     // The stored code is used for printing physical cards; use the production FRONTEND_URL
@@ -438,7 +463,7 @@ export class CollaboratorsService {
       throw new NotFoundException('Failed to update collaborator');
     }
 
-    // Create user profile for collaborator
+    // Activate the linked user profile consistently with the record
     if (data.collaborators_email) {
       try {
         await this.userProfilesService.createOrUpdate({
@@ -459,11 +484,21 @@ export class CollaboratorsService {
       }
     }
 
-    // TODO: Send approval email notification here
-    // await this.emailService.sendApprovalEmail(data.collaborators_email, 'collaborator');
-
     await this.audit.record(actor, 'collaborator.approved', 'collaborator', id);
-    return this.withoutPassword(data);
+    // The approval is now final. The activation e-mail is a separate, repeatable step: its outcome is reported (and audited), never thrown.
+    const activation_email = await this.activation.sendActivation(id, 'approval', actor);
+    return { ...this.withoutPassword(data), activation_email };
+  }
+
+  /** Admin retry for a failed or suppressed activation e-mail. Does not approve anything and creates no record. */
+  async resendActivation(actor: AuditActor, id: string) {
+    await this.findOne(id);
+    return this.activation.sendActivation(id, 'admin_resend', actor);
+  }
+
+  async activationStatus(id: string) {
+    await this.findOne(id);
+    return this.activation.status(id);
   }
 
   async resolveByQrToken(qrToken: string) {

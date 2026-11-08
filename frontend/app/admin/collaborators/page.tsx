@@ -15,7 +15,18 @@ type Collaborator = {
 type MediaAsset = { id: string; collaborator_id?: string | null; original_filename?: string | null; is_hero?: boolean; publication_status?: string | null; transfer_status?: string | null; created_at?: string | null; signed_url?: string | null };
 type Approval = { id: string; collaborator_id?: string | null; action: string; slot: string; status: string; requested_at?: string | null; decided_at?: string | null; decision_reason?: string | null };
 type Detail = { collaborator: Collaborator; media: MediaAsset[]; approvals: Approval[] };
+type ActivationAttempt = { status: string; at: string; trigger?: string | null; reason?: string | null };
+type ActivationStatus = { activated: boolean; last_login_at?: string | null; profile_status?: string | null; last_attempt?: ActivationAttempt | null; attempts: ActivationAttempt[] };
 const PAGE_SIZE = 25;
+
+/** One line for the Admin: what happened to the activation e-mail and what to do about it. */
+function activationSummary(d?: { status?: string; reason?: string } | null) {
+  if (!d?.status) return '';
+  if (d.status === 'sent') return ' Activation e-mail: sent.';
+  if (d.status === 'suppressed') return ` Activation e-mail: NOT sent (${d.reason || 'suppressed by the recipient policy'}). Use “Send activation e-mail again” once the recipient is allowed.`;
+  if (d.status === 'failed') return ` Activation e-mail: FAILED (${d.reason || 'delivery error'}). The approval stands; use “Send activation e-mail again” to retry.`;
+  return ` Activation e-mail: not sent (${d.reason || d.status}).`;
+}
 
 export default function AdminCollaboratorsPage() {
   const [allItems, setAllItems] = useState<Collaborator[]>([]);
@@ -38,6 +49,9 @@ export default function AdminCollaboratorsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [activation, setActivation] = useState<ActivationStatus | null | undefined>(undefined);
+  const [activationBusy, setActivationBusy] = useState(false);
+  const [activationMessage, setActivationMessage] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
@@ -88,7 +102,7 @@ export default function AdminCollaboratorsPage() {
   }, [avatars, visibleItems]);
 
   async function openDetail(collaborator: Collaborator) {
-    setInvitation(undefined); setInviteError(null); setActionError(null);
+    setInvitation(undefined); setInviteError(null); setActionError(null); setActivation(undefined); setActivationMessage(null);
     try {
       setDetailLoading(true); setError(null);
       const [allMedia, ...queues] = await Promise.all([api.get('/media'), ...['pending', 'approved', 'rejected', 'cancelled'].map((state) => api.get(`/media/approvals?owner_type=collaborator&status=${state}&page=1&page_size=100`))]);
@@ -100,8 +114,18 @@ export default function AdminCollaboratorsPage() {
       const approvals = queues.flatMap((queue) => queue?.items || []).filter((request: Approval) => request.collaborator_id === collaborator.id);
       setDetail({ collaborator, media, approvals });
       api.get(`/invitations/for/collaborator/${collaborator.id}`).then(setInvitation).catch(() => setInvitation(null));
+      api.get(`/collaborators/${collaborator.id}/activation-status`).then(setActivation).catch(() => setActivation(null));
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to load partner details'); }
     finally { setDetailLoading(false); }
+  }
+  async function resendActivation(item: Collaborator) {
+    setActivationBusy(true); setActivationMessage(null);
+    try {
+      const result = await api.post(`/collaborators/${item.id}/activation-email`);
+      setActivationMessage(`Activation e-mail ${result?.status === 'sent' ? 'sent' : result?.status === 'not_eligible' ? `not sent (${result?.reason})` : result?.status === 'suppressed' ? `NOT sent — ${result?.reason}` : `FAILED — ${result?.reason || 'delivery error'}`}. The approval and the record are unchanged.`);
+      setActivation(await api.get(`/collaborators/${item.id}/activation-status`));
+    } catch (cause) { setActivationMessage(describeAdminActionFailure(cause, 'approve').text.replace(/^Approval failed/, 'Sending the activation e-mail failed')); }
+    finally { setActivationBusy(false); }
   }
   async function createInvitation(collaboratorId: string) {
     setInviteBusy(true); setInviteError(null);
@@ -118,7 +142,7 @@ export default function AdminCollaboratorsPage() {
   }
   // Every outcome is shown INSIDE the drawer (the page-level banner sits behind the drawer overlay and was never seen) and a success is confirmed on the list.
   async function runAction(kind: 'approve' | 'reject' | 'deactivate', item: Collaborator) {
-    const prompt = kind === 'approve' ? 'Approve this partner? A QR code will be generated.' : kind === 'reject' ? 'Reject this pending partner?' : 'Deactivate this partner and its application access? This action is audited.';
+    const prompt = kind === 'approve' ? 'Approve this partner? A QR code will be generated and an activation e-mail will be sent to the applicant.' : kind === 'reject' ? 'Reject this pending partner?' : 'Deactivate this partner and its application access? This action is audited.';
     if (!confirm(prompt)) return;
     setActionError(null); setNotice(null); setActionBusy(true);
     try {
@@ -126,7 +150,7 @@ export default function AdminCollaboratorsPage() {
       await fetchCollaborators();
       setDetail(null);
       const who = `${item.collaborators_name || 'Partner'} (${item.collaborators_code || item.id})`;
-      if (kind === 'approve') setNotice(`Approved ${who}: status is now “${statusLabel(result?.collaborators_status || 'active')}” (${result?.collaborators_status || 'active'}) and the Partner QR code ${result?.collaborators_qr_code ? 'was generated' : 'is missing — check the record'}.`);
+      if (kind === 'approve') setNotice(`Approved ${who}: status is now “${statusLabel(result?.collaborators_status || 'active')}” (${result?.collaborators_status || 'active'}) and the Partner QR code ${result?.collaborators_qr_code ? 'was generated' : 'is missing — check the record'}.${result?.already_approved ? ' (It was already approved; nothing was changed and no second e-mail was sent.)' : activationSummary(result?.activation_email)}`);
       else if (kind === 'reject') setNotice(`Rejected ${who}. Status is now “${statusLabel(result?.collaborators_status || 'blocked')}”.`);
       else setNotice(`Deactivated ${who}.`);
     } catch (cause) { setActionError(describeAdminActionFailure(cause, kind).text); }
@@ -181,6 +205,10 @@ export default function AdminCollaboratorsPage() {
       <DetailSection title={`Approval and profile history (${detail.approvals.length})`}>{detail.approvals.length ? detail.approvals.sort((a, b) => String(b.requested_at).localeCompare(String(a.requested_at))).map((request) => <div key={request.id} className="mb-2 rounded-lg border border-slate-200 p-3 text-sm text-slate-600"><div className="flex justify-between gap-3"><strong className="text-slate-900">{request.action} · {request.slot}</strong><StatusBadge value={request.status} /></div><p className="mt-1">Requested {formatDate(request.requested_at, true)}</p>{request.decision_reason && <p>Decision reason: {request.decision_reason}</p>}</div>) : <p className="text-sm text-slate-500">No media approval history.</p>}<p className="mt-3 text-sm text-slate-500">Profile action: {detail.collaborator.collaborators_actions || '—'}<br />Follow-up: {detail.collaborator.collaborators_remark_followup_action || '—'}</p></DetailSection>
       <DetailSection title="Upload avatar"><p className="mb-3 text-sm text-slate-500">Admin direct upload — immediately effective and audited. Only JPEG, PNG, or WebP, maximum 5 MB.</p>{uploadError && <p className="mb-3 rounded-lg bg-red-50 p-3 text-sm text-red-800">{uploadError}</p>}<label className="inline-flex min-h-10 cursor-pointer items-center rounded-lg bg-teal-700 px-4 font-semibold text-white">{uploadBusy ? 'Uploading…' : 'Upload avatar'}<input type="file" accept="image/jpeg,image/png,image/webp" disabled={uploadBusy} className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void adminUpload(detail.collaborator.id, file); event.target.value = ''; }} /></label></DetailSection>
       <DetailSection title="Account Invitation">{invitation === undefined ? <p className="text-sm text-slate-500">Loading…</p> : invitation && (invitation.status as string) === 'pending' ? (<><p className="mb-3 text-sm text-slate-500">A pending invitation exists for this partner&apos;s email.</p><dl className="mb-3 grid gap-2 text-sm"><dt className="text-xs font-bold text-slate-500">Invited email</dt><dd>{String(invitation.owner_email || '—')}</dd><dt className="text-xs font-bold text-slate-500">Expires</dt><dd>{formatDate(invitation.expires_at as string, true)}</dd></dl><div className="mb-3 rounded-lg bg-amber-50 p-3"><p className="mb-1 text-xs font-bold text-amber-900">UAT mail-capture: one-time invite link</p><code className="break-all text-xs text-amber-800">{invitation.invite_link ? String(invitation.invite_link) : invitation.delivery === 'email' ? 'Invitation e-mail handed to the mail service (delivery to the inbox is not confirmed). If the recipient does not receive it, revoke and re-invite.' : 'The one-time sign-in link is shown only at creation and is not stored. Revoke and re-invite to issue a new one.'}</code></div><div className="flex gap-2"><button disabled={inviteBusy} onClick={() => void revokeInvitation(String(invitation.id))} className="rounded-lg border border-red-300 bg-white px-3 py-2 text-sm font-semibold text-red-700">Revoke invitation</button></div></>) : (<><p className="mb-3 text-sm text-slate-500">{invitation ? `Last invitation: ${invitation.status as string}. Create a new one to re-invite.` : 'No invitation exists. Use Invite to generate a claim link for this partner.'}</p>{inviteError && <p className="mb-3 rounded-lg bg-red-50 p-3 text-sm text-red-800">{inviteError}</p>}<button disabled={inviteBusy} onClick={() => void createInvitation(detail.collaborator.id)} className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">{inviteBusy ? 'Sending…' : 'Invite partner to claim account'}</button></>)}</DetailSection>
+      <DetailSection title="Account and activation e-mail"><div data-testid="activation-panel">{activation === undefined ? <p className="text-sm text-slate-500">Loading…</p> : activation === null ? <p className="text-sm text-slate-500">Activation status is unavailable.</p> : <dl className="grid gap-4 sm:grid-cols-2"><DetailItem label="Account status" value={activation.profile_status ? statusText(activation.profile_status) : 'No linked account'} /><DetailItem label="Has entered the Partner Portal" value={activation.activated ? `Yes (${formatDate(activation.last_login_at, true)})` : 'Not yet'} /><DetailItem label="Last activation e-mail" value={activation.last_attempt ? `${activation.last_attempt.status}${activation.last_attempt.reason ? ` (${activation.last_attempt.reason})` : ''} — ${formatDate(activation.last_attempt.at, true)}${activation.last_attempt.trigger ? ` · ${activation.last_attempt.trigger}` : ''}` : (statusOf(detail.collaborator) === 'active' ? 'None recorded' : 'Sent automatically when you approve')} /><DetailItem label="Attempts recorded" value={activation.attempts.length} /></dl>}
+        {activationMessage && <p role="status" data-testid="activation-message" className="mt-3 rounded-lg bg-slate-100 p-3 text-sm text-slate-800">{activationMessage}</p>}
+        {statusOf(detail.collaborator) === 'active' && activation && !activation.activated && <button type="button" data-testid="resend-activation" disabled={activationBusy} onClick={() => void resendActivation(detail.collaborator)} className="mt-3 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60">{activationBusy ? 'Sending…' : 'Send activation e-mail again'}</button>}
+        <p className="mt-2 text-xs text-slate-500">Retrying only sends a new e-mail with a new link (older links stop working). It never approves or creates anything again.</p></div></DetailSection>
       <DetailSection title="Administrative actions">{actionError && <p role="alert" data-testid="action-error" className="mb-3 rounded-lg bg-red-100 p-3 text-sm text-red-900">{actionError}</p>}<div className="flex flex-wrap gap-2">{statusOf(detail.collaborator) === 'pending' && <><button disabled={actionBusy} onClick={() => void runAction('approve', detail.collaborator)} className="rounded-lg bg-green-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"><CheckCircle className="mr-2 inline h-4 w-4" />Approve</button><button disabled={actionBusy} onClick={() => void runAction('reject', detail.collaborator)} className="rounded-lg bg-red-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">Reject</button></>}{detail.collaborator.collaborators_qr_code && <button onClick={() => setSelectedQr(detail.collaborator.collaborators_qr_code || null)} className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white"><QrCode className="mr-2 inline h-4 w-4" />View QR</button>}{statusOf(detail.collaborator) === 'active' && <button disabled={actionBusy} onClick={() => void runAction('deactivate', detail.collaborator)} className="rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-700 disabled:opacity-60">Deactivate collaborator</button>}</div><p className="mt-2 text-xs text-slate-500">Destructive controls are confined to this detail view and require confirmation.</p></DetailSection>
     </aside></div>}
     {selectedQr && <div className="fixed inset-0 z-[60] grid place-items-center bg-slate-950/50 p-4" onClick={() => setSelectedQr(null)}><div className="w-full max-w-sm rounded-xl bg-white p-6" onClick={(event) => event.stopPropagation()}><h3 className="mb-4 text-center text-lg font-bold">Partner QR Code</h3><img src={selectedQr} alt="Partner QR code" className="mx-auto h-64 w-64 rounded-lg border-4 border-slate-100" /><button onClick={() => setSelectedQr(null)} className="mt-4 w-full rounded-lg bg-slate-700 px-4 py-2 font-semibold text-white">Close</button></div></div>}

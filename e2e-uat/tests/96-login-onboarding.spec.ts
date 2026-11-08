@@ -34,7 +34,8 @@ async function passwordToken(email: string, password: string) {
 
 test.skip(!process.env.SUPABASE_SERVICE_ROLE_KEY || !hasCreds('admin'), 'BLOCKED: run via `railway run --service vno-api` with admin credentials');
 
-for (const kind of ['partner', 'merchant'] as const) {
+// Partner: registration is a single form without a login-continuation step (98-partner-single-step.spec.ts). This continuation applies to the Merchant.
+for (const kind of ['merchant'] as Array<'merchant' | 'partner'>) {
   const other = kind === 'partner' ? 'merchant' : 'partner';
   test.describe.serial(`Simple signup + login continuation: ${kind}`, () => {
     const tag = kind === 'merchant' ? 'M' : 'P';

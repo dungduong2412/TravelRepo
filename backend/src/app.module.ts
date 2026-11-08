@@ -16,6 +16,8 @@ import { AuditModule } from './modules/audit/audit.module';
 import { InvitationsModule } from './modules/invitations/invitations.module';
 import { AuthEmailHookModule } from './modules/auth-email-hook/auth-email-hook.module';
 import { PublicCatalogModule } from './modules/public-catalog/public-catalog.module';
+import { PartnerRegistrationModule } from './modules/partner-registration/partner-registration.module';
+import { ActivationModule } from './modules/activation/activation.module';
 
 @Module({
   imports: [
@@ -38,6 +40,8 @@ import { PublicCatalogModule } from './modules/public-catalog/public-catalog.mod
     InvitationsModule,
     PublicCatalogModule,
     AuthEmailHookModule,
+    ActivationModule,
+    PartnerRegistrationModule,
   ],
   controllers: [HealthController],
 })

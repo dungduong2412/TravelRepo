@@ -122,6 +122,58 @@ export function renderWelcomeEmail(opts: { merchantName: string; workspaceUrl: s
   return { subject, html, text };
 }
 
+/**
+ * Renders the "your Partner account is approved" e-mail: one button that opens the Partner Portal directly (no password, no second form).
+ * `activationUrl` carries the single-use token in the URL FRAGMENT, so it never reaches a server log or a Referer header.
+ */
+export function renderPartnerActivationEmail(opts: { partnerName: string; activationUrl: string; requestNewLinkUrl: string; ttlHours: number; subjectPrefix: string }): { subject: string; html: string; text: string } {
+  const subject = `${opts.subjectPrefix}VNO – Tài khoản Đối tác đã được kích hoạt / Your Partner account is active`;
+  const preheader = 'Nhấn để vào Cổng Đối tác, không cần mật khẩu · Tap to open the Partner Portal, no password needed';
+  const link = opts.activationUrl;
+  const ttlVi = `${opts.ttlHours} giờ`;
+  const ttlEn = `${opts.ttlHours} hour${opts.ttlHours === 1 ? '' : 's'}`;
+
+  const html = `<!doctype html>
+<html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><title>${esc(subject)}</title></head>
+<body style="margin:0;padding:0;background:#f7f7f8;-webkit-text-size-adjust:100%">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:#f7f7f8">${esc(preheader)}</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f7f7f8"><tr><td align="center" style="padding:16px 12px">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;background:#ffffff;border:1px solid #e5e7eb;border-radius:16px;overflow:hidden">
+<tr><td style="background:#d91e4a;padding:18px 24px;font-family:Arial,Helvetica,sans-serif;font-size:18px;font-weight:700;color:#ffffff">Vietnam Number One</td></tr>
+<tr><td style="padding:24px;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:24px;color:#1b1f27">
+<h1 style="margin:0 0 12px;font-size:22px;line-height:28px;color:#1b1f27">Hồ sơ Đối tác của bạn đã được phê duyệt</h1>
+<p style="margin:0 0 12px">Chào <strong>${esc(opts.partnerName)}</strong>, tài khoản Đối tác của bạn đã được kích hoạt. Nhấn nút bên dưới để vào Cổng Đối tác ngay — bạn không cần nhập mật khẩu hay điền thêm biểu mẫu nào.</p>
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0 8px"><tr><td align="center" bgcolor="#d91e4a" style="border-radius:12px"><a href="${esc(link)}" target="_blank" style="display:inline-block;min-height:24px;line-height:24px;padding:12px 24px;font-family:Arial,Helvetica,sans-serif;font-size:16px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:12px">Vào Cổng Đối tác / Open Partner Portal</a></td></tr></table>
+<p style="margin:0 0 12px;font-size:14px;line-height:22px;color:#5b6472">Liên kết chỉ dùng được một lần và có hiệu lực ${esc(ttlVi)}. Nếu liên kết hết hạn, hãy yêu cầu liên kết mới tại <a href="${esc(opts.requestNewLinkUrl)}" style="color:#b3153b">${esc(opts.requestNewLinkUrl)}</a>.</p>
+<h2 style="margin:20px 0 8px;font-size:16px;line-height:24px;color:#5b6472;font-weight:700">Your Partner application is approved</h2>
+<p style="margin:0 0 4px;color:#1b1f27">Hi <strong>${esc(opts.partnerName)}</strong>, your Partner account is now active. Tap the button above to open the Partner Portal — no password and no further form needed. The link works once and is valid for ${esc(ttlEn)}; if it expires you can request a new one at the address above.</p>
+<p style="margin:16px 0 0;font-size:13px;line-height:20px;color:#5b6472">Nếu nút không hoạt động, sao chép liên kết này vào trình duyệt / If the button does not work, copy this link into your browser:<br><a href="${esc(link)}" style="color:#b3153b;word-break:break-all">${esc(link)}</a></p>
+<hr style="border:0;border-top:1px solid #e5e7eb;margin:24px 0 16px">
+<p style="margin:0 0 8px;font-size:13px;line-height:20px;color:#5b6472">Nếu bạn không đăng ký làm Đối tác VNO, hãy bỏ qua email này — không có gì thay đổi. Đừng chuyển tiếp email này: liên kết cho phép vào tài khoản của bạn.<br>If you did not apply to be a VNO Partner, ignore this email. Do not forward it: the link opens your account.</p>
+<p style="margin:0;font-size:12px;line-height:18px;color:#93370d;background:#fffaeb;border-radius:8px;padding:8px 10px">${esc(UAT_NOTE[0])}<br>${esc(UAT_NOTE[1])}</p>
+</td></tr></table></td></tr></table></body></html>`;
+
+  const text = [
+    'Vietnam Number One',
+    '',
+    'Hồ sơ Đối tác của bạn đã được phê duyệt',
+    `Chào ${opts.partnerName}, tài khoản Đối tác của bạn đã được kích hoạt. Mở liên kết dưới đây để vào Cổng Đối tác — không cần nhập mật khẩu hay điền thêm biểu mẫu.`,
+    `Liên kết chỉ dùng được một lần, có hiệu lực ${ttlVi}. Hết hạn? Yêu cầu liên kết mới: ${opts.requestNewLinkUrl}`,
+    '',
+    'Your Partner application is approved',
+    `Hi ${opts.partnerName}, your Partner account is now active. Open the link below to enter the Partner Portal — no password and no further form needed.`,
+    `The link works once and is valid for ${ttlEn}. Expired? Request a new one: ${opts.requestNewLinkUrl}`,
+    '',
+    `Open Partner Portal / Vào Cổng Đối tác: ${link}`,
+    '',
+    'Đừng chuyển tiếp email này. / Do not forward this email.',
+    '',
+    UAT_NOTE[0], UAT_NOTE[1],
+  ].join('\n');
+
+  return { subject, html, text };
+}
+
 export function renderEmail(opts: { type: string; link?: string; code?: string; subjectPrefix: string }): { subject: string; html: string; text: string } {
   const kind = templateKind(opts.type);
   const c = COPY[kind];

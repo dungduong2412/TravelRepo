@@ -26,6 +26,8 @@ export async function resolveFailedLogin(email: string, password: string): Promi
   const next = decideLoginFollowUp({ confirmed: Boolean(data.user?.email_confirmed_at), profile, requestedRole });
 
   if (next.kind === 'onboarding') adoptDraftEmail(next.role, data.user!.email || email.trim());
-  else await supabase.auth.signOut({ scope: 'local' }); // keep a session only when it is about to be used for onboarding
+  // Only the Merchant form still submits with the confirmed session. The single-step Partner registration needs no session at all: it
+  // starts from the remembered e-mail and signs nothing in (approval + the activation e-mail do that).
+  if (next.kind !== 'onboarding' || next.role === 'collaborator') await supabase.auth.signOut({ scope: 'local' });
   return next;
 }

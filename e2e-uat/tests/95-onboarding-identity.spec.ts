@@ -51,7 +51,7 @@ const other = (email: string, tag: string) => email.replace(/\+[^@]*@/, `+${tag}
 
 test.describe('Signup post-confirmation UX', () => {
   test('PC1 confirmed session without profile: success banner, verified e-mail, no password, no auto-created application', async ({ browser }) => {
-    for (const [page_, label, role] of [[PARTNER_PAGE, 'Đối tác', 'partner'], [MERCHANT_PAGE, 'Nhà cung cấp', 'merchant']] as const) {
+    for (const [page_, label, role] of [[MERCHANT_PAGE, 'Nhà cung cấp', 'merchant']] as Array<readonly [string, string, 'merchant' | 'partner']>) {   // Partner: single-step form, see 98-partner-single-step.spec.ts
       await step(`PC1-${role}`, `${role}: banner "Email đã xác nhận thành công. Vui lòng hoàn tất hồ sơ ${label}."; email read-only; no password field; no write request`, async () => {
         const { email } = await session('outsider');
         const ctx = await contextAs(browser, 'outsider'); const p = await ctx.newPage(); const writes = watchWrites(p);
@@ -70,7 +70,7 @@ test.describe('Signup post-confirmation UX', () => {
   });
 
   test('PC9 initial signup CTA reads "Đăng ký & xác nhận email"; "Gửi hồ sơ" appears only for a verified session', async ({ browser }) => {
-    for (const [page_, role] of [[PARTNER_PAGE, 'partner'], [MERCHANT_PAGE, 'merchant']] as const) {
+    for (const [page_, role] of [[MERCHANT_PAGE, 'merchant']] as const) {
       await step(`PC9-${role}`, `${role}: anonymous CTA, signup navigation stays on the form, verified session switches CTA`, async () => {
         const anon = await browser.newContext(); const p = await anon.newPage(); const writes = watchWrites(p);
         await p.goto(page_);
@@ -118,7 +118,7 @@ test.describe('Signup post-confirmation UX', () => {
   });
 
   test('PC4 an existing Merchant/Partner session is never adopted as the identity of a different role sign-up', async ({ browser }) => {
-    for (const [as, page_, label] of [['merchant', PARTNER_PAGE, 'Đối tác'], ['partner', MERCHANT_PAGE, 'Nhà cung cấp']] as const) {
+    for (const [as, page_, label] of [['partner', MERCHANT_PAGE, 'Nhà cung cấp']] as const) {
       await step(`PC4-${as}`, `${as} session on the ${label} sign-up: existing-profile notice, no form, e-mail not adopted, no write`, async () => {
         const { email } = await session(as);
         const ctx = await contextAs(browser, as); const p = await ctx.newPage(); const writes = watchWrites(p);
@@ -137,20 +137,19 @@ test.describe('Signup post-confirmation UX', () => {
     }
   });
 
-  test('PC5 a session for a different e-mail than the one being signed up is flagged, not silently used', async ({ browser }) => {
-    await step('PC5', 'draft e-mail A + session of B: mismatch notice, form hidden, no write; signing out restores the sign-up form with draft A', async () => {
+  test('PC5 the single-step Partner form ignores any browser session: plain form, remembered e-mail only as a starting value, nothing written', async ({ browser }) => {
+    await step('PC5', 'draft e-mail + a confirmed session of ANOTHER account: no mismatch notice, no "Gửi hồ sơ", plain registration form prefilled from the draft; no write', async () => {
       const outsider = await session('outsider');
       const intended = other(outsider.email, 'uat-signup-partner2');
       const ctx = await contextAs(browser, 'outsider', { key: 'vno-collaborator-onboarding-draft', value: { email: intended, fullName: 'Draft Only' } });
       const p = await ctx.newPage(); const writes = watchWrites(p);
       await p.goto(PARTNER_PAGE);
-      await expect(p.getByText('Phiên đăng nhập hiện tại không phải email đang đăng ký Đối tác')).toBeVisible({ timeout: 20_000 });
-      await expect(p.getByText(`khác với email bạn đã nhập (${intended})`)).toBeVisible();
+      await expect(p.getByRole('heading', { name: 'Đăng ký Đối tác' })).toBeVisible({ timeout: 20_000 });
+      await expect(p.locator('#email')).toHaveValue(intended);
+      await expect(p.getByText(/Phiên đăng nhập hiện tại không phải email|Bước\s*[12]\s*\/\s*2/)).toHaveCount(0);
       await expect(p.getByRole('button', { name: 'Gửi hồ sơ' })).toHaveCount(0);
+      await expect(p.locator('input[type="password"]')).toHaveCount(0);
       await p.waitForTimeout(1500); expect(writes).toEqual([]);
-      await p.getByRole('button', { name: 'Đăng xuất phiên này để tiếp tục' }).click();
-      await expect(p.locator('input[name="email"]')).toHaveValue(intended);
-      await expect(p.locator('input[type="password"]').first()).toBeVisible();
       await ctx.close();
     });
   });

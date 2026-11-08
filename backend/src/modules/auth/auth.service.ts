@@ -1,12 +1,18 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, UnauthorizedException } from '@nestjs/common';
 import { createClient } from '@supabase/supabase-js';
 import { SupabaseService } from '../../infrastructure/supabase/supabase.service';
+import { AuditService } from '../audit/audit.service';
+import { ActivationService } from '../activation/activation.service';
 
 type AppRole = 'merchant' | 'collaborator' | 'admin';
 
 @Injectable()
 export class AuthService {
-  constructor(private readonly supabase: SupabaseService) {}
+  constructor(
+    private readonly supabase: SupabaseService,
+    private readonly activation: ActivationService,
+    private readonly audit: AuditService,
+  ) {}
 
   private getAuthClient() {
     const url = process.env.SUPABASE_URL;
@@ -84,6 +90,42 @@ export class AuthService {
       collaborator: profile.role === 'collaborator' ? entity : null,
       access_token: session.session.access_token,
       refresh_token: session.session.refresh_token,
+    };
+  }
+
+  /**
+   * Partner activation: the person clicked the link in the "your account is approved" e-mail. No password, no second form.
+   *  1. ActivationService.verify  — signed, unexpired, account-bound, current (not superseded), approved, never used before
+   *  2. a one-time Auth session is minted server-side for exactly that account (this also confirms the e-mail address, because only the
+   *     mailbox owner could have received the link)
+   *  3. ActivationService.consume — atomic compare-and-set; a concurrent redemption of the same link loses and its session is revoked
+   * The answer has the same shape as /auth/login, so the web app establishes the session the same way.
+   */
+  async activate(token: unknown, ip: string) {
+    const { profile, collab, authUser } = await this.activation.verify(token, ip);
+    const failed = () => new HttpException({ code: 'ACTIVATION_FAILED', message: 'Activation could not be completed; request a new link' }, HttpStatus.BAD_GATEWAY);
+
+    const { data: link, error: linkError } = await this.supabase.getClient().auth.admin.generateLink({ type: 'magiclink', email: authUser.email as string });
+    const hashed = link?.properties?.hashed_token;
+    if (linkError || !hashed) throw failed();
+    const { data: opened, error: otpError } = await this.getAuthClient().auth.verifyOtp({
+      token_hash: hashed, type: link?.properties?.verification_type === 'signup' ? 'signup' : 'magiclink',
+    });
+    if (otpError || !opened.session || opened.user?.id !== profile.user_id) throw failed();
+
+    if (!(await this.activation.consume(profile.id))) {
+      await this.supabase.getClient().auth.admin.signOut(opened.session.access_token, 'global').catch(() => undefined); // lost the race: do not leave a live session behind
+      throw new HttpException({ code: 'ACTIVATION_LINK_USED', message: 'This activation link has already been used' }, HttpStatus.UNAUTHORIZED);
+    }
+    await this.activation.spendNonce(authUser);
+    await this.audit.record({ id: profile.user_id, role: 'collaborator' }, 'collaborator.activated', 'collaborator', collab.id, { method: 'activation_link' })
+      .catch(() => undefined); // the activation already happened; a missing audit row must not strand the person outside the portal
+
+    const entity = { id: collab.id, collaborators_code: collab.collaborators_code, collaborators_name: collab.collaborators_name, collaborators_verified: collab.collaborators_verified, collaborators_status: collab.collaborators_status };
+    return {
+      user: { id: profile.user_id, email: profile.email, role: profile.role, name: profile.full_name, merchant_id: profile.merchant_id, collaborator_id: profile.collaborator_id },
+      entity, merchant: null, collaborator: entity,
+      access_token: opened.session.access_token, refresh_token: opened.session.refresh_token, activated: true,
     };
   }
 

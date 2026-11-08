@@ -12,7 +12,9 @@ const step = async (id: string, title: string, fn: () => Promise<void>) => { try
 const items = (b: any): any[] => (Array.isArray(b) ? b : b?.items ?? b?.data ?? []);
 
 type Kind = 'merchant' | 'partner';
-const KINDS: Kind[] = ['merchant', 'partner'];
+// The Partner signup is no longer a confirm-then-submit journey: it is one registration form + Admin approval + an emailed activation link (see 98-partner-single-step.spec.ts).
+// This journey (password + e-mail confirmation + second form) now applies to the Merchant only.
+const KINDS: Kind[] = ['merchant'];
 
 for (const kind of KINDS) {
   test.describe.serial(`Signup journey: ${kind}`, () => {

@@ -1,446 +1,117 @@
 "use client";
 
-import { useEffect, useRef, useState } from 'react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { apiFetch } from '../../../lib/api';
-import { signUp } from '../../../lib/supabase';
-import { useOnboardingIdentity } from '../../../lib/onboarding-identity';
-import OnboardingIdentityNotice from '../../../components/OnboardingIdentityNotice';
-import AlreadyRegisteredLinks from '../../../components/AlreadyRegisteredLinks';
-import { errorCode } from '../../../lib/auth-diagnostics';
-import { signupErrorMessage } from '../../../lib/auth-errors';
-import { describeSubmitFailure } from '../../../lib/api-failure';
-import { clearDraft, DRAFT_KEYS, loadDraft, saveDraft } from '../../../lib/onboarding-draft';
-import { isValidPassword, PASSWORD_ERROR, PASSWORD_HINT } from '../../../lib/password-policy';
+import Link from 'next/link';
+import { publicApiFetch } from '../../../lib/api';
+import { clearDraft, DRAFT_KEYS, loadDraft } from '../../../lib/onboarding-draft';
+import { existingNotice, ExistingState, RegistrationField, registrationFailure, validateRegistration, validationSummary } from '../../../lib/partner-registration';
+import { AuthShell } from '../../../components/ui/AuthShell';
+import { Field } from '../../../components/ui/Form';
+import { Button } from '../../../components/ui/Button';
+import { Alert } from '../../../components/ui/Feedback';
 
-const DRAFT_KEY = DRAFT_KEYS.collaborator;
-const intendedEmail = () => loadDraft<{ email?: string }>(DRAFT_KEY)?.email || undefined;
-
-export default function CollaboratorOnboardPage() {
+/**
+ * Partner registration: ONE form, ONE submit. It creates the account, the Partner application and the profile together (status "Chờ phê duyệt"),
+ * visible to the Admin straight away. There is no e-mail confirmation first and no second form: the person is e-mailed an activation link when the
+ * Admin approves, and that link opens the Partner Portal. Optional details (bank account, photo, ...) are edited inside the portal afterwards.
+ */
+export default function PartnerRegistrationPage() {
   const router = useRouter();
-  const [formData, setFormData] = useState({
-    fullName: '',
-    phone: '',
-    email: '',
-    password: '',
-    confirmPassword: '',
-    bankName: '',
-    bankAccountName: '',
-    bankAccountNumber: '',
-  });
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [form, setForm] = useState({ fullName: '', phone: '', email: '' });
+  const [honeypot, setHoneypot] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<RegistrationField, string>>>({});
   const [error, setError] = useState<string | null>(null);
-  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
-  const [notice, setNotice] = useState<string | null>(null);
-  const { identity, switchAccount, stillCurrent, refresh } = useOnboardingIdentity('collaborator', intendedEmail);
-  const hasVerifiedSession = identity.kind === 'ready';
-  const formVisible = identity.kind === 'anonymous' || identity.kind === 'ready';
-  const feedbackRef = useRef<HTMLDivElement | null>(null);
+  const [existing, setExisting] = useState<ExistingState | null>(null);
+  const [busy, setBusy] = useState(false);
+  const feedback = useRef<HTMLDivElement | null>(null);
 
-  // A refusal or failure must be seen: bring the message into view (the buttons are at the bottom of a long form).
+  // An e-mail remembered from a login attempt of an older, unfinished sign-up is offered as the starting value (never a password).
   useEffect(() => {
-    if (error || notice || Object.keys(validationErrors).length) feedbackRef.current?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
-  }, [error, notice, validationErrors]);
-
-  // A confirmed (or otherwise resolved) session supersedes whatever the sign-up attempt said before it: never show a green "email verified" banner
-  // next to a red "already registered" / "check your e-mail" message from an earlier submit.
-  useEffect(() => {
-    if (identity.kind === 'ready' || identity.kind === 'existing' || identity.kind === 'mismatch') {
-      setError(null); setNotice(null);
-      setValidationErrors({});
-    }
-  }, [identity.kind]);
-
-  useEffect(() => {
-    try {
-      const draft = loadDraft<Record<string, string>>(DRAFT_KEY);
-      if (draft) setFormData((current) => ({ ...current, ...draft, password: '', confirmPassword: '' }));
-    } catch { /* Invalid local draft is ignored. */ }
+    const remembered = loadDraft<{ email?: string }>(DRAFT_KEYS.collaborator)?.email;
+    if (remembered) setForm((f) => (f.email ? f : { ...f, email: remembered }));
   }, []);
 
-  // The verified Auth e-mail is the only identity the profile is created for; it replaces whatever was typed, but only for a session that belongs to this sign-up.
-  useEffect(() => {
-    if (identity.kind === 'ready') setFormData((current) => ({ ...current, email: identity.email }));
-  }, [identity]);
+  useEffect(() => { if (error || existing) feedback.current?.scrollIntoView?.({ block: 'center', behavior: 'smooth' }); }, [error, existing]);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => {
-      const next = { ...prev, [name]: value };
-      const { password: _password, confirmPassword: _confirmPassword, ...safe } = next;
-      saveDraft(DRAFT_KEY, safe);
-      return next;
-    });
+  const set = (field: RegistrationField) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    setForm((f) => ({ ...f, [field]: e.target.value }));
+    setFieldErrors((current) => ({ ...current, [field]: undefined }));
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  async function submit(e: FormEvent) {
     e.preventDefault();
-    if (identity.kind === 'loading' || identity.kind === 'existing' || identity.kind === 'mismatch') return;
-    setIsSubmitting(true);
-    setError(null);
-    setValidationErrors({});
-
-    // Client-side validation
-    const errors: Record<string, string> = {};
-
-    if (!formData.fullName.trim()) {
-      errors.fullName = 'Họ và tên là bắt buộc';
-    }
-
-    if (!formData.phone.trim()) {
-      errors.phone = 'Số điện thoại là bắt buộc';
-    } else if (!/^[0-9]{10,11}$/.test(formData.phone.replace(/\s/g, ''))) {
-      errors.phone = 'Số điện thoại phải có 10-11 chữ số';
-    }
-
-    if (!formData.email.trim()) {
-      errors.email = 'Email là bắt buộc';
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      errors.email = 'Email không hợp lệ';
-    }
-
-    if (!hasVerifiedSession && !formData.password) {
-      errors.password = 'Mật khẩu là bắt buộc';
-    } else if (!hasVerifiedSession && !isValidPassword(formData.password)) {
-      errors.password = PASSWORD_ERROR;
-    }
-
-    if (!hasVerifiedSession && formData.password !== formData.confirmPassword) {
-      errors.confirmPassword = 'Mật khẩu xác nhận không khớp';
-    }
-
-    if (Object.keys(errors).length > 0) {
-      setValidationErrors(errors);
-      const labels: Record<string, string> = { fullName: 'Họ và Tên', phone: 'Số Điện Thoại', email: 'Email', password: 'Mật Khẩu', confirmPassword: 'Xác Nhận Mật Khẩu' };
-      setError(`Hồ sơ CHƯA được gửi vì còn thiếu hoặc sai thông tin: ${Object.keys(errors).map((key) => labels[key] || key).join(', ')}. Hãy sửa các ô được đánh dấu đỏ rồi bấm lại.`);
+    if (busy) return;
+    setError(null); setExisting(null);
+    const errors = validateRegistration(form);
+    if (Object.keys(errors).length) {
+      setFieldErrors(errors);
+      setError(validationSummary(errors));
       document.getElementById(Object.keys(errors)[0])?.focus();
-      setIsSubmitting(false);
       return;
     }
-
+    setFieldErrors({});
+    setBusy(true);
     try {
-      if (!hasVerifiedSession) {
-        const data = await signUp(
-          formData.email,
-          formData.password,
-          'collaborator',
-          `${window.location.origin}/collaborator/onboard?confirmed=1`,
-        );
-        if (!data.session) {
-          setNotice('Kiểm tra email và mở liên kết xác nhận. Sau khi xác nhận, bạn sẽ quay lại trang này để hoàn tất hồ sơ Đối tác; hồ sơ chưa được tạo cho đến khi bạn bấm “Gửi hồ sơ”.');
-          setIsSubmitting(false);
-          return;
-        }
-      }
-
-      // Another tab may have switched the browser session since this page resolved it: never submit for a different identity than the one shown.
-      if (identity.kind === 'ready' && !(await stillCurrent(identity.email))) {
-        setError('Phiên đăng nhập đã thay đổi. Vui lòng tải lại trang để tiếp tục.');
-        setIsSubmitting(false);
+      const result = await publicApiFetch('/partner-registrations', {
+        method: 'POST',
+        body: JSON.stringify({ full_name: form.fullName.trim(), phone: form.phone.trim(), email: form.email.trim(), website: honeypot }),
+      });
+      if (result?.outcome === 'created') {
+        clearDraft(DRAFT_KEYS.collaborator);
+        const ref = typeof result.reference === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(result.reference) ? `&ref=${encodeURIComponent(result.reference)}` : '';
+        router.push(`/success?type=partner-registered${ref}`);
         return;
       }
-
-      const payload = {
-        collaborators_name: formData.fullName,
-        collaborators_phone: formData.phone,
-        collaborators_email: identity.kind === 'ready' ? identity.email : formData.email,
-        collaborators_bank_name: formData.bankName || undefined,
-        collaborators_bank_acc_name: formData.bankAccountName || undefined,
-        collaborators_bank_acc_number: formData.bankAccountNumber || undefined,
-      };
-
-      const created = await apiFetch('/collaborators', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
-
-      clearDraft(DRAFT_KEY);
-
-      // Redirect to success page; the new record's code lets the owner (and the Admin) match this application in the Pending list.
-      const ref = typeof created?.collaborators_code === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(created.collaborators_code) ? `&ref=${encodeURIComponent(created.collaborators_code)}` : '';
-      router.push(`/success?type=collaborator${ref}`);
+      if (result?.outcome === 'exists' && ['pending', 'active', 'support'].includes(result.state)) { setExisting(result.state); setBusy(false); return; }
+      setError('Phản hồi từ máy chủ không hợp lệ nên đăng ký CHƯA được xác nhận. Hãy thử lại.');
     } catch (err) {
-      // Supabase sign-up failures (already registered, weak password, e-mail rate limit) keep their own copy; everything else is the profile submit.
-      const signupText = signupErrorMessage(errorCode(err));
-      if (signupText) setError(signupText);
-      else {
-        const failure = describeSubmitFailure(err, 'Đối tác');
-        setError(failure.text);
-        if (failure.kind === 'exists') refresh(); // this verified identity already has an application: show its status
-      }
-      setIsSubmitting(false);
+      setError(registrationFailure(err));
     }
-  };
+    setBusy(false);
+  }
+
+  const notice = existing ? existingNotice(existing) : null;
 
   return (
-    <main style={styles.container}>
-      <div style={styles.formContainer}>
-        <h1 style={styles.title}>Đăng Ký Đối Tác</h1>
-        <p style={styles.subtitle}>Tham gia với vai trò hướng dẫn viên du lịch và bắt đầu nhận hoa hồng</p>
-        <p style={styles.hint}>Email phải được xác nhận trước khi hồ sơ được tạo. Quyền hoạt động và ảnh đại diện được Admin duyệt riêng.</p>
-        <OnboardingIdentityNotice identity={identity} role="collaborator" onSwitch={switchAccount} />
+    <AuthShell
+      title="Đăng ký Đối tác"
+      subtitle="Dành cho hướng dẫn viên và người giới thiệu dịch vụ. Điền một lần, Admin phê duyệt, rồi bạn nhận email để vào Cổng Đối tác."
+      footer={<>Đã có tài khoản? <Link href="/login" className="font-semibold text-brand-700 underline">Đăng nhập</Link></>}
+    >
+      <form onSubmit={submit} noValidate className="space-y-4" data-testid="registration-form">
+        <Field id="fullName" name="fullName" label="Họ và Tên *" autoComplete="name" value={form.fullName} onChange={set('fullName')} error={fieldErrors.fullName} placeholder="Nhập họ và tên đầy đủ" required />
+        <Field id="phone" name="phone" type="tel" label="Số Điện Thoại *" autoComplete="tel" inputMode="tel" value={form.phone} onChange={set('phone')} error={fieldErrors.phone} placeholder="+84 912 345 678" required />
+        <Field id="email" name="email" type="email" label="Email *" autoComplete="email" value={form.email} onChange={set('email')} error={fieldErrors.email} placeholder="email.cua.ban@example.com" hint="Chúng tôi gửi email kích hoạt tới địa chỉ này khi hồ sơ được phê duyệt." required />
 
-        {identity.kind === 'loading' && <p style={styles.hint} aria-live="polite">Đang kiểm tra phiên đăng nhập…</p>}
-        {formVisible && <form onSubmit={handleSubmit} style={styles.form} noValidate>
-          <div style={styles.formGroup}>
-            <label htmlFor="fullName" style={styles.label}>
-              Họ và Tên *
-            </label>
-            <input
-              id="fullName"
-              name="fullName"
-              type="text"
-              required
-              value={formData.fullName}
-              onChange={handleChange}
-              style={styles.input}
-              placeholder="Nhập họ và tên đầy đủ"
-            />
-            {validationErrors.fullName && (
-              <span style={styles.errorText}>{validationErrors.fullName}</span>
-            )}
-          </div>
+        {/* Honeypot: people never see or reach this field; a value means a bot filled the form. */}
+        <div aria-hidden="true" style={{ position: 'absolute', left: '-10000px', width: 1, height: 1, overflow: 'hidden' }}>
+          <label htmlFor="website">Website</label>
+          <input id="website" name="website" type="text" tabIndex={-1} autoComplete="off" value={honeypot} onChange={(e) => setHoneypot(e.target.value)} />
+        </div>
 
-          <div style={styles.formGroup}>
-            <label htmlFor="phone" style={styles.label}>
-              Số Điện Thoại *
-            </label>
-            <input
-              id="phone"
-              name="phone"
-              type="tel"
-              required
-              value={formData.phone}
-              onChange={handleChange}
-              style={styles.input}
-              placeholder="+84 XXX XXX XXX"
-            />
-            {validationErrors.phone && (
-              <span style={styles.errorText}>{validationErrors.phone}</span>
-            )}
-          </div>
+        <div ref={feedback} className="space-y-3">
+          {error && <div data-testid="registration-error"><Alert tone="danger" title="Chưa thể đăng ký">{error}</Alert></div>}
+          {notice && (
+            <div data-testid="registration-existing" data-state={existing}>
+              <Alert tone={notice.tone} title={notice.title}>
+                <p>{notice.body}</p>
+                {existing !== 'pending' && (
+                  <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+                    {existing === 'active' && <><Link href="/login" className="font-semibold underline">Đăng nhập</Link><Link href="/auth/activate" className="font-semibold underline">Gửi lại liên kết kích hoạt</Link><Link href="/forgot-password" className="font-semibold underline">Quên mật khẩu</Link></>}
+                  </p>
+                )}
+              </Alert>
+            </div>
+          )}
+        </div>
 
-          <div style={styles.formGroup}>
-            <label htmlFor="email" style={styles.label}>
-              Email *
-            </label>
-            <input
-              id="email"
-              name="email"
-              type="email"
-              required
-              value={formData.email}
-              onChange={handleChange}
-              readOnly={hasVerifiedSession}
-              style={styles.input}
-              placeholder="email.cua.ban@example.com"
-            />
-            {validationErrors.email && (
-              <span style={styles.errorText}>{validationErrors.email}</span>
-            )}
-          </div>
-
-          {!hasVerifiedSession && <><div style={styles.formGroup}>
-            <label htmlFor="password" style={styles.label}>
-              Mật Khẩu *
-            </label>
-            <input
-              id="password"
-              name="password"
-              type="password"
-              required
-              value={formData.password}
-              onChange={handleChange}
-              style={styles.input}
-            />
-            <small style={styles.hint}>{PASSWORD_HINT}</small>
-            {validationErrors.password && (
-              <span style={styles.errorText}>{validationErrors.password}</span>
-            )}
-          </div>
-
-          <div style={styles.formGroup}>
-            <label htmlFor="confirmPassword" style={styles.label}>
-              Xác Nhận Mật Khẩu *
-            </label>
-            <input
-              id="confirmPassword"
-              name="confirmPassword"
-              type="password"
-              required
-              value={formData.confirmPassword}
-              onChange={handleChange}
-              style={styles.input}
-              placeholder="Nhập lại mật khẩu"
-            />
-            {validationErrors.confirmPassword && (
-              <span style={styles.errorText}>{validationErrors.confirmPassword}</span>
-            )}
-          </div></>}
-
-          <div style={styles.formGroup}>
-            <label htmlFor="bankName" style={styles.label}>
-              Tên Ngân Hàng
-            </label>
-            <input
-              id="bankName"
-              name="bankName"
-              type="text"
-              value={formData.bankName}
-              onChange={handleChange}
-              style={styles.input}
-              placeholder="Ví dụ: Vietcombank, Techcombank"
-            />
-          </div>
-
-          <div style={styles.formGroup}>
-            <label htmlFor="bankAccountNumber" style={styles.label}>
-              Số Tài Khoản Ngân Hàng
-            </label>
-            <input
-              id="bankAccountNumber"
-              name="bankAccountNumber"
-              type="text"
-              value={formData.bankAccountNumber}
-              onChange={handleChange}
-              style={styles.input}
-              placeholder="Nhập số tài khoản của bạn"
-            />
-          </div>
-
-          <div style={styles.formGroup}>
-            <label htmlFor="bankAccountName" style={styles.label}>Tên Chủ Tài Khoản</label>
-            <input id="bankAccountName" name="bankAccountName" type="text" value={formData.bankAccountName} onChange={handleChange} style={styles.input} autoComplete="off" />
-          </div>
-
-          <div ref={feedbackRef}>
-            {error && (
-              <div role="alert" data-testid="submit-error" style={styles.errorBox}>
-                {error}
-              </div>
-            )}
-            {notice && <div role="status" style={{ ...styles.errorBox, background: '#ecfdf5', color: '#065f46' }}>{notice}</div>}
-          </div>
-
-          {hasVerifiedSession && <p data-testid="step2-reminder" style={{ margin: 0, fontSize: 14, color: '#1e3a8a', fontWeight: 600 }}>Bước 2/2: hồ sơ chỉ được gửi khi bạn bấm “Gửi hồ sơ”. Mở được trang này chưa có nghĩa là hồ sơ đã được gửi.</p>}
-
-          <div style={styles.buttonGroup}>
-            <button
-              type="button"
-              onClick={() => router.push('/')}
-              style={styles.secondaryButton}
-              disabled={isSubmitting}
-            >
-              Hủy
-            </button>
-            <button
-              type="submit"
-              style={styles.primaryButton}
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? 'Đang gửi...' : hasVerifiedSession ? 'Gửi hồ sơ' : 'Đăng ký & xác nhận email'}
-            </button>
-          </div>
-        </form>}
-        {identity.kind === 'anonymous' && <AlreadyRegisteredLinks />}
-      </div>
-    </main>
+        <p className="text-xs text-ink-muted">Các thông tin khác (tài khoản ngân hàng, ảnh đại diện…) bạn có thể bổ sung trong Cổng Đối tác sau khi tài khoản được kích hoạt.</p>
+        <div className="flex gap-3">
+          <Button type="button" variant="secondary" className="flex-1" onClick={() => router.push('/signup')} disabled={busy}>Hủy</Button>
+          <Button type="submit" className="flex-1" disabled={busy}>{busy ? 'Đang gửi…' : 'Đăng ký'}</Button>
+        </div>
+      </form>
+    </AuthShell>
   );
 }
-
-/* --- Inline styles --- */
-
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    minHeight: '100vh',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: '24px',
-    fontFamily: 'system-ui, sans-serif',
-    backgroundColor: '#f9fafb',
-  },
-  formContainer: {
-    width: '100%',
-    maxWidth: '500px',
-    backgroundColor: 'white',
-    borderRadius: '8px',
-    padding: '32px',
-    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
-  },
-  title: {
-    fontSize: '28px',
-    fontWeight: 600,
-    marginBottom: '8px',
-    color: '#111827',
-  },
-  subtitle: {
-    fontSize: '14px',
-    color: '#6b7280',
-    marginBottom: '24px',
-  },
-  form: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '20px',
-  },
-  formGroup: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '6px',
-  },
-  label: {
-    fontSize: '14px',
-    fontWeight: 500,
-    color: '#374151',
-  },
-  input: {
-    padding: '10px 12px',
-    fontSize: '16px',
-    border: '1px solid #d1d5db',
-    borderRadius: '6px',
-    outline: 'none',
-    transition: 'border-color 0.2s',
-  },
-  errorBox: {
-    padding: '12px',
-    backgroundColor: '#fee2e2',
-    color: '#991b1b',
-    borderRadius: '6px',
-    fontSize: '14px',
-  },
-  errorText: {
-    fontSize: '12px',
-    color: '#dc2626',
-    marginTop: '4px',
-  },
-  buttonGroup: {
-    display: 'flex',
-    gap: '12px',
-    marginTop: '8px',
-  },
-  primaryButton: {
-    flex: 1,
-    padding: '12px 24px',
-    fontSize: '16px',
-    fontWeight: 500,
-    color: 'white',
-    backgroundColor: '#2563eb',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    transition: 'background-color 0.2s',
-  },
-  secondaryButton: {
-    flex: 1,
-    padding: '12px 24px',
-    fontSize: '16px',
-    fontWeight: 500,
-    color: '#374151',
-    backgroundColor: 'white',
-    border: '1px solid #d1d5db',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    transition: 'background-color 0.2s',
-  },
-};

@@ -6,13 +6,13 @@ import { ButtonLink } from '../../components/ui/Button';
 
 const OPTIONS = [
   { href: '/merchant/onboard', Icon: Store, title: 'Nhà cung cấp', text: 'Dành cho khách sạn, nhà hàng, tour và các dịch vụ khác.', points: ['Đăng ký dịch vụ của bạn', 'Quản lý đơn hàng', 'Thiết lập chiết khấu cho khách hàng'], cta: 'Đăng ký làm nhà cung cấp' },
-  { href: '/collaborator/onboard', Icon: Users, title: 'Đối tác', text: 'Dành cho hướng dẫn viên và người giới thiệu dịch vụ.', points: ['Giới thiệu dịch vụ cho khách', 'Nhận hoa hồng', 'Quản lý mã QR cá nhân'], cta: 'Đăng ký làm đối tác' },
+  { href: '/collaborator/onboard', Icon: Users, title: 'Đối tác', text: 'Dành cho hướng dẫn viên và người giới thiệu dịch vụ.', points: ['Điền một lần, Admin phê duyệt', 'Nhận email kích hoạt, vào Cổng Đối tác bằng một lần nhấp', 'Nhận hoa hồng và quản lý mã QR cá nhân'], cta: 'Đăng ký làm đối tác' },
 ];
 
 export default function SignupPage() {
   return (
     <main className="mx-auto max-w-3xl px-4 py-10">
-      <div className="text-center"><Wordmark className="text-3xl" /><h1 className="mt-4 text-2xl font-bold tracking-tight">Tạo tài khoản VNO</h1><p className="mt-1 text-sm text-ink-muted">Chọn loại tài khoản bạn muốn đăng ký. Email của bạn sẽ được xác nhận trước khi tiếp tục.</p></div>
+      <div className="text-center"><Wordmark className="text-3xl" /><h1 className="mt-4 text-2xl font-bold tracking-tight">Tạo tài khoản VNO</h1><p className="mt-1 text-sm text-ink-muted">Chọn loại tài khoản bạn muốn đăng ký.</p></div>
       <div className="mt-8 grid gap-4 sm:grid-cols-2">
         {OPTIONS.map(({ href, Icon, title, text, points, cta }) => (
           <Card key={href} className="flex flex-col p-5">

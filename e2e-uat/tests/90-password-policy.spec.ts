@@ -46,7 +46,8 @@ test.describe.serial('Password policy (hosted UAT)', () => {
     });
   }
 
-  for (const kind of ['merchant', 'partner'] as const) {
+  // The single-step Partner registration has no password at all (see 98-partner-single-step.spec.ts); the password policy applies to the Merchant form.
+  for (const kind of ['merchant'] as const) {
     const path = kind === 'merchant' ? '/merchant/onboard' : '/collaborator/onboard';
     const fill = async (p: any, email: string, pw: string, confirm = pw) => {
       if (kind === 'merchant') {

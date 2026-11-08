@@ -3,6 +3,7 @@
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
 import PendingApplicantMedia from '../../components/PendingApplicantMedia';
+import { SUCCESS_TEXT } from '../../lib/partner-registration';
 
 function SuccessContent() {
   const router = useRouter();
@@ -22,6 +23,11 @@ function SuccessContent() {
       title: 'Hồ sơ đang chờ phê duyệt',
       description:
         'Hồ sơ Nhà cung cấp của bạn đã được gửi. Tài khoản chưa hoạt động cho đến khi Admin phê duyệt; trong thời gian chờ, bạn chỉ xem được trạng thái hồ sơ và gửi ảnh đại diện để duyệt.',
+    },
+    // Single-step Partner registration: no session exists yet, so there is nothing to upload; the activation e-mail comes after approval.
+    'partner-registered': {
+      title: 'Đăng ký thành công',
+      description: SUCCESS_TEXT,
     },
     application: {
       title: 'Hồ sơ đang chờ phê duyệt',
@@ -51,7 +57,8 @@ function SuccessContent() {
         </div>
 
         <h1 style={styles.title}>{message.title}</h1>
-        <p style={styles.description}>{message.description}</p>
+        <p style={styles.description} data-testid={type === 'partner-registered' ? 'registration-success' : undefined}>{message.description}</p>
+        {ref && type === 'partner-registered' && <p data-testid="application-ref" style={styles.description}>Mã hồ sơ: <strong>{ref}</strong> · Trạng thái: <strong>Chờ phê duyệt</strong>. Admin sẽ thấy hồ sơ này trong danh sách “Chờ phê duyệt”.</p>}
         {ref && (type === 'merchant' || type === 'collaborator') && <p data-testid="application-ref" style={styles.description}>Mã hồ sơ: <strong>{ref}</strong> · Trạng thái: <strong>Chờ phê duyệt</strong>. Admin sẽ thấy hồ sơ này trong danh sách “Chờ phê duyệt”.</p>}
 
         {(type === 'merchant' || type === 'collaborator') && <PendingApplicantMedia role={type} />}

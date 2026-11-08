@@ -14,8 +14,8 @@ import { Alert } from '../../components/ui/Feedback';
 /** Backend messages -> actionable Vietnamese copy. Unknown messages fall back to a generic, non-leaking line. */
 function loginMessage(raw: string): { tone: 'danger' | 'warning' | 'info'; title: string; body: string } {
   const m = raw.toLowerCase();
-  if (m.includes('invalid email or password')) return { tone: 'danger', title: 'Email hoặc mật khẩu không đúng', body: 'Kiểm tra lại thông tin hoặc đặt lại mật khẩu.' };
-  if (m.includes('not approved')) return { tone: 'info', title: 'Tài khoản đang chờ phê duyệt', body: 'Quản trị viên chưa phê duyệt hồ sơ của bạn. Bạn sẽ đăng nhập được ngay sau khi hồ sơ được duyệt.' };
+  if (m.includes('invalid email or password')) return { tone: 'danger', title: 'Email hoặc mật khẩu không đúng', body: 'Kiểm tra lại thông tin hoặc đặt lại mật khẩu. Đối tác mới đăng ký chưa có mật khẩu: hãy chờ email kích hoạt sau khi hồ sơ được phê duyệt.' };
+  if (m.includes('not approved')) return { tone: 'info', title: 'Tài khoản đang chờ phê duyệt', body: 'Quản trị viên chưa phê duyệt hồ sơ của bạn. Chúng tôi sẽ gửi email khi tài khoản được kích hoạt.' };
   if (m.includes('not active')) return { tone: 'warning', title: 'Tài khoản chưa được kích hoạt', body: 'Tài khoản đang bị tạm khóa hoặc chưa kích hoạt. Vui lòng liên hệ quản trị viên.' };
   if (m.includes('confirm')) return { tone: 'warning', title: 'Email chưa được xác nhận', body: 'Hãy mở liên kết xác nhận trong email đăng ký trước khi đăng nhập.' };
   return { tone: 'danger', title: 'Không thể đăng nhập', body: 'Đã có lỗi xảy ra. Vui lòng thử lại sau ít phút.' };
@@ -81,6 +81,7 @@ export default function LoginPage() {
         {notice && <Alert tone={notice.tone} title={notice.title}>{notice.body}</Alert>}
         <Button type="submit" disabled={loading} className="w-full">{loading ? 'Đang đăng nhập…' : 'Đăng nhập'}</Button>
         <Link href="/forgot-password" className={buttonClass('ghost', 'w-full')}>Quên mật khẩu?</Link>
+        <p className="text-center text-xs text-ink-muted">Đã được phê duyệt nhưng chưa nhận được email kích hoạt, hoặc liên kết đã hết hạn? <Link href="/auth/activate" className="font-semibold text-brand-700 underline">Gửi lại liên kết kích hoạt</Link></p>
       </form>
     </AuthShell>
   );

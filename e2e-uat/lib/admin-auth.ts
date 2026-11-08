@@ -71,3 +71,25 @@ export async function verifyTokenStatus(tokenHash: string, type: 'recovery' | 's
   const b: any = await r.json().catch(() => ({}));
   return { status: r.status, code: String(b.error_code ?? b.code ?? '') };
 }
+
+/** A user the way the OLD two-step signup left it: Auth identity with a password, e-mail confirmed, no profile or Partner record. Test-only. */
+export async function createConfirmedUserAsAdmin(email: string, password: string, userMetadata: Record<string, unknown> = {}): Promise<string> {
+  const r = await admin('/admin/users', { method: 'POST', body: JSON.stringify({ email, password, email_confirm: true, user_metadata: userMetadata }) });
+  if (r.status >= 300) throw new Error(`admin create user failed: HTTP ${r.status} ${r.body?.error_code ?? ''}`);
+  return r.body.id as string;
+}
+
+/** Full Auth record (metadata included) for assertions. */
+export async function getAuthUser(userId: string) {
+  return (await admin(`/admin/users/${userId}`)).body as { id: string; email: string; email_confirmed_at: string | null; app_metadata: Record<string, unknown>; user_metadata: Record<string, unknown>; last_sign_in_at: string | null; identities?: unknown[] };
+}
+
+/**
+ * Stands in for "the activation e-mail arrived": records a nonce on the account (exactly what the API does when it sends the mail) so a link
+ * signed with the same server secret is current. The mail itself is not sent (synthetic domain, delivery policy).
+ */
+export async function setActivationNonceAsAdmin(userId: string, nonce: string) {
+  const user = await getAuthUser(userId);
+  const r = await admin(`/admin/users/${userId}`, { method: 'PUT', body: JSON.stringify({ app_metadata: { ...(user.app_metadata || {}), activation_nonce: nonce } }) });
+  if (r.status >= 300) throw new Error(`admin set nonce failed: HTTP ${r.status}`);
+}

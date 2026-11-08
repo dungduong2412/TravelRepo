@@ -2,9 +2,10 @@ import { Module, forwardRef } from '@nestjs/common';
 import { CollaboratorsController } from './collaborators.controller';
 import { CollaboratorsService } from './collaborators.service';
 import { UserProfilesModule } from '../user-profiles/user-profiles.module';
+import { ActivationModule } from '../activation/activation.module';
 
 @Module({
-  imports: [forwardRef(() => UserProfilesModule)],
+  imports: [forwardRef(() => UserProfilesModule), ActivationModule],
   controllers: [CollaboratorsController],
   providers: [CollaboratorsService],
   exports: [CollaboratorsService],
