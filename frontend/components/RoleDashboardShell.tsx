@@ -18,6 +18,8 @@ export default function RoleDashboardShell({ children, role, roleLabel, menu }: 
   const router = useRouter();
   const [email, setEmail] = useState<string | null>(null);
   const [blocked, setBlocked] = useState<string | null>(null);
+  // A Partner who came in through the activation link has no password yet; until they have logged in by password at least once, say how to set one.
+  const [needsPassword, setNeedsPassword] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -36,6 +38,7 @@ export default function RoleDashboardShell({ children, role, roleLabel, menu }: 
         const destination = profile?.role === 'admin' ? '/admin/dashboard' : profile?.role === 'merchant' ? '/merchant/dashboard' : profile?.role === 'collaborator' ? '/collaborator/dashboard' : '/login';
         return router.replace(destination);
       }
+      setNeedsPassword(role === 'collaborator' && (profile.login_count || 0) <= 1);
       setEmail(user.email || '');
     });
     return () => { active = false; };
@@ -63,7 +66,10 @@ export default function RoleDashboardShell({ children, role, roleLabel, menu }: 
       </nav>
       <button onClick={logout} className="m-4 flex min-h-11 items-center justify-center gap-2 rounded-control border border-line px-4 font-semibold text-ink hover:bg-canvas"><LogOut aria-hidden="true" className="size-4" />Đăng xuất</button>
     </aside>
-    <main className="min-w-0 px-4 py-5 pb-28 sm:px-6 lg:ml-72 lg:px-8 lg:py-8 lg:pb-8">{children}</main>
+    <main className="min-w-0 px-4 py-5 pb-28 sm:px-6 lg:ml-72 lg:px-8 lg:py-8 lg:pb-8">
+      {needsPassword && <div className="mb-4" data-testid="set-password-notice"><Alert tone="info" title="Đặt mật khẩu để đăng nhập lần sau">Bạn đã vào bằng liên kết kích hoạt nên chưa có mật khẩu. Vào <Link href={`/${role}/dashboard/settings`} className="font-semibold underline">Tài khoản</Link> để đặt mật khẩu; nếu không, lần sau bạn có thể dùng “Quên mật khẩu” trên trang đăng nhập.</Alert></div>}
+      {children}
+    </main>
     <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 gap-1 border-t border-line bg-white px-2 pb-[max(.5rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-4px_20px_rgba(15,23,42,.08)] lg:hidden" aria-label={`Điều hướng chính ${roleLabel}`}>
       {menu.slice(0, 5).map((item) => <NavLink key={item.path} item={item} active={pathname === item.path || (item.path !== `/${role}/dashboard` && pathname.startsWith(`${item.path}/`))} mobile />)}
     </nav>

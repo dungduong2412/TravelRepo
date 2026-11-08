@@ -279,6 +279,7 @@ test.describe.serial('Partner single-step registration -> approval -> activation
       expect(p.url()).not.toContain(link.token);
       expect(requestUrls.some((u) => u.includes(link.token))).toBe(false);          // the fragment never leaves the browser; the POST carries it in the body
       await expect(p.getByRole('navigation', { name: /Điều hướng Đối tác/ }).first()).toBeVisible({ timeout: 30_000 });
+      await expect(p.getByTestId('set-password-notice')).toContainText('Đặt mật khẩu để đăng nhập lần sau');   // no password yet: say how to set one
       await shot(p, 'S8-partner-dashboard-after-link');
       const u = await getAuthUser(userId); expect(u.email_confirmed_at).toBeTruthy();                // the click is the proof of mailbox ownership
       expect((u.app_metadata as any).activation_nonce ?? null).toBeNull();                          // the link is spent
