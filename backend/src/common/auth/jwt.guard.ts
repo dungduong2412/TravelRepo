@@ -43,6 +43,12 @@ export class JwtGuard implements CanActivate {
       throw new UnauthorizedException('Invalid or expired token');
     }
 
+    // An identity created before its mailbox was proven (public Partner registration) has no standing until the activation link is used,
+    // whatever credential it holds: this closes direct Auth sessions as well as /auth/login.
+    if ((data.user.app_metadata as Record<string, unknown> | undefined)?.activation_password_reset === true) {
+      throw new UnauthorizedException('Account requires the activation link');
+    }
+
     request.user = {
       id: data.user.id,
       email: data.user.email,

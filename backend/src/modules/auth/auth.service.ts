@@ -2,7 +2,7 @@ import { HttpException, HttpStatus, Injectable, UnauthorizedException } from '@n
 import { createClient } from '@supabase/supabase-js';
 import { SupabaseService } from '../../infrastructure/supabase/supabase.service';
 import { AuditService } from '../audit/audit.service';
-import { ActivationService } from '../activation/activation.service';
+import { ActivationService, UNVERIFIED_IDENTITY_FLAG } from '../activation/activation.service';
 
 type AppRole = 'merchant' | 'collaborator' | 'admin';
 
@@ -30,6 +30,10 @@ export class AuthService {
       .signInWithPassword({ email, password });
     if (authError || !session.user || !session.session) {
       throw new UnauthorizedException('Invalid email or password');
+    }
+    // Created before the mailbox was proven (public Partner registration): the only way in is the emailed activation link.
+    if ((session.user.app_metadata as Record<string, unknown> | undefined)?.[UNVERIFIED_IDENTITY_FLAG] === true) {
+      throw new UnauthorizedException('Account requires the activation link');
     }
 
     const { data: profile, error: profileError } = await this.supabase.getClient()
@@ -95,16 +99,22 @@ export class AuthService {
 
   /**
    * Partner activation: the person clicked the link in the "your account is approved" e-mail. No password, no second form.
-   *  1. ActivationService.verify  — signed, unexpired, account-bound, current (not superseded), approved, never used before
-   *  2. a one-time Auth session is minted server-side for exactly that account (this also confirms the e-mail address, because only the
-   *     mailbox owner could have received the link)
-   *  3. ActivationService.consume — atomic compare-and-set; a concurrent redemption of the same link loses and its session is revoked
-   * The answer has the same shape as /auth/login, so the web app establishes the session the same way.
+   *  1. ActivationService.verify    — signed, unexpired, account-bound, current (not used or superseded), approved
+   *  2. settleCredentials           — the click is the first proof of mailbox ownership: any password set before it is replaced
+   *  3. a one-time Auth session is minted server-side for exactly that account (this also confirms the e-mail address)
+   *  4. ActivationService.consume   — compare-and-set on login_count; a concurrent redemption loses and ONLY its own session is revoked
+   * Redemptions for one account run one at a time. The answer has the same shape as /auth/login, so the web app establishes the session the same way.
    */
   async activate(token: unknown, ip: string) {
+    const uid = this.activation.peekUserId(token);
+    return uid ? this.activation.locked(`redeem:${uid}`, () => this.activateNow(token, ip)) : this.activateNow(token, ip); // unsigned tokens fail inside verify()
+  }
+
+  private async activateNow(token: unknown, ip: string) {
     const { profile, collab, authUser } = await this.activation.verify(token, ip);
     const failed = () => new HttpException({ code: 'ACTIVATION_FAILED', message: 'Activation could not be completed; request a new link' }, HttpStatus.BAD_GATEWAY);
 
+    await this.activation.settleCredentials(profile.user_id);
     const { data: link, error: linkError } = await this.supabase.getClient().auth.admin.generateLink({ type: 'magiclink', email: authUser.email as string });
     const hashed = link?.properties?.hashed_token;
     if (linkError || !hashed) throw failed();
@@ -113,11 +123,12 @@ export class AuthService {
     });
     if (otpError || !opened.session || opened.user?.id !== profile.user_id) throw failed();
 
-    if (!(await this.activation.consume(profile.id))) {
-      await this.supabase.getClient().auth.admin.signOut(opened.session.access_token, 'global').catch(() => undefined); // lost the race: do not leave a live session behind
+    if (!(await this.activation.consume(profile.id, profile.login_count))) {
+      // Lost a race: revoke only the session minted for THIS request (a global sign-out would also kill the winner's session).
+      await this.supabase.getClient().auth.admin.signOut(opened.session.access_token, 'local').catch(() => undefined);
       throw new HttpException({ code: 'ACTIVATION_LINK_USED', message: 'This activation link has already been used' }, HttpStatus.UNAUTHORIZED);
     }
-    await this.activation.spendNonce(authUser);
+    await this.activation.spendNonce(profile.user_id);
     await this.audit.record({ id: profile.user_id, role: 'collaborator' }, 'collaborator.activated', 'collaborator', collab.id, { method: 'activation_link' })
       .catch(() => undefined); // the activation already happened; a missing audit row must not strand the person outside the portal
 

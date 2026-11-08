@@ -56,7 +56,11 @@ class Fake {
       ilike: (c: string, v: string) => { const plain = v.replace(/\\([\\%_])/g, '$1'); filters.push((r) => String(r[c] ?? '').toLowerCase() === plain.toLowerCase()); return q; },
       in: (c: string, vs: any[]) => { filters.push((r) => vs.includes(r[c])); return q; },
       gte: (c: string, v: string) => { filters.push((r) => String(r[c]) >= v); return q; },
-      or: (expr: string) => { if (expr === 'login_count.eq.0,login_count.is.null') filters.push((r) => !r.login_count); else throw new Error(`unsupported or(): ${expr}`); return q; },
+      or: (expr: string) => {
+        const terms = expr.split(',').map((t) => { const [col, op, ...rest] = t.split('.'); return { col, op, val: rest.join('.') }; });
+        filters.push((r) => terms.some(({ col, op, val }) => (op === 'is' ? (r[col] ?? null) === null : op === 'eq' ? r[col] !== undefined && r[col] !== null && String(r[col]) === val : op === 'neq' ? String(r[col]) !== val : (() => { throw new Error(`unsupported or(): ${expr}`); })())));
+        return q;
+      },
       order: (col: string, o?: any) => { order = { col, asc: o?.ascending !== false }; return q; },
       limit: (n: number) => { limit = n; return q; },
       single: async () => { const r = run(); const row = (r.data || [])[0]; return row ? { data: row, error: null } : { data: null, error: r.error || { message: 'no rows', code: 'PGRST116' } }; },
@@ -125,7 +129,7 @@ let controls = 0; const ok = (label: string, fn: () => void | Promise<void>) => 
     const w = world(); const r: any = await w.registration.register(dto('New.Person@Example.test'), '1.1.1.1');
     assert.equal(r.outcome, 'created'); assert.equal(r.status, 'pending'); assert.match(r.reference, /^COL-[0-9A-F]{16}$/);
     assert.equal(w.db.users.size, 1); const u = [...w.db.users.values()][0];
-    assert.equal(u.email, 'new.person@example.test'); assert.equal(u.email_confirmed_at, null); assert.equal(u.hasPassword, false); assert.equal(u.user_metadata.requested_role, 'collaborator');
+    assert.equal(u.email, 'new.person@example.test'); assert.equal(u.email_confirmed_at, null); assert.equal(u.hasPassword, false); assert.equal(u.app_metadata.activation_password_reset, true, 'created before the mailbox was proven -> untrusted until the activation click'); assert.equal(u.user_metadata.requested_role, 'collaborator');
     assert.equal(w.db.tables.collaborators.length, 1); const c = w.db.tables.collaborators[0];
     assert.deepEqual([c.collaborators_status, c.collaborators_verified, c.collaborators_phone, c.collaborators_name], ['pending', false, '+84912345678', 'Nguyen Van A']);
     assert.equal(w.db.tables.user_profiles.length, 1); const p = w.db.tables.user_profiles[0];
@@ -172,6 +176,8 @@ let controls = 0; const ok = (label: string, fn: () => void | Promise<void>) => 
     await w.registration.register(dto('confirmed@example.test'), '4.4.4.2');
     assert.deepEqual([w.db.users.size, w.db.tables.collaborators.length, w.db.tables.user_profiles.length], [2, 2, 2]);
     assert.deepEqual(w.db.passwordResets, [a], 'only the unconfirmed identity had its password invalidated');
+    assert.equal(w.db.users.get(a)!.app_metadata.activation_password_reset, true, 'an adopted UNCONFIRMED identity stays untrusted until the click');
+    assert.equal(w.db.users.get(b)!.app_metadata.activation_password_reset, undefined, 'a confirmed identity proved its mailbox earlier');
     assert.ok(w.db.tables.user_profiles.some((p) => p.user_id === b && p.user_profiles_status === 'pending'));
   });
   await ok('R7 an identity that started as a Merchant is never adopted as a Partner', async () => {
@@ -270,18 +276,19 @@ let controls = 0; const ok = (label: string, fn: () => void | Promise<void>) => 
   });
 
   // ---- activation link -------------------------------------------------------------------------------------------------------------------------
-  await ok('T1 the link is account-bound and SINGLE USE', async () => {
+ await ok('T1 the link is account-bound and SINGLE USE', async () => {
     const { w, id } = await approved(); const t = token(w.sent[0].activationUrl);
     const v = await w.activation.verify(t, '20.0.0.1');
     assert.equal(v.profile.collaborator_id, id); assert.equal(v.authUser.email, 'p@example.test');
-    assert.equal(await w.activation.consume(v.profile.id), true); assert.equal(await w.activation.consume(v.profile.id), false, 'a second redemption loses');
-    await assert.rejects(w.activation.verify(t, '20.0.0.1'), (e: any) => code(e) === 'ACTIVATION_LINK_USED');
-    await w.activation.spendNonce(v.authUser);
-    await assert.rejects(w.activation.verify(t, '20.0.0.1'), (e: any) => code(e) === 'ACTIVATION_LINK_INVALID');
+    const seen = v.profile.login_count;                                         // the value this request observed (the fake returns live rows; PostgREST returns copies)
+    assert.equal(await w.activation.consume(v.profile.id, seen), true);
+    assert.equal(await w.activation.consume(v.profile.id, seen), false, 'a second redemption that saw the same state loses');
+    await w.activation.spendNonce(v.authUser.id);
+    await assert.rejects(w.activation.verify(t, '20.0.0.1'), (e: any) => code(e) === 'ACTIVATION_LINK_INVALID', 'a spent link is dead');
   });
   await ok('T2 concurrent redemption: exactly one wins', async () => {
     const { w } = await approved(); const v = await w.activation.verify(token(w.sent[0].activationUrl), '20.0.0.2');
-    const wins = await Promise.all([w.activation.consume(v.profile.id), w.activation.consume(v.profile.id), w.activation.consume(v.profile.id)]);
+    const wins = await Promise.all([w.activation.consume(v.profile.id, 0), w.activation.consume(v.profile.id, 0), w.activation.consume(v.profile.id, 0)]);
     assert.equal(wins.filter(Boolean).length, 1);
   });
   await ok('T3 tampered, truncated, expired, foreign-secret and wrong-account tokens are all refused', async () => {
@@ -309,23 +316,61 @@ let controls = 0; const ok = (label: string, fn: () => void | Promise<void>) => 
     w.db.tables.user_profiles[0].user_profiles_status = 'active'; w.db.tables.collaborators.find((c) => c.id === id).collaborators_status = 'inactive';
     await assert.rejects(w.activation.verify(t, '20.0.0.5'), (e: any) => code(e) === 'ACTIVATION_LINK_INVALID');
   });
-  await ok('T6 public "send me a new link": one answer for everybody, mail only for an eligible approved account, with a cool-down', async () => {
+  await ok('T6 public "send me a new link": one answer for everybody, mail only for an eligible approved account, with a cool-down; a consumed link can always be replaced', async () => {
     const { w } = await approved('real@example.test');
+    const age = () => { for (const e of w.db.tables.audit_events) if (e.action.startsWith('collaborator.activation_email_')) e.occurred_at = new Date(Date.now() - 10 * 60_000).toISOString(); };
     assert.equal(await w.activation.resendNow('nobody@example.test'), null); assert.equal(w.sent.length, 1, 'unknown address: nothing sent');
-    assert.equal(await w.activation.resendNow('real@example.test'), null, 'cool-down: a link was e-mailed seconds ago'); assert.equal(w.sent.length, 1);
-    for (const e of w.db.tables.audit_events) if (e.action.startsWith('collaborator.activation_email_')) e.occurred_at = new Date(Date.now() - 10 * 60_000).toISOString();
-    const d = await w.activation.resendNow('real@example.test'); assert.equal(d?.status, 'sent'); assert.equal(d?.trigger, 'user_resend'); assert.equal(w.sent.length, 2);
-    const v = await w.activation.verify(token(w.sent[1].activationUrl), '20.0.0.6'); await w.activation.consume(v.profile.id);
-    for (const e of w.db.tables.audit_events) if (e.action.startsWith('collaborator.activation_email_')) e.occurred_at = new Date(Date.now() - 10 * 60_000).toISOString();
-    const used = await w.activation.resendNow('real@example.test');
-    assert.deepEqual([used?.status, used?.reason], ['not_eligible', 'already_activated']);
-    assert.equal(w.sent.length, 2, 'an account that already entered the portal gets no activation mail');
+    assert.equal(await w.activation.resendNow('REAL@example.test'), null, 'cool-down: a link was e-mailed seconds ago'); assert.equal(w.sent.length, 1);
+    age(); const d = await w.activation.resendNow('real@example.test'); assert.equal(d?.status, 'sent'); assert.equal(d?.trigger, 'user_resend'); assert.equal(w.sent.length, 2);
+    // a mail scanner (or a lost response) consumed the link: the person is NOT stranded
+    const v = await w.activation.verify(token(w.sent[1].activationUrl), '20.0.0.6'); assert.equal(await w.activation.consume(v.profile.id, v.profile.login_count), true); await w.activation.spendNonce(v.authUser.id);
+    age(); assert.equal((await w.activation.resendNow('real@example.test'))?.status, 'sent', 'login_count 1 (link only) is still eligible'); assert.equal(w.sent.length, 3);
+    // once the account has been used with a password, the activation mail no longer applies
+    w.db.tables.user_profiles[0].login_count = 2; age();
+    const used = await w.activation.resendNow('real@example.test'); assert.deepEqual([used?.status, used?.reason], ['not_eligible', 'already_activated']);
+    assert.equal(w.sent.length, 3, 'an account that has logged in with a password gets no activation mail');
     assert.doesNotThrow(() => w.activation.requestLink('not an email', '1.1.1.1')); assert.doesNotThrow(() => w.activation.requestLink(undefined, '1.1.1.1'));
   });
   await ok('T7 no raw token is ever written to the audit trail or returned to the Admin', async () => {
     const { w, id, res } = await approved(); const t = token(w.sent[0].activationUrl);
     const everything = JSON.stringify([w.db.tables.audit_events, res, await w.collaborators.activationStatus(id)]);
     assert.equal(everything.includes(t), false); assert.equal(/token/i.test(everything.replace(/activation_email_/g, '')), false);
+  });
+
+  await ok('T8 pre-activation passwords are worthless: the click replaces them, identities that proved their mailbox earlier keep theirs', async () => {
+    const { w } = await approved('attacked@example.test'); const uid = [...w.db.users.keys()][0];
+    w.db.users.get(uid)!.hasPassword = true;                                  // somebody set a password through Auth's public sign-up before the owner acted
+    const v = await w.activation.verify(token(w.sent[0].activationUrl), '20.0.0.8');
+    await w.activation.settleCredentials(v.profile.user_id);
+    assert.deepEqual(w.db.passwordResets, [uid], 'the untrusted password was replaced');
+    assert.equal(w.db.users.get(uid)!.app_metadata.activation_password_reset ?? null, null, 'marker cleared');
+    assert.equal(w.db.users.get(uid)!.app_metadata.activation_nonce, v.authUser.app_metadata.activation_nonce, 'settling credentials does not disturb the link');
+    await w.activation.settleCredentials(uid); assert.equal(w.db.passwordResets.length, 1, 'idempotent');
+    const w2 = world(); const confirmedId = await w2.auth('legacy@example.test', new Date().toISOString(), { requested_role: 'collaborator' }, true);
+    await w2.activation.settleCredentials(confirmedId); assert.deepEqual(w2.db.passwordResets, [], 'a confirmed identity keeps the password its owner chose');
+  });
+  await ok('A6 two simultaneous approvals approve ONCE: one audit event, one e-mail, one record', async () => {
+    const w = world(); await w.registration.register(dto('twice@example.test'), '30.0.0.1'); const id = w.db.tables.collaborators[0].id;
+    const [x, y]: any[] = await Promise.all([w.collaborators.approve(admin, id), w.collaborators.approve(admin, id)]);
+    assert.equal([x, y].filter((r) => r.already_approved).length, 1, JSON.stringify([x.already_approved, y.already_approved]));
+    assert.equal(w.db.tables.audit_events.filter((e) => e.action === 'collaborator.approved').length, 1); assert.equal(w.sent.length, 1);
+    assert.equal(w.db.tables.collaborators.length, 1);
+  });
+  await ok('A7 an interrupted approval (record active, profile still pending) is finished by the next approve, with one e-mail', async () => {
+    const w = world(); await w.registration.register(dto('half@example.test'), '30.0.0.2'); const c = w.db.tables.collaborators[0];
+    Object.assign(c, { collaborators_status: 'active', collaborators_verified: true });   // the crash happened after the record changed
+    const r: any = await w.collaborators.approve(admin, c.id);
+    assert.deepEqual([r.already_approved, r.repaired], [true, true]); assert.equal(w.db.tables.user_profiles[0].user_profiles_status, 'active');
+    assert.equal(r.activation_email.status, 'sent'); assert.equal(w.sent.length, 1);
+    assert.equal(w.db.tables.audit_events.filter((e) => e.action === 'collaborator.profile_repaired').length, 1);
+    const again: any = await w.collaborators.approve(admin, c.id); assert.equal(again.repaired, undefined, 'repairing happens once'); assert.equal(w.sent.length, 1);
+  });
+  await ok('T9 simultaneous sends for one account are serialised: the link that was delivered last is the one that works', async () => {
+    const w = world(); await w.registration.register(dto('serial@example.test'), '30.0.0.3'); const id = w.db.tables.collaborators[0].id; await w.collaborators.approve(admin, id);
+    w.mailer.failWith = 'connection_failed';
+    const [a, b]: any[] = await Promise.all([w.activation.sendActivation(id, 'admin_resend', admin), (async () => { w.mailer.failWith = null; return w.activation.sendActivation(id, 'admin_resend', admin); })()]);
+    const delivered = w.sent[w.sent.length - 1];
+    assert.ok(await w.activation.verify(token(delivered.activationUrl), '20.0.0.9'), `the delivered link must stay valid (${a.status}/${b.status})`);
   });
 
   console.log(JSON.stringify({ status: 'PASS', controls }));

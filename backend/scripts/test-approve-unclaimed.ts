@@ -23,7 +23,7 @@ const rejectsWith = async (p: Promise<unknown>, st: number, c: string) => assert
 (async () => {
   const unclaimed = { merchant_details: { merchant_system_id: ID, owner_email: 'o@x.test', merchants_status: 'pending', merchant_verified: false }, collaborators: { id: ID, collaborators_code: 'COL-X', collaborators_email: 'p@x.test' } };
   const m = (rows: any) => new MerchantsService({ getClient: () => client(rows) } as any, profiles, audit);
-  const c = (rows: any) => new CollaboratorsService({ getClient: () => client(rows) } as any, profiles, audit, {} as any);
+  const c = (rows: any) => new CollaboratorsService({ getClient: () => client(rows) } as any, profiles, audit, { locked: (_k: string, fn: () => Promise<unknown>) => fn() } as any);
   await rejectsWith(m(unclaimed).approve({ id: 'a' } as any, ID), 409, 'OWNER_NOT_CLAIMED');
   await rejectsWith(m(unclaimed).approve({ id: 'a' } as any, 'not-a-uuid'), 400, 'INVALID_ID');
   await rejectsWith(m({}).approve({ id: 'a' } as any, ID), 404, 'MERCHANT_NOT_FOUND');

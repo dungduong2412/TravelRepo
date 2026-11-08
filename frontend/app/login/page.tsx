@@ -15,6 +15,7 @@ import { Alert } from '../../components/ui/Feedback';
 function loginMessage(raw: string): { tone: 'danger' | 'warning' | 'info'; title: string; body: string } {
   const m = raw.toLowerCase();
   if (m.includes('invalid email or password')) return { tone: 'danger', title: 'Email hoặc mật khẩu không đúng', body: 'Kiểm tra lại thông tin hoặc đặt lại mật khẩu. Đối tác mới đăng ký chưa có mật khẩu: hãy chờ email kích hoạt sau khi hồ sơ được phê duyệt.' };
+  if (m.includes('activation link')) return { tone: 'info', title: 'Hãy mở liên kết kích hoạt trong email', body: 'Tài khoản Đối tác này chưa được kích hoạt. Mở liên kết trong email “tài khoản đã được phê duyệt”; nếu liên kết hết hạn hoặc đã dùng, hãy yêu cầu liên kết mới bên dưới.' };
   if (m.includes('not approved')) return { tone: 'info', title: 'Tài khoản đang chờ phê duyệt', body: 'Quản trị viên chưa phê duyệt hồ sơ của bạn. Chúng tôi sẽ gửi email khi tài khoản được kích hoạt.' };
   if (m.includes('not active')) return { tone: 'warning', title: 'Tài khoản chưa được kích hoạt', body: 'Tài khoản đang bị tạm khóa hoặc chưa kích hoạt. Vui lòng liên hệ quản trị viên.' };
   if (m.includes('confirm')) return { tone: 'warning', title: 'Email chưa được xác nhận', body: 'Hãy mở liên kết xác nhận trong email đăng ký trước khi đăng nhập.' };

@@ -93,3 +93,9 @@ export async function setActivationNonceAsAdmin(userId: string, nonce: string) {
   const r = await admin(`/admin/users/${userId}`, { method: 'PUT', body: JSON.stringify({ app_metadata: { ...(user.app_metadata || {}), activation_nonce: nonce } }) });
   if (r.status >= 300) throw new Error(`admin set nonce failed: HTTP ${r.status}`);
 }
+
+/** Marks an Auth e-mail as confirmed without any mail (test-only): stands in for "the owner clicked a confirmation mail somebody else triggered". */
+export async function confirmEmailAsAdmin(userId: string) {
+  const r = await admin(`/admin/users/${userId}`, { method: 'PUT', body: JSON.stringify({ email_confirm: true }) });
+  if (r.status >= 300) throw new Error(`admin confirm e-mail failed: HTTP ${r.status}`);
+}

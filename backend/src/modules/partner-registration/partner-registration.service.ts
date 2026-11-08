@@ -95,7 +95,7 @@ export class PartnerRegistrationService {
     const created = await this.db.auth.admin.createUser({
       email, email_confirm: false,
       user_metadata: { requested_role: 'collaborator' },
-      app_metadata: { role: 'collaborator', account_status: 'pending' },
+      app_metadata: { role: 'collaborator', account_status: 'pending', activation_password_reset: true },
     });
     if (created.error) {
       if ((created.error as { code?: string }).code !== 'email_exists') throw err(HttpStatus.BAD_GATEWAY, 'REGISTRATION_FAILED', 'Registration could not be completed');
@@ -105,6 +105,7 @@ export class PartnerRegistrationService {
       if (existing.user_metadata?.requested_role && existing.user_metadata.requested_role !== 'collaborator') return { outcome: 'exists', state: 'support' };
       userId = existing.id; adoptedMetadata = existing.app_metadata || {};
       if (!existing.email_confirmed_at) {
+        adoptedMetadata = { ...adoptedMetadata, activation_password_reset: true };   // also untrusted until the activation click, even if it is signed up again
         // Nobody has proven they own this mailbox, so a password somebody set earlier must stop working before this identity can be approved.
         const { error: resetError } = await this.db.auth.admin.updateUserById(userId, { password: randomBytes(24).toString('base64url') });
         if (resetError) throw err(HttpStatus.BAD_GATEWAY, 'REGISTRATION_FAILED', 'Registration could not be completed');

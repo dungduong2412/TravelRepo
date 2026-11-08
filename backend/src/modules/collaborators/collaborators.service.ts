@@ -420,7 +420,25 @@ export class CollaboratorsService {
     return { profile, authUser: auth.user };
   }
 
-  async approve(actor: AuditActor, id: string) {
+  /**
+   * The record is already approved. Normally that is all there is to say. If a previous approval was interrupted after the record changed but before
+   * the linked profile did (crash, failed rollback), finish it now instead of leaving an active Partner whose account can never be activated.
+   */
+  private async alreadyApproved(actor: AuditActor, collaborator: any, profile: { id: string; user_id: string; email: string }) {
+    const { data: linked } = await this.supabase.getClient().from('user_profiles').select('user_profiles_status').eq('id', profile.id).maybeSingle();
+    if (linked && linked.user_profiles_status === 'active') return { ...this.withoutPassword(collaborator), already_approved: true };
+    await this.userProfilesService.createOrUpdate({ email: profile.email, role: 'collaborator', merchant_id: null, collaborator_id: collaborator.id, status: 'active' });
+    await this.audit.record(actor, 'collaborator.profile_repaired', 'collaborator', collaborator.id, { previous_profile_status: linked?.user_profiles_status ?? null });
+    const activation_email = await this.activation.sendActivation(collaborator.id, 'approval', actor);
+    return { ...this.withoutPassword(collaborator), already_approved: true, repaired: true, activation_email };
+  }
+
+  /** Simultaneous approvals of one record run one after the other, so the second sees the finished first and approves nothing twice. */
+  approve(actor: AuditActor, id: string) {
+    return this.activation.locked(`approve:${id}`, () => this.approveNow(actor, id));
+  }
+
+  private async approveNow(actor: AuditActor, id: string) {
     // Fetch collaborator first to get data for QR code
     const { data: collaborator, error: fetchError } = await this.supabase.getClient()
       .from('collaborators')
@@ -432,12 +450,12 @@ export class CollaboratorsService {
       throw new NotFoundException('Collaborator not found');
     }
 
-    await this.verifyApplicantOwnership(collaborator);
+    const owner = await this.verifyApplicantOwnership(collaborator);
 
     // Approving twice must not approve twice: no second audit event, no second QR, no second e-mail. A failed e-mail is retried through
     // POST /collaborators/:id/activation-email, never by approving again.
     if (collaborator.collaborators_status === 'active' && collaborator.collaborators_verified) {
-      return { ...this.withoutPassword(collaborator), already_approved: true };
+      return this.alreadyApproved(actor, collaborator, owner.profile);
     }
 
     // QR encodes a full navigable URL so customers can scan and land on the Partner's page.
@@ -456,11 +474,18 @@ export class CollaboratorsService {
         collaborators_qr_code: qrCodeBase64,
       })
       .eq('id', id)
+      // Only the request that actually moves the record out of "not yet approved" proceeds; a simultaneous second approve finds nothing to update.
+      .or('collaborators_status.neq.active,collaborators_verified.eq.false')
       .select()
-      .single();
+      .maybeSingle();
 
-    if (error || !data) {
+    if (error) {
       throw new NotFoundException('Failed to update collaborator');
+    }
+    if (!data) {
+      const { data: current } = await this.supabase.getClient().from('collaborators').select('*').eq('id', id).maybeSingle();
+      if (!current) throw new NotFoundException('Failed to update collaborator');
+      return this.alreadyApproved(actor, current, owner.profile);
     }
 
     // Activate the linked user profile consistently with the record

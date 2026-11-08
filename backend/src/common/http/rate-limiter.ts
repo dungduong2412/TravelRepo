@@ -29,12 +29,15 @@ export class SlidingWindowLimiter {
   }
 }
 
-/** Client address as seen by the platform edge. The right-most X-Forwarded-For entry is the one the trusted proxy appended; earlier ones are client-supplied. */
+/**
+ * Client address as seen by the platform edge. The right-most X-Forwarded-For entry is the one the trusted proxy appended (earlier ones are client-supplied);
+ * X-Real-IP is only a fallback because it may be passed through from the client. The per-address and hourly caps do not depend on this value at all.
+ */
 export function clientIp(req: { headers?: Record<string, string | string[] | undefined>; ip?: string; socket?: { remoteAddress?: string } }): string {
   const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
-  const real = first(req.headers?.['x-real-ip'])?.trim();
-  if (real) return real;
   const xff = first(req.headers?.['x-forwarded-for']);
   if (xff) { const parts = xff.split(',').map((p) => p.trim()).filter(Boolean); if (parts.length) return parts[parts.length - 1]; }
+  const real = first(req.headers?.['x-real-ip'])?.trim();
+  if (real) return real;
   return req.ip || req.socket?.remoteAddress || 'unknown';
 }

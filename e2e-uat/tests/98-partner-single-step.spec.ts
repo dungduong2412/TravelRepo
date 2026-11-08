@@ -2,7 +2,7 @@ import { test, expect, Page, BrowserContext } from '@playwright/test';
 import { anonKey, api, hasCreds } from '../lib/api';
 import { config, creds, EVIDENCE_DIR, RUN_ID } from '../lib/env';
 import { record } from '../lib/evidence';
-import { createConfirmedUserAsAdmin, getAuthUser, setActivationNonceAsAdmin } from '../lib/admin-auth';
+import { confirmEmailAsAdmin, createConfirmedUserAsAdmin, getAuthUser, setActivationNonceAsAdmin, setPasswordAsAdmin } from '../lib/admin-auth';
 import { activationSecret, newNonce, signActivationToken } from '../../backend/src/modules/activation/activation-token';
 import { SUCCESS_TEXT } from '../../frontend/lib/partner-registration';
 import { randomBytes } from 'node:crypto';
@@ -320,7 +320,7 @@ test.describe.serial('Partner single-step registration -> approval -> activation
       const expired = await emailedLink(userId, collabId, -60_000);
       const ctx = await browser.newContext(); const p = await ctx.newPage();
       await p.goto(expired.url);
-      await expect(p.getByTestId('activation-error')).toContainText('không hợp lệ hoặc đã hết hạn', { timeout: 30_000 });
+      await expect(p.getByTestId('activation-error')).toContainText('đã hết hạn', { timeout: 30_000 });
       await expect(p.getByTestId('resend-form')).toBeVisible();
       await p.locator('#resend-email').fill(email); await p.getByRole('button', { name: 'Gửi lại liên kết kích hoạt' }).click();
       await expect(p.getByTestId('resend-accepted')).toContainText('Nếu email này thuộc một tài khoản Đối tác đã được phê duyệt');
@@ -333,6 +333,41 @@ test.describe.serial('Partner single-step registration -> approval -> activation
       await shot(p, 'S10-expired-link-resend');
       await ctx.close();
       return 'expired link refused with a resend form; /auth/activation-link answered 202 {"accepted":true} identically for 3 different addresses';
+    });
+  });
+
+  test('S10b pre-account takeover is closed: a password set on the unverified identity is refused everywhere and destroyed by the activation click', async ({ browser }) => {
+    await step('S10b', 'attacker password + confirmed e-mail BEFORE the click: /auth/login 401, direct Auth session refused by the API; after the legitimate click that password no longer works', async () => {
+      const victim = `uat.e2e.takeover.${RUN_ID}@${domain}`; const attackerPassword = `Atk${randomBytes(4).toString('hex')}9`;
+      const reg = await fetch(`${config().api}/partner-registrations`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ full_name: `UAT-E2E-TAKEOVER-${RUN_ID}`, phone: '0912345678', email: victim }) });
+      expect(reg.status).toBe(201);
+      const [rec] = await rest(`collaborators?select=id&collaborators_email=ilike.${encodeURIComponent(victim)}`);
+      const [prof] = await rest(`user_profiles?select=user_id&collaborator_id=eq.${rec.id}`);
+      expect((await api('admin', 'POST', `/collaborators/${rec.id}/approve`)).status).toBeLessThan(300);
+      // The attack: somebody sets a password on the identity before its owner acted (Auth's public sign-up does this), and the owner then confirms the unsolicited mail.
+      await setPasswordAsAdmin(prof.user_id, attackerPassword); await confirmEmailAsAdmin(prof.user_id);
+      expect((await getAuthUser(prof.user_id)).app_metadata.activation_password_reset).toBe(true);
+      const viaApi = await fetch(`${config().api}/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: victim, password: attackerPassword }) });
+      expect(viaApi.status).toBe(401); expect(JSON.stringify(await viaApi.json())).toContain('activation link');
+      const grant = async (pw: string) => fetch(`${config().supabase}/auth/v1/token?grant_type=password`, { method: 'POST', headers: { apikey: await anonKey(), 'Content-Type': 'application/json' }, body: JSON.stringify({ email: victim, password: pw }) });
+      const direct = await grant(attackerPassword); expect(direct.status).toBe(200);          // Auth itself would hand out a session...
+      const directToken = ((await direct.json()) as any).access_token; process.env.E2E_TOKEN_ATTACKER = directToken;
+      for (const path of ['/user-profiles/me', '/collaborators/me', '/collaborators/me/qr-code']) {
+        const r = await fetch(`${config().api}${path}`, { headers: { Authorization: `Bearer ${directToken}` } });
+        expect(r.status, `${path} must refuse the unverified identity`).toBe(401);          // ...but the API gives it no standing
+      }
+      // The legitimate owner clicks the emailed link.
+      const link = await emailedLink(prof.user_id, rec.id);
+      const ctx = await browser.newContext(); const p = await ctx.newPage();
+      await p.goto(link.url); await expect(p).toHaveURL(/\/collaborator\/dashboard/, { timeout: 30_000 });
+      expect((await grant(attackerPassword)).status).toBe(400);                                // the attacker's password is gone
+      const after = await getAuthUser(prof.user_id); expect(after.app_metadata.activation_password_reset ?? null).toBeNull(); expect(after.email_confirmed_at).toBeTruthy();
+      const session = await p.evaluate(() => { const k = Object.keys(localStorage).find((x) => x.startsWith('sb-') && x.endsWith('-auth-token')); return k ? JSON.parse(localStorage.getItem(k)!) : null; });
+      process.env.E2E_TOKEN_OWNER_SESSION = session.access_token;
+      expect((await fetch(`${config().api}/collaborators/me`, { headers: { Authorization: `Bearer ${session.access_token}` } })).status).toBe(200);   // the owner's own session works
+      expect((await fetch(`${config().api}/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: victim, password: attackerPassword }) })).status).toBe(401);
+      await ctx.close();
+      return 'before the click: /auth/login 401 "activation link", direct Auth session got 401 on /user-profiles/me, /collaborators/me, /collaborators/me/qr-code; after the click: attacker password rejected by Auth (400), marker cleared, owner session 200';
     });
   });
 
