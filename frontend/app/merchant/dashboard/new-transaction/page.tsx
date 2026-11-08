@@ -1,299 +1,294 @@
 "use client";
 
-import { FormEvent, useState } from "react";
-import { apiFetch } from "../../../../lib/api";
-import { fractionToPercentagePoints } from "../../../../lib/rates";
-import QrCameraScanner from "../../../../components/QrCameraScanner";
+import Link from "next/link";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { BadgeCheck, CheckCircle2, ScanLine, Tag, UserRound } from "lucide-react";
+import { apiFetch, ApiRequestError } from "../../../../lib/api";
+import QrScanner, { ScanSource } from "../../../../components/QrScanner";
+import { parsePartnerQrPayload } from "../../../../lib/qr/payload";
+import { logQrEvent, newScanId, safeToken } from "../../../../lib/qr/diagnostics";
+import { formatRate, formatVnd } from "../../../../lib/qr/money";
 
-type QrResult = {
-  collaborator_id: string;
-  collaborator_code: string;
-  collaborator_name: string;
-  verified: boolean;
-  status: string;
-  association: "assigned_to_this_merchant" | "assigned_elsewhere" | "unassigned";
+type Discount = { available: boolean; kind: "percentage" | null; rate: string | null; label: string | null; reason?: "partner_not_assigned" | "no_discount" | "rate_not_reviewed" };
+type Resolved = {
+  collaborator_code: string; association: "assigned_to_this_merchant" | "assigned_elsewhere" | "unassigned";
+  partner: { id: string; code: string; name: string; avatar_url: string | null; verified: boolean; status: string };
+  discount: Discount;
 };
-
-type TransactionResult = {
-  transaction_id: string;
-  document_number: string;
-  merchant_id: string;
-  collaborator_id: string;
-  gross_amount: string;
-  discount_rate: string;
-  discount_amount: string;
-  commission_rate: string;
-  commission_amount: string;
-  lifecycle_status: "recorded" | "confirmed" | "cancelled";
-  idempotent_replay: boolean;
+type Preview = { partner: { code: string; name: string }; gross_amount: string; discount_rate: string; discount_amount: string; final_payable: string; commission_rate: string; commission_amount: string };
+type Created = { transaction_id: string; document_number: string; lifecycle_status: string; gross_amount: string; discount_amount: string; commission_amount: string; idempotent_replay: boolean };
+type Receipt = {
+  transaction_id: string; document_number: string; issued_at: string; lifecycle_status: string; partner: { code: string | null; name: string | null }; merchant: { code: string | null; name: string | null };
+  gross_amount: string; discount_rate: string; discount_amount: string; final_payable: string; commission_rate: string; commission_amount: string; events: Array<{ type: string; at: string }>;
 };
+type Stage = "scan" | "result" | "payment" | "receipt";
+type Notice = { title: string; body: string };
 
-type ActionResult = {
-  transaction_id: string;
-  lifecycle_status: string;
-  idempotent_replay: boolean;
+const AMOUNT = /^\d{1,14}(\.\d{1,4})?$/;
+const KEYS = "vno-pay-keys-v1";
+/** Idempotency keys survive a reload for the SAME Partner + amount, so re-entering the payment replays the same transaction instead of creating a second one. */
+function keysFor(code: string, gross: string): { create: string; confirm: string } {
+  const id = `${code}|${gross}`; const now = Date.now();
+  try {
+    const all = JSON.parse(sessionStorage.getItem(KEYS) || "{}") as Record<string, { create: string; confirm: string; at: number }>;
+    for (const k of Object.keys(all)) if (now - all[k].at > 30 * 60_000) delete all[k];
+    if (!all[id]) all[id] = { create: crypto.randomUUID(), confirm: crypto.randomUUID(), at: now };
+    sessionStorage.setItem(KEYS, JSON.stringify(all));
+    return { create: all[id].create, confirm: all[id].confirm };
+  } catch { return { create: crypto.randomUUID(), confirm: crypto.randomUUID() }; }
+}
+function forgetKeys(code: string, gross: string) {
+  try { const all = JSON.parse(sessionStorage.getItem(KEYS) || "{}"); delete all[`${code}|${gross}`]; sessionStorage.setItem(KEYS, JSON.stringify(all)); } catch { /* storage unavailable */ }
+}
+
+const SCAN_ERRORS: Record<string, string> = {
+  QR_UNSUPPORTED: "Mã QR không hợp lệ",
+  PARTNER_NOT_FOUND: "Không tìm thấy Đối tác",
+  PARTNER_NOT_ACTIVE: "Đối tác chưa hoạt động",
+  MERCHANT_NOT_ACTIVE: "Cửa hàng chưa được duyệt",
+  MERCHANT_REQUIRED: "Chỉ dành cho nhà cung cấp",
+  QR_RATE_LIMITED: "Quét quá nhanh",
+  QR_UNAVAILABLE: "Chưa tra cứu được lúc này",
 };
+const apiCode = (err: unknown) => (err instanceof ApiRequestError ? err.apiCode : undefined);
+const apiMessage = (err: unknown, fallback: string) => (err instanceof Error && err.message && !/^API request failed/i.test(err.message) ? err.message : fallback);
 
-type InputMode = "camera" | "manual";
+export default function MerchantQrPaymentPage() {
+  const [stage, setStage] = useState<Stage>("scan");
+  const [tab, setTab] = useState<"scan" | "manual">("scan");
+  const [scanKey, setScanKey] = useState(0);
+  const [scanId, setScanId] = useState(() => newScanId());
+  const [manual, setManual] = useState("");
+  const [resolving, setResolving] = useState(false);
+  const [notice, setNotice] = useState<Notice | null>(null);
+  const [resolved, setResolved] = useState<Resolved | null>(null);
 
-export default function MerchantNewTransactionPage() {
-  const [inputMode, setInputMode] = useState<InputMode>("camera");
-  const [payload, setPayload] = useState("");
-  const [qrResult, setQrResult] = useState<QrResult | null>(null);
-  const [grossAmount, setGrossAmount] = useState("");
-  const [createKey, setCreateKey] = useState(() => crypto.randomUUID());
-  const [transaction, setTransaction] = useState<TransactionResult | null>(null);
-  const [actionResult, setActionResult] = useState<ActionResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [gross, setGross] = useState("");
+  const [preview, setPreview] = useState<Preview | null>(null);
+  const [previewing, setPreviewing] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [created, setCreated] = useState<Created | null>(null);
+  const [payError, setPayError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [receipt, setReceipt] = useState<Receipt | null>(null);
+  const submitting = useRef(false);
+  const resolvingRef = useRef(false);
+  const previewSeq = useRef(0);
+  const keys = useRef<{ create: string; confirm: string } | null>(null);
 
-  async function resolvePartner(code: string) {
-    setBusy(true); setError(null); setQrResult(null); setTransaction(null); setActionResult(null);
+  /** Scan (or type, or upload) -> look the Partner up. Read-only: nothing is created. */
+  const resolve = useCallback(async (payload: string, source: ScanSource | "manual") => {
+    if (resolvingRef.current) return;                       // a second detection of the same code while the first is being looked up
+    setNotice(null);
+    const local = parsePartnerQrPayload(payload);
+    if (local.ok !== true) {
+      logQrEvent(scanId, "resolve_error", { source, code: "QR_UNSUPPORTED" });
+      setNotice({ title: SCAN_ERRORS.QR_UNSUPPORTED, body: local.reason === "empty" ? "Chưa có nội dung. Hãy quét hoặc nhập mã của Đối tác." : "Mã QR này không phải mã Đối tác của VNO. Hãy quét đúng mã QR trong Cổng Đối tác, hoặc nhập mã có dạng COL-…." });
+      setScanKey((k) => k + 1); return;
+    }
+    resolvingRef.current = true; setResolving(true);
     try {
-      const resolved = await apiFetch("/qr/resolve", { method: "POST", body: JSON.stringify({ payload: code }) });
-      setQrResult(resolved);
-    } catch (err: any) {
-      setError(err.message || "Không thể xác minh mã QR");
-    } finally { setBusy(false); }
+      const r = (await apiFetch("/qr/resolve", { method: "POST", body: JSON.stringify({ payload }) })) as Resolved;
+      logQrEvent(scanId, "resolve_ok", { source });
+      setResolved(r); setStage("result");
+    } catch (err) {
+      const code = apiCode(err) ?? "";
+      logQrEvent(scanId, "resolve_error", { source, code: /^[A-Z_]{1,40}$/.test(code) ? code : undefined, err: safeToken(code ? undefined : (err as Error)?.name) });
+      setNotice({
+        title: SCAN_ERRORS[code] ?? "Không thể tra cứu mã QR",
+        body: code ? apiMessage(err, "Hãy thử lại hoặc nhập mã thủ công.") : "Không kết nối được tới máy chủ. Hãy kiểm tra mạng rồi quét lại — chưa có giao dịch nào được tạo.",
+      });
+      setScanKey((k) => k + 1);                              // restart the scanner so the person can try again
+    } finally { resolvingRef.current = false; setResolving(false); }
+  }, [scanId]);
+
+  function onScanned(payload: string, source: ScanSource) { void resolve(payload, source); }
+  function submitManual(e: FormEvent) { e.preventDefault(); logQrEvent(scanId, "manual_submit", { source: "manual" }); void resolve(manual, "manual"); }
+
+  function backToScan() {
+    setResolved(null); setGross(""); setPreview(null); setPreviewError(null); setCreated(null); setPayError(null); setReceipt(null); setNotice(null);
+    setScanId(newScanId()); setScanKey((k) => k + 1); setStage("scan");
   }
 
-  // Called when camera successfully decodes a QR code
-  function handleCameraScan(decoded: string) {
-    resolvePartner(decoded);
-  }
+  // ---- payment: live price preview from the server (same rules and arithmetic as the transaction itself) ----
+  const grossValid = AMOUNT.test(gross) && Number(gross) > 0;
+  useEffect(() => {
+    if (stage !== "payment" || !resolved) return;
+    if (!grossValid) { setPreview(null); setPreviewError(gross ? "Số tiền chỉ gồm chữ số, tối đa 4 chữ số thập phân." : null); return; }
+    const mine = ++previewSeq.current; setPreviewing(true); setPreviewError(null);
+    const timer = setTimeout(async () => {
+      try {
+        const p = (await apiFetch("/transactions/real/preview", { method: "POST", body: JSON.stringify({ collaborator_code: resolved.partner.code, gross_amount: gross }) })) as Preview;
+        if (mine === previewSeq.current) setPreview(p);
+      } catch (err) { if (mine === previewSeq.current) { setPreview(null); setPreviewError(apiMessage(err, "Không tính được số tiền. Hãy thử lại.")); } }
+      finally { if (mine === previewSeq.current) setPreviewing(false); }
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [stage, resolved, gross, grossValid]);
 
-  // Called when merchant submits the manual text form
-  async function handleManualResolve(event: FormEvent) {
-    event.preventDefault();
-    if (payload.trim()) resolvePartner(payload.trim());
-  }
-
-  async function createTransaction(event: FormEvent) {
-    event.preventDefault();
-    if (!qrResult || qrResult.association !== "assigned_to_this_merchant") return;
-    setBusy(true); setError(null);
+  async function confirmPayment() {
+    if (submitting.current || !resolved || !preview) return;       // double click / double tap
+    submitting.current = true; setBusy(true); setPayError(null);
+    const k = (keys.current = keysFor(resolved.partner.code, gross));
     try {
-      setTransaction(await apiFetch("/transactions/real", {
-        method: "POST",
-        body: JSON.stringify({ collaborator_code: qrResult.collaborator_code, gross_amount: grossAmount, idempotency_key: createKey }),
-      }));
-    } catch (err: any) {
-      setError(err.message || "Không thể tạo giao dịch");
-    } finally { setBusy(false); }
+      let tx = created;
+      if (!tx) {
+        tx = (await apiFetch("/transactions/real", { method: "POST", body: JSON.stringify({ collaborator_code: resolved.partner.code, gross_amount: gross, idempotency_key: k.create }) })) as Created;
+        setCreated(tx);
+      }
+      try {
+        await apiFetch(`/transactions/${tx.transaction_id}/confirm`, { method: "POST", body: JSON.stringify({ idempotency_key: k.confirm }) });
+      } catch (err) {
+        setPayError(`Giao dịch ${tx.document_number} đã được ghi nhận nhưng chưa xác nhận được (${apiMessage(err, "lỗi mạng")}). Bấm “Thử xác nhận lại”: hệ thống sẽ không tạo giao dịch mới và không cộng hoa hồng lần thứ hai.`);
+        return;
+      }
+      const r = (await apiFetch(`/transactions/${tx.transaction_id}/receipt`)) as Receipt;
+      forgetKeys(resolved.partner.code, gross);
+      setReceipt(r); setStage("receipt");
+    } catch (err) {
+      setPayError(apiMessage(err, "Không thể tạo giao dịch. Chưa có khoản nào được ghi nhận; bạn có thể thử lại."));
+    } finally { submitting.current = false; setBusy(false); }
   }
 
-  async function confirmTransaction() {
-    if (!transaction) return;
-    setBusy(true); setError(null);
+  async function cancelRecorded() {
+    if (!created || submitting.current) return;
+    submitting.current = true; setBusy(true); setPayError(null);
     try {
-      setActionResult(await apiFetch(`/transactions/${transaction.transaction_id}/confirm`, {
-        method: "POST",
-        body: JSON.stringify({ idempotency_key: crypto.randomUUID() }),
-      }));
-    } catch (err: any) {
-      setError(err.message || "Không thể xác nhận giao dịch");
-    } finally { setBusy(false); }
+      await apiFetch(`/transactions/${created.transaction_id}/cancel`, { method: "POST", body: JSON.stringify({ idempotency_key: crypto.randomUUID() }) });
+      if (resolved) forgetKeys(resolved.partner.code, gross);
+      setCreated(null); setPayError("Đã huỷ giao dịch chưa xác nhận. Bạn có thể nhập lại số tiền.");
+    } catch (err) { setPayError(apiMessage(err, "Không huỷ được giao dịch.")); }
+    finally { submitting.current = false; setBusy(false); }
   }
 
-  async function cancelTransaction() {
-    if (!transaction) return;
-    setBusy(true); setError(null);
-    try {
-      setActionResult(await apiFetch(`/transactions/${transaction.transaction_id}/cancel`, {
-        method: "POST",
-        body: JSON.stringify({ idempotency_key: crypto.randomUUID() }),
-      }));
-    } catch (err: any) {
-      setError(err.message || "Không thể huỷ giao dịch");
-    } finally { setBusy(false); }
-  }
-
-  function startAnother() {
-    setPayload(""); setQrResult(null); setGrossAmount("");
-    setCreateKey(crypto.randomUUID()); setTransaction(null); setActionResult(null); setError(null);
-  }
-
-  const assigned = qrResult?.association === "assigned_to_this_merchant";
-  const finalStatus = actionResult?.lifecycle_status ?? transaction?.lifecycle_status;
+  const assigned = resolved?.association === "assigned_to_this_merchant";
 
   return (
     <div className="mx-auto max-w-2xl pb-24">
-      <h1 className="text-2xl font-bold sm:text-3xl">Giao dịch mới</h1>
-      <p className="mt-2 text-slate-600">Quét mã QR của Đối tác, nhập giá trị hoá đơn, rồi xác nhận để ghi nhận hoa hồng.</p>
+      <h1 className="text-2xl font-bold sm:text-3xl">Quét mã QR Đối tác</h1>
+      <p className="mt-2 text-slate-600">Quét để xem Đối tác và ưu đãi dành cho khách. Chỉ khi bạn bấm “Tiếp tục thanh toán” và xác nhận mới có giao dịch được tạo.</p>
 
-      {/* Step 1 — scan / enter partner QR */}
-      {!transaction && !qrResult && (
+      {/* 1 — scan */}
+      {stage === "scan" && (
         <>
-          {/* Mode tabs */}
-          <div className="mt-5 flex rounded-xl border border-slate-200 bg-slate-50 p-1 gap-1">
-            <button
-              type="button"
-              onClick={() => setInputMode("camera")}
-              className={`flex-1 rounded-lg py-2 text-sm font-semibold transition-colors ${inputMode === "camera" ? "bg-white shadow text-slate-900" : "text-slate-500"}`}
-            >
-              📷 Quét camera
-            </button>
-            <button
-              type="button"
-              onClick={() => setInputMode("manual")}
-              className={`flex-1 rounded-lg py-2 text-sm font-semibold transition-colors ${inputMode === "manual" ? "bg-white shadow text-slate-900" : "text-slate-500"}`}
-            >
-              ⌨️ Nhập thủ công
-            </button>
+          <div className="mt-5 flex gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1" role="tablist">
+            {([["scan", "📷 Quét QR"], ["manual", "⌨️ Nhập mã"]] as const).map(([id, label]) => (
+              <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)} className={`flex-1 rounded-lg py-2 text-sm font-semibold transition-colors ${tab === id ? "bg-white text-slate-900 shadow" : "text-slate-500"}`}>{label}</button>
+            ))}
           </div>
 
-          {inputMode === "camera" && (
-            <div className="mt-3">
-              <QrCameraScanner onDecode={handleCameraScan} />
+          {notice && (
+            <div role="alert" data-testid="scan-notice" className="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-4 text-rose-900">
+              <p className="font-semibold">{notice.title}</p><p className="mt-1 text-sm">{notice.body}</p>
+              <p className="mt-2 text-xs text-rose-700">Chưa có giao dịch hay hoa hồng nào được tạo.</p>
             </div>
           )}
 
-          {inputMode === "manual" && (
-            <form onSubmit={handleManualResolve} className="mt-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-              <label className="block text-sm font-semibold">
-                Mã đối tác hoặc URL QR
-                <input
-                  value={payload}
-                  onChange={(e) => setPayload(e.target.value)}
-                  autoCapitalize="characters"
-                  autoComplete="off"
-                  className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 px-4 text-base"
-                  placeholder="COL-… hoặc dán URL từ mã QR"
-                  required
-                />
+          {tab === "scan" ? (
+            <div className="mt-3"><QrScanner key={`${scanKey}-${scanId}`} scanId={scanId} busy={resolving} onDecode={onScanned} />{resolving && <p className="mt-2 text-center text-sm text-slate-500" role="status">Đang tra cứu Đối tác…</p>}</div>
+          ) : (
+            <form onSubmit={submitManual} className="mt-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+              <label className="block text-sm font-semibold">Mã Đối tác hoặc liên kết trong QR
+                <input value={manual} onChange={(e) => setManual(e.target.value)} autoCapitalize="characters" autoCorrect="off" spellCheck={false} autoComplete="off" data-testid="manual-code"
+                  className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 px-4 text-base" placeholder="COL-… hoặc dán liên kết từ mã QR" required />
               </label>
-              <button disabled={busy} className="mt-4 min-h-12 w-full rounded-xl bg-slate-800 px-5 font-semibold text-white disabled:opacity-60">
-                {busy ? "Đang xác minh…" : "Xác minh đối tác"}
-              </button>
+              <button disabled={resolving} className="mt-4 min-h-12 w-full rounded-xl bg-slate-800 px-5 font-semibold text-white disabled:opacity-60">{resolving ? "Đang tra cứu…" : "Xem Đối tác và ưu đãi"}</button>
             </form>
           )}
         </>
       )}
 
-      {error && <p role="alert" className="mt-4 rounded-xl bg-rose-50 p-4 text-rose-800">{error}</p>}
-
-      {/* Step 1 result — partner verified */}
-      {qrResult && !transaction && (
-        <section className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 sm:p-5">
-          <div className="font-bold text-emerald-900">{qrResult.collaborator_name || qrResult.collaborator_code}</div>
-          <div className="mt-1 font-mono text-sm text-emerald-800">{qrResult.collaborator_code}</div>
-          <dl className="mt-3 grid grid-cols-2 gap-2 text-sm">
-            <dt className="text-emerald-700">Liên kết</dt>
-            <dd className="font-semibold text-emerald-900">{associationLabel(qrResult.association)}</dd>
-          </dl>
-          {!assigned && (
-            <p className="mt-3 rounded-lg bg-amber-100 p-3 text-sm text-amber-900">Đối tác chưa được gán cho cửa hàng này. Không thể tạo giao dịch.</p>
-          )}
-          <button
-            type="button"
-            onClick={startAnother}
-            className="mt-3 text-sm text-emerald-700 underline underline-offset-2"
-          >
-            Quét lại
-          </button>
+      {/* 2 — Partner identity + the discount that applies (inquiry only) */}
+      {stage === "result" && resolved && (
+        <section className="mt-5 rounded-2xl border border-emerald-200 bg-white p-4 shadow-sm sm:p-5" data-testid="partner-result" aria-live="polite">
+          <PartnerHeader r={resolved} />
+          <div className={`mt-4 flex items-start gap-3 rounded-xl p-4 ${resolved.discount.available ? "bg-violet-50 text-violet-950" : "bg-slate-50 text-slate-700"}`} data-testid="discount-box" data-available={resolved.discount.available}>
+            <Tag aria-hidden="true" className="mt-0.5 size-5 shrink-0" />
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide opacity-70">Ưu đãi dành cho khách</p>
+              {resolved.discount.available
+                ? <p className="text-xl font-bold" data-testid="discount-label">{resolved.discount.label}</p>
+                : <p className="text-lg font-semibold" data-testid="discount-label">Không có ưu đãi áp dụng</p>}
+              {!resolved.discount.available && resolved.discount.reason === "partner_not_assigned" && <p className="mt-1 text-sm">Đối tác này chưa được gán cho cửa hàng của bạn.</p>}
+            </div>
+          </div>
+          {!assigned && <p className="mt-3 rounded-lg bg-amber-100 p-3 text-sm text-amber-900" data-testid="not-assigned">Đối tác chưa được gán cho cửa hàng này nên chưa thể tạo giao dịch cho Đối tác này.</p>}
+          <p className="mt-3 text-xs text-slate-500">Chưa có giao dịch, thanh toán hay hoa hồng nào được tạo. Đây chỉ là kiểm tra ưu đãi.</p>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            <button type="button" onClick={backToScan} className="min-h-12 rounded-xl border border-slate-300 bg-white px-4 font-semibold text-slate-700" data-testid="close-result">Đóng</button>
+            <button type="button" disabled={!assigned} onClick={() => setStage("payment")} className="min-h-12 rounded-xl bg-violet-700 px-4 font-semibold text-white disabled:opacity-50" data-testid="continue-payment">Tiếp tục thanh toán</button>
+          </div>
         </section>
       )}
 
-      {/* Step 2 — enter gross amount */}
-      {qrResult && assigned && !transaction && (
-        <form onSubmit={createTransaction} className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-          <h2 className="text-lg font-bold">Nhập giá trị hoá đơn</h2>
-          <p className="mt-1 text-sm text-slate-600">
-            Giảm giá cho Khách hàng và hoa hồng cho Đối tác được tính từ tỷ lệ cấu hình của cửa hàng.
-          </p>
-          <label className="mt-4 block text-sm font-semibold">
-            Tổng giá trị (VND)
-            <input
-              value={grossAmount}
-              onChange={(e) => setGrossAmount(e.target.value)}
-              inputMode="decimal"
-              pattern="\d{1,14}(\.\d{1,4})?"
-              className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 px-4 text-base"
-              placeholder="Ví dụ: 1250000"
-              required
-            />
-          </label>
-          <button disabled={busy} className="mt-4 min-h-12 w-full rounded-xl bg-violet-700 px-5 font-semibold text-white disabled:opacity-60">
-            {busy ? "Đang tạo…" : "Tạo giao dịch"}
-          </button>
-          <p className="mt-2 break-all text-xs text-slate-400">Khóa chống trùng: {createKey}</p>
-        </form>
+      {/* 3 — payment: Partner kept, amount in, discount and commission computed by the server */}
+      {stage === "payment" && resolved && (
+        <section className="mt-5 space-y-4" data-testid="payment-step">
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><PartnerHeader r={resolved} compact /><button type="button" onClick={backToScan} disabled={busy || Boolean(created)} className="mt-2 text-sm text-slate-600 underline underline-offset-2 disabled:opacity-40">Quét Đối tác khác</button></div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+            <label className="block text-sm font-semibold">Giá trị hoá đơn gốc (VND)
+              <input value={gross} onChange={(e) => setGross(e.target.value.replace(",", ".").replace(/[^\d.]/g, ""))} disabled={busy || Boolean(created)} inputMode="decimal" autoComplete="off" data-testid="gross-input"
+                className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 px-4 text-lg disabled:bg-slate-50" placeholder="Ví dụ: 1250000" />
+            </label>
+            <p className="mt-1 text-xs text-slate-500">Nhập số tiền trước giảm giá, chỉ gồm chữ số.</p>
+            {previewError && <p role="alert" className="mt-3 rounded-lg bg-rose-50 p-3 text-sm text-rose-800" data-testid="preview-error">{previewError}</p>}
+            {preview && grossValid && (
+              <dl className="mt-4 grid grid-cols-[1fr_auto] gap-x-4 gap-y-2 text-sm" data-testid="breakdown" aria-busy={previewing}>
+                <dt>Giá trị hoá đơn gốc</dt><dd className="text-right font-semibold" data-testid="pay-original">{formatVnd(preview.gross_amount)}</dd>
+                <dt>Giảm giá cho khách <span className="text-slate-500">({formatRate(preview.discount_rate)})</span></dt><dd className="text-right" data-testid="pay-discount">− {formatVnd(preview.discount_amount)}</dd>
+                <dt className="border-t border-slate-200 pt-2 text-base font-bold">Khách thanh toán</dt><dd className="border-t border-slate-200 pt-2 text-right text-xl font-bold text-violet-800" data-testid="pay-final">{formatVnd(preview.final_payable)}</dd>
+                <dt className="text-slate-600">Hoa hồng Đối tác <span className="text-slate-500">({formatRate(preview.commission_rate)} trên giá trị gốc)</span></dt><dd className="text-right text-slate-700" data-testid="pay-commission">{formatVnd(preview.commission_amount)}</dd>
+              </dl>
+            )}
+            {payError && <p role="alert" data-testid="pay-error" className="mt-3 rounded-lg bg-rose-50 p-3 text-sm text-rose-800">{payError}</p>}
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              <button type="button" onClick={confirmPayment} disabled={busy || previewing || !preview || !grossValid} data-testid="confirm-payment" className="min-h-12 rounded-xl bg-emerald-600 px-4 font-semibold text-white disabled:opacity-50">
+                {busy ? "Đang xử lý…" : created ? "Thử xác nhận lại" : "Xác nhận thanh toán"}
+              </button>
+              {created && <button type="button" onClick={cancelRecorded} disabled={busy} className="min-h-12 rounded-xl border border-rose-300 bg-white px-4 font-semibold text-rose-700 disabled:opacity-60">Huỷ giao dịch chưa xác nhận</button>}
+            </div>
+            <p className="mt-2 text-xs text-slate-500">Bấm một lần. Mỗi lần thanh toán chỉ tạo một giao dịch và chỉ tính hoa hồng một lần, kể cả khi mạng chập chờn.</p>
+          </div>
+        </section>
       )}
 
-      {/* Step 3 — confirm / cancel */}
-      {transaction && (
-        <section aria-live="polite" className="mt-4 rounded-2xl border border-violet-200 bg-violet-50 p-4 sm:p-5">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="font-bold text-violet-950">{transaction.document_number}</h2>
-            <StatusBadge status={finalStatus ?? "recorded"} />
-          </div>
-          <dl className="mt-4 grid grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)] gap-2 text-sm">
-            <dt>Tổng hoá đơn</dt>    <dd className="text-right font-semibold">{money(transaction.gross_amount)}</dd>
-            <dt>Giảm giá KH</dt>     <dd className="text-right">{rate(transaction.discount_rate)} · {money(transaction.discount_amount)}</dd>
-            <dt>Hoa hồng ĐT</dt>     <dd className="text-right">{rate(transaction.commission_rate)} · {money(transaction.commission_amount)}</dd>
+      {/* 4 — receipt */}
+      {stage === "receipt" && receipt && resolved && (
+        <section className="mt-5 rounded-2xl border border-emerald-200 bg-white p-5 shadow-sm" data-testid="receipt" aria-live="polite">
+          <div className="flex items-center gap-2 text-emerald-700"><CheckCircle2 aria-hidden="true" className="size-6" /><h2 className="text-xl font-bold">Thanh toán đã xác nhận</h2></div>
+          <p className="mt-1 font-mono text-sm text-slate-600" data-testid="receipt-number">{receipt.document_number}</p>
+          <p className="text-xs text-slate-500">{new Date(receipt.issued_at).toLocaleString("vi-VN")} · {receipt.merchant.name ?? receipt.merchant.code}</p>
+          <div className="mt-3"><PartnerHeader r={resolved} compact /></div>
+          <dl className="mt-4 grid grid-cols-[1fr_auto] gap-x-4 gap-y-2 text-sm">
+            <dt>Giá trị hoá đơn gốc</dt><dd className="text-right" data-testid="receipt-original">{formatVnd(receipt.gross_amount)}</dd>
+            <dt>Giảm giá cho khách ({formatRate(receipt.discount_rate)})</dt><dd className="text-right" data-testid="receipt-discount">− {formatVnd(receipt.discount_amount)}</dd>
+            <dt className="border-t border-slate-200 pt-2 font-bold">Khách đã thanh toán</dt><dd className="border-t border-slate-200 pt-2 text-right text-lg font-bold" data-testid="receipt-final">{formatVnd(receipt.final_payable)}</dd>
+            <dt className="text-slate-600">Hoa hồng Đối tác ({formatRate(receipt.commission_rate)} trên giá trị gốc)</dt><dd className="text-right text-slate-700" data-testid="receipt-commission">{formatVnd(receipt.commission_amount)}</dd>
           </dl>
-
-          {(finalStatus === "confirmed" || finalStatus === "cancelled" || finalStatus === "reversed") ? (
-            <div className="mt-4 grid gap-2 sm:grid-cols-2">
-              <a href="/merchant/dashboard/orders" className="min-h-12 rounded-xl bg-violet-700 px-4 py-3 text-center font-semibold text-white">
-                Xem trong báo cáo
-              </a>
-              <button type="button" onClick={startAnother} className="min-h-12 rounded-xl border border-violet-300 bg-white px-4 font-semibold text-violet-900">
-                Giao dịch mới
-              </button>
-            </div>
-          ) : (
-            <div className="mt-4 grid gap-2 sm:grid-cols-2">
-              <button
-                type="button"
-                onClick={confirmTransaction}
-                disabled={busy}
-                className="min-h-12 rounded-xl bg-emerald-600 px-4 font-semibold text-white disabled:opacity-60"
-              >
-                {busy ? "Đang xử lý…" : "Xác nhận giao dịch"}
-              </button>
-              <button
-                type="button"
-                onClick={cancelTransaction}
-                disabled={busy}
-                className="min-h-12 rounded-xl border border-rose-300 bg-white px-4 font-semibold text-rose-700 disabled:opacity-60"
-              >
-                Huỷ giao dịch
-              </button>
-            </div>
-          )}
-
-          {actionResult?.idempotent_replay && (
-            <p className="mt-2 text-xs text-slate-500">Trạng thái đã được ghi nhận trước đó (idempotent replay).</p>
-          )}
+          <p className="mt-3 text-xs text-slate-500">Trạng thái: <b>Đã xác nhận</b> · Giao dịch được ghi nhận một lần và có trong nhật ký kiểm toán.</p>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            <Link href="/merchant/dashboard/orders" className="min-h-12 rounded-xl bg-violet-700 px-4 py-3 text-center font-semibold text-white">Xem trong báo cáo</Link>
+            <button type="button" onClick={backToScan} className="min-h-12 rounded-xl border border-violet-300 bg-white px-4 font-semibold text-violet-900" data-testid="new-scan">Giao dịch mới</button>
+          </div>
         </section>
       )}
     </div>
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const map: Record<string, string> = {
-    recorded: "bg-amber-100 text-amber-900",
-    confirmed: "bg-emerald-100 text-emerald-900",
-    cancelled: "bg-slate-100 text-slate-700",
-    reversed: "bg-rose-100 text-rose-900",
-  };
-  const label: Record<string, string> = {
-    recorded: "Đã ghi nhận",
-    confirmed: "Đã xác nhận",
-    cancelled: "Đã huỷ",
-    reversed: "Đã hoàn trả",
-  };
+function PartnerHeader({ r, compact = false }: { r: Resolved; compact?: boolean }) {
+  const initials = (r.partner.name || r.partner.code).trim().split(/\s+/).slice(-2).map((w) => w[0]?.toUpperCase()).join("") || "?";
   return (
-    <span className={`rounded-full px-3 py-1 text-xs font-bold ${map[status] ?? "bg-slate-100 text-slate-700"}`}>
-      {label[status] ?? status}
-    </span>
+    <div className="flex items-center gap-3" data-testid="partner-identity">
+      {r.partner.avatar_url
+        // eslint-disable-next-line @next/next/no-img-element -- short-lived signed URL of the Partner's approved avatar
+        ? <img src={r.partner.avatar_url} alt={`Ảnh đại diện của ${r.partner.name}`} data-testid="partner-avatar" className={`${compact ? "size-12" : "size-16"} shrink-0 rounded-full border border-slate-200 object-cover`} />
+        : <span data-testid="partner-avatar-fallback" aria-hidden="true" className={`${compact ? "size-12 text-base" : "size-16 text-xl"} grid shrink-0 place-items-center rounded-full bg-slate-100 font-bold text-slate-600`}>{initials === "?" ? <UserRound className="size-6" /> : initials}</span>}
+      <div className="min-w-0">
+        <p className={`${compact ? "text-base" : "text-lg"} truncate font-bold`} data-testid="partner-name">{r.partner.name || "Đối tác"}</p>
+        <p className="font-mono text-sm text-slate-600" data-testid="partner-code">{r.partner.code}</p>
+        <p className="mt-0.5 inline-flex items-center gap-1 text-xs font-semibold text-emerald-700" data-testid="partner-verified">{r.partner.verified ? <><BadgeCheck aria-hidden="true" className="size-4" />Đã xác minh · Đang hoạt động</> : <><ScanLine aria-hidden="true" className="size-4" />Chưa xác minh</>}</p>
+      </div>
+    </div>
   );
 }
-
-function associationLabel(a: QrResult["association"]) {
-  return a === "assigned_to_this_merchant" ? "Đúng cửa hàng" : a === "assigned_elsewhere" ? "Cửa hàng khác" : "Chưa liên kết";
-}
-function rate(value: string) { return `${fractionToPercentagePoints(value)}%`; }
-function money(value: string) { return `${new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 0 }).format(Number(value))} VND`; }

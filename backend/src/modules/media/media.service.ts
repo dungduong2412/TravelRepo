@@ -435,6 +435,23 @@ export class MediaService {
     }));
   }
 
+  /**
+   * The owner's effective (approved / legacy-effective) avatar: the hero image if there is one, otherwise the first image, as a short-lived signed URL.
+   * Only effective media is ever returned; a pending or rejected upload is never visible through this. Null when there is none or signing fails.
+   */
+  async effectiveAvatar(ownerType: 'merchant' | 'collaborator', ownerId: string, ttlSeconds = 300): Promise<{ id: string; signed_url: string; expires_in: number } | null> {
+    if (!/^[0-9a-f-]{36}$/i.test(ownerId)) return null;
+    const client = this.supabase.getClient();
+    const { data } = await client.from('media_assets').select('id,bucket_id,object_path,mime_type,is_hero,display_order')
+      .eq(ownerType === 'merchant' ? 'merchant_id' : 'collaborator_id', ownerId)
+      .in('publication_status', ['legacy_effective', 'preexisting_effective', 'approved'])
+      .eq('transfer_status', 'verified').order('is_hero', { ascending: false }).order('display_order').limit(5);
+    const asset = (data || []).find((a: any) => !a.mime_type || String(a.mime_type).startsWith('image/'));
+    if (!asset) return null;
+    const { data: signed, error } = await client.storage.from(asset.bucket_id).createSignedUrl(asset.object_path, ttlSeconds);
+    return error || !signed?.signedUrl ? null : { id: asset.id, signed_url: signed.signedUrl, expires_in: ttlSeconds };
+  }
+
   async upsertImported(rows: Record<string, unknown>[]) {
     const { error } = await this.supabase.getClient().from('media_assets').upsert(rows, { onConflict: 'id' });
     if (error) throw new InternalServerErrorException('Unable to persist imported media metadata');

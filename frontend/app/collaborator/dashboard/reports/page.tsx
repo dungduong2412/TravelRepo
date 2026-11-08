@@ -8,7 +8,7 @@ export default function CollaboratorReportsPage() {
       <h1 style={styles.title}>Báo Cáo</h1>
       <p style={styles.subtitle}>Báo cáo hoa hồng và hoạt động</p>
       
-      <FinancialHistory />
+      <FinancialHistory role="collaborator" />
     </div>
   );
 }

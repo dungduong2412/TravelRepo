@@ -6,7 +6,7 @@ import { Button } from "./ui/Button";
 import { Alert, Spinner } from "./ui/Feedback";
 import { Card } from "./ui/Brand";
 
-type QrData = { qr_code_image: string; qr_payload: string; collaborator_code: string; collaborator_name: string; verified: boolean };
+type QrData = { qr_code_image: string; qr_payload: string; collaborator_code: string; collaborator_name: string; avatar_url?: string | null; verified: boolean };
 
 /**
  * The Partner's own referral QR. The QR content is the canonical Partner code (the same payload Merchants scan via POST /qr/resolve),
@@ -54,11 +54,20 @@ export function PartnerQrCard({ verified }: { verified: boolean }) {
               : <div className="grid size-56 place-items-center"><Spinner label="Đang tạo mã QR…" /></div>}
         </div>
         <div className="min-w-0 text-center sm:text-left">
-          <p className="inline-flex items-center gap-1 text-xs font-semibold text-success-700"><ShieldCheck aria-hidden="true" className="size-4" />Đã xác minh</p>
-          <h2 className="mt-1 text-xl font-bold">Mã QR giới thiệu của bạn</h2>
+          <div className="flex items-center justify-center gap-3 sm:justify-start" data-testid="partner-identity">
+            {data?.avatar_url
+              // eslint-disable-next-line @next/next/no-img-element -- short-lived signed URL of the Partner's own approved avatar
+              ? <img src={data.avatar_url} alt={`Ảnh đại diện của ${data.collaborator_name}`} data-testid="partner-avatar" className="size-14 shrink-0 rounded-full border border-line object-cover" />
+              : <span aria-hidden="true" data-testid="partner-avatar-fallback" className="grid size-14 shrink-0 place-items-center rounded-full bg-canvas text-lg font-bold text-ink-muted">{(data?.collaborator_name || "?").trim().split(/\s+/).slice(-2).map((w) => w[0]?.toUpperCase()).join("")}</span>}
+            <div className="min-w-0 text-left">
+              <p className="truncate text-lg font-bold" data-testid="partner-name">{data?.collaborator_name ?? "…"}</p>
+              <p className="inline-flex items-center gap-1 text-xs font-semibold text-success-700"><ShieldCheck aria-hidden="true" className="size-4" />Đã xác minh</p>
+            </div>
+          </div>
+          <h2 className="mt-3 text-xl font-bold">Mã QR giới thiệu của bạn</h2>
           <p className="mt-1 text-sm text-ink-muted">Mã đối tác</p>
           <p className="font-mono text-2xl font-bold tracking-wide" data-testid="partner-qr-code">{data?.collaborator_code ?? "…"}</p>
-          <p className="mt-2 text-sm text-ink-muted">Đưa mã này cho nhà cung cấp quét để ghi nhận bạn là người giới thiệu. Quét mã không tự tạo giao dịch, thanh toán hay hoa hồng.</p>
+          <p className="mt-2 text-sm text-ink-muted">Đưa mã này cho nhà cung cấp quét để ghi nhận bạn là người giới thiệu. Quét mã không tự tạo giao dịch, thanh toán hay hoa hồng. Nhà cung cấp tự kiểm tra ưu đãi của họ; ưu đãi dành cho khách không hiển thị ở đây.</p>
           <div className="mt-4 flex flex-wrap justify-center gap-2 sm:justify-start">
             <Button onClick={() => dialog.current?.showModal()} disabled={!data}><Maximize2 aria-hidden="true" className="size-4" />Phóng to</Button>
             <Button variant="secondary" onClick={download} disabled={!data} data-testid="partner-qr-download"><Download aria-hidden="true" className="size-4" />Tải xuống PNG</Button>

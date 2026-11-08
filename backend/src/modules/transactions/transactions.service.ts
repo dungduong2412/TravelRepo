@@ -7,7 +7,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { SupabaseService } from '../../infrastructure/supabase/supabase.service';
-import { CreateRealTransaction, CreateUatSimulationTransaction, TransactionAction, TransactionReportQuery } from './transactions.dto';
+import { HttpException, HttpStatus } from '@nestjs/common';
+import { CreateRealTransaction, CreateUatSimulationTransaction, PreviewRealTransaction, TransactionAction, TransactionReportQuery } from './transactions.dto';
 
 const COLUMNS = [
   'id', 'legacy_transaction_id', 'merchant_id', 'collaborator_id',
@@ -34,7 +35,15 @@ const REPORT_COLUMNS = [
   'collaborator:collaborators!referral_transactions_collaborator_id_fkey(id,collaborators_code,collaborators_name)',
 ].join(',');
 
+/**
+ * A Partner sees what it earns, never the Merchant's customer discount (rate or amount): that is a Merchant-only commercial term.
+ * Applied to every Partner-facing projection (the list, the report, its summary and its sort options).
+ */
+const PARTNER_HIDDEN = new Set(['document_discount_percent', 'document_discount_amount']);
+const forRole = (columns: string, redact: boolean) => (redact ? columns.split(',').filter((c) => !PARTNER_HIDDEN.has(c)).join(',') : columns);
+
 type ActorScope = { column: 'merchant_id' | 'collaborator_id'; value: string } | null;
+const fail = (status: HttpStatus, code: string, message: string) => new HttpException({ code, message }, status);
 
 @Injectable()
 export class TransactionsService {
@@ -88,7 +97,7 @@ export class TransactionsService {
     return query;
   }
 
-  private async summarizeFiltered(filter: TransactionReportQuery, scope: ActorScope) {
+  private async summarizeFiltered(filter: TransactionReportQuery, scope: ActorScope, redact = false) {
     const batchSize = 1000;
     let offset = 0;
     const totals = {
@@ -104,16 +113,16 @@ export class TransactionsService {
 
     for (;;) {
       let query = this.supabase.getClient().from('referral_transactions')
-        .select('document_total,document_discount_amount,commission_amount,payment_status,lifecycle_status,legacy_status,record_kind')
+        .select(forRole('document_total,document_discount_amount,commission_amount,payment_status,lifecycle_status,legacy_status,record_kind', redact))
         .range(offset, offset + batchSize - 1);
       query = this.applyReportFilters(query, filter, scope);
       const { data, error } = await query;
       if (error) throw new InternalServerErrorException('Unable to reconcile filtered transaction totals');
-      const rows = data || [];
+      const rows = (data || []) as unknown as Record<string, any>[]; // the column list is built per role, so the client cannot infer the row type
       for (const row of rows) {
         totals.transactionCount += 1;
         totals.documentTotal += this.decimal4(row.document_total);
-        totals.discountAmount += this.decimal4(row.document_discount_amount);
+        if (!redact) totals.discountAmount += this.decimal4(row.document_discount_amount);
         totals.commissionAmount += this.decimal4(row.commission_amount);
         const payment = row.payment_status ?? 'null';
         const lifecycle = row.lifecycle_status ?? 'null';
@@ -131,7 +140,7 @@ export class TransactionsService {
     return {
       transaction_count: totals.transactionCount,
       document_total: this.format4(totals.documentTotal),
-      document_discount_amount: this.format4(totals.discountAmount),
+      ...(redact ? {} : { document_discount_amount: this.format4(totals.discountAmount) }),
       commission_amount: this.format4(totals.commissionAmount),
       payment_statuses: totals.paymentStatuses,
       lifecycle_statuses: totals.lifecycleStatuses,
@@ -140,16 +149,18 @@ export class TransactionsService {
     };
   }
 
-  private async buildReport(filter: TransactionReportQuery, scope: ActorScope) {
+  private async buildReport(filter: TransactionReportQuery, scope: ActorScope, redact = false) {
     const from = (filter.page - 1) * filter.page_size;
+    // A Partner cannot even ORDER by the discount: the ordering alone would reveal it.
+    const sort = redact && filter.sort === 'document_discount_amount' ? 'document_date_utc' : filter.sort;
     let query = this.supabase.getClient().from('referral_transactions')
-      .select(REPORT_COLUMNS, { count: 'exact' });
+      .select(forRole(REPORT_COLUMNS, redact), { count: 'exact' });
     query = this.applyReportFilters(query, filter, scope)
-      .order(filter.sort, { ascending: filter.direction === 'asc', nullsFirst: false })
+      .order(sort, { ascending: filter.direction === 'asc', nullsFirst: false })
       .range(from, from + filter.page_size - 1);
     const [{ data, error, count }, summary] = await Promise.all([
       query,
-      this.summarizeFiltered(filter, scope),
+      this.summarizeFiltered(filter, scope, redact),
     ]);
     if (error) throw new InternalServerErrorException('Unable to load transaction report');
     return {
@@ -172,7 +183,7 @@ export class TransactionsService {
       return this.buildReport(filter, { column: 'merchant_id', value: profile.merchant_id });
     }
     if (profile.role === 'collaborator' && profile.collaborator_id) {
-      return this.buildReport(filter, { column: 'collaborator_id', value: profile.collaborator_id });
+      return this.buildReport(filter, { column: 'collaborator_id', value: profile.collaborator_id }, true);
     }
     if (profile.role === 'admin') return this.buildReport(filter, null);
     throw new ForbiddenException('Transaction access is not assigned');
@@ -180,7 +191,8 @@ export class TransactionsService {
 
   async findForActor(userId: string) {
     const profile = await this.profile(userId);
-    let query = this.supabase.getClient().from('referral_transactions').select(COLUMNS)
+    const redact = profile.role === 'collaborator';
+    let query = this.supabase.getClient().from('referral_transactions').select(forRole(COLUMNS, redact))
       .order('document_date_utc', { ascending: false });
     if (profile.role === 'merchant' && profile.merchant_id) query = query.eq('merchant_id', profile.merchant_id);
     else if (profile.role === 'collaborator' && profile.collaborator_id) query = query.eq('collaborator_id', profile.collaborator_id);
@@ -234,7 +246,97 @@ export class TransactionsService {
       if (['22003', '22023', '23514'].includes(error.code || '')) throw new BadRequestException(error.message);
       throw new InternalServerErrorException('Unable to create real transaction');
     }
-    return { ...(data as Record<string, unknown>), record_kind: 'real_transaction', payment_status: 'unverified', external_settlement_enabled: false };
+    const row = data as Record<string, unknown>;
+    return { ...row, final_payable: this.format4(this.decimal4(row.gross_amount) - this.decimal4(row.discount_amount)), record_kind: 'real_transaction', payment_status: 'unverified', external_settlement_enabled: false };
+  }
+
+  /** round(gross * rate, 4) exactly as the database function does (numeric, half away from zero), on integer ten-thousandths. */
+  private roundedProduct(gross: bigint, rate: bigint): bigint {
+    return (gross * rate + 5000n) / 10000n;
+  }
+
+  /**
+   * Read-only price preview for the payment step. It applies the SAME rules as create_real_transaction — active verified Merchant, reviewed fractional
+   * rates, active verified Partner assigned to this Merchant, positive amount with at most four decimals — and the same arithmetic:
+   *   discount   = round4(gross x discount rate)           what the customer saves
+   *   final      = gross - discount                        what the customer pays
+   *   commission = round4(gross x commission rate)         the Partner's share, on the ORIGINAL amount (V1-verified, 102/102 rows); independent of the discount rate
+   * Nothing is written: no transaction, commission, payment, ledger or audit row.
+   */
+  async previewRealTransaction(userId: string, dto: PreviewRealTransaction) {
+    const gross = this.decimal4(dto.gross_amount);
+    if (gross <= 0n) throw fail(HttpStatus.BAD_REQUEST, 'AMOUNT_INVALID', 'Số tiền hoá đơn phải lớn hơn 0.');
+    const client = this.supabase.getClient();
+    const { data: profile } = await client.from('user_profiles').select('role,user_profiles_status,merchant_id').eq('user_id', userId).maybeSingle();
+    if (!profile || profile.role !== 'merchant' || profile.user_profiles_status !== 'active' || !profile.merchant_id) {
+      throw fail(HttpStatus.FORBIDDEN, 'MERCHANT_REQUIRED', 'Active Merchant profile required');
+    }
+    const { data: merchant } = await client.from('merchant_details')
+      .select('merchant_system_id,merchant_verified,merchants_status,merchant_discount_type,merchant_discount_value,merchant_commission_type,merchant_commission_value')
+      .eq('merchant_system_id', profile.merchant_id).maybeSingle();
+    if (!merchant || !merchant.merchant_verified || merchant.merchants_status !== 'active') {
+      throw fail(HttpStatus.FORBIDDEN, 'MERCHANT_NOT_ACTIVE', 'Tài khoản nhà cung cấp chưa được duyệt.');
+    }
+    const d = Number(merchant.merchant_discount_value); const c = Number(merchant.merchant_commission_value);
+    if (merchant.merchant_discount_type !== 'percentage' || merchant.merchant_commission_type !== 'percentage' ||
+        merchant.merchant_discount_value === null || merchant.merchant_commission_value === null ||
+        !Number.isFinite(d) || !Number.isFinite(c) || d < 0 || d > 1 || c < 0 || c > 1) {
+      throw fail(HttpStatus.BAD_REQUEST, 'RATES_NOT_REVIEWED', 'Cửa hàng chưa có tỷ lệ giảm giá và hoa hồng đã được Admin duyệt nên chưa thể thanh toán. Vui lòng liên hệ Admin VNO.');
+    }
+    const { data: partner } = await client.from('collaborators')
+      .select('id,collaborators_code,collaborators_name,collaborators_verified,collaborators_status,merchant_system_id')
+      .eq('collaborators_code', dto.collaborator_code.trim()).maybeSingle();
+    if (!partner || !partner.collaborators_verified || partner.collaborators_status !== 'active') {
+      throw fail(HttpStatus.BAD_REQUEST, 'PARTNER_NOT_ACTIVE', 'Đối tác chưa hoạt động hoặc không tìm thấy.');
+    }
+    if (partner.merchant_system_id !== merchant.merchant_system_id) {
+      throw fail(HttpStatus.FORBIDDEN, 'PARTNER_NOT_ASSIGNED', 'Đối tác chưa được gán cho cửa hàng này nên không thể tạo giao dịch.');
+    }
+    const discountRate = this.decimal4(merchant.merchant_discount_value); const commissionRate = this.decimal4(merchant.merchant_commission_value);
+    const discount = this.roundedProduct(gross, discountRate); const commission = this.roundedProduct(gross, commissionRate);
+    return {
+      partner: { id: partner.id, code: partner.collaborators_code, name: partner.collaborators_name },
+      association: 'assigned_to_this_merchant',
+      currency_code: 'VND',
+      gross_amount: this.format4(gross),
+      discount_rate: this.format4(discountRate),
+      discount_amount: this.format4(discount),
+      final_payable: this.format4(gross - discount),
+      commission_rate: this.format4(commissionRate),
+      commission_amount: this.format4(commission),
+      commission_base: 'gross_amount',
+      financial_action_created: false,
+    };
+  }
+
+  /** The transaction receipt: Merchant (own transactions) and Admin only — it carries the customer discount, which a Partner never sees. */
+  async receipt(userId: string, transactionId: string) {
+    if (!/^[0-9a-f-]{36}$/i.test(transactionId)) throw fail(HttpStatus.BAD_REQUEST, 'ID_INVALID', 'Invalid transaction id');
+    const profile = await this.profile(userId);
+    if (profile.role !== 'merchant' && profile.role !== 'admin') throw new ForbiddenException('Receipt access is not assigned');
+    const client = this.supabase.getClient();
+    let query = client.from('referral_transactions').select(`${REPORT_COLUMNS}`).eq('id', transactionId).eq('record_kind', 'real_transaction');
+    if (profile.role === 'merchant') query = query.eq('merchant_id', profile.merchant_id);
+    const { data: row, error } = await query.maybeSingle();
+    if (error) throw new InternalServerErrorException('Unable to load the receipt');
+    if (!row) throw new NotFoundException('Transaction not found');
+    const t: any = row;
+    const { data: events } = await client.from('transaction_events').select('event_type,from_status,to_status,occurred_at').eq('transaction_id', transactionId).order('occurred_at', { ascending: true });
+    const one = (v: any) => (Array.isArray(v) ? v[0] : v);
+    return {
+      transaction_id: t.id, document_number: t.document_number, issued_at: t.document_date_utc, confirmed_at: t.confirmed_at_utc ?? t.confirmed_at ?? null,
+      lifecycle_status: t.lifecycle_status, payment_status: t.payment_status, currency_code: t.currency_code,
+      merchant: { code: one(t.merchant)?.merchant_code ?? null, name: one(t.merchant)?.merchant_name ?? null },
+      partner: { code: one(t.collaborator)?.collaborators_code ?? null, name: one(t.collaborator)?.collaborators_name ?? null },
+      gross_amount: this.format4(this.decimal4(t.document_total)),
+      discount_rate: this.format4(this.decimal4(t.document_discount_percent)),
+      discount_amount: this.format4(this.decimal4(t.document_discount_amount)),
+      final_payable: this.format4(this.decimal4(t.document_total) - this.decimal4(t.document_discount_amount)),
+      commission_rate: this.format4(this.decimal4(t.commission_percent)),
+      commission_amount: this.format4(this.decimal4(t.commission_amount)),
+      commission_base: 'gross_amount',
+      events: (events || []).map((e: any) => ({ type: e.event_type, from: e.from_status, to: e.to_status, at: e.occurred_at })),
+    };
   }
 
   private async transitionTransaction(

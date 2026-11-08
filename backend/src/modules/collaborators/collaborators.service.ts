@@ -42,6 +42,7 @@ import * as QRCode from 'qrcode';
 import { AuditActor, AuditService } from '../audit/audit.service';
 import { publicOffer } from '../public-catalog/public-catalog.projection';
 import { ActivationService } from '../activation/activation.service';
+import { MediaService } from '../media/media.service';
 
 @Injectable()
 export class CollaboratorsService {
@@ -51,6 +52,7 @@ export class CollaboratorsService {
     private readonly userProfilesService: UserProfilesService,
     private readonly audit: AuditService,
     private readonly activation: ActivationService,
+    private readonly media: MediaService,
   ) {}
 
   async createCollaborator(actor: any, dto: CreateCollaboratorDto) {
@@ -186,7 +188,11 @@ export class CollaboratorsService {
 
     const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
     const payload = `${frontendUrl}/c/${collaborator.collaborators_code}`;
-    const qrCodeImage = await this.generateCodeImage(payload, 720);
+    // Image for a SCREEN that another phone will point its camera at: a full 4-module quiet zone (the standard; the old 1-module margin blends into
+    // dark phone UIs) and medium error correction (bigger, easier-to-resolve modules than "H"). The payload — and so every existing printed or
+    // stored code — is unchanged; only this on-demand picture is drawn differently.
+    const qrCodeImage = await this.generateCodeImage(payload, 720, { margin: 4, errorCorrectionLevel: 'M' });
+    const avatar = await this.media.effectiveAvatar('collaborator', collaborator.id).catch(() => null);
 
     return {
       qr_code: qrCodeImage,
@@ -198,6 +204,7 @@ export class CollaboratorsService {
       name: collaborator.collaborators_name,
       collaborator_name: collaborator.collaborators_name,
       collaborator_phone: collaborator.collaborators_phone,
+      avatar_url: avatar?.signed_url ?? null,
       verified: collaborator.collaborators_verified,
     };
   }
@@ -206,13 +213,13 @@ export class CollaboratorsService {
     return 'COL-' + randomBytes(8).toString('hex').toUpperCase();
   }
 
-  private async generateCodeImage(code: string, width = 300) {
+  private async generateCodeImage(code: string, width = 300, options: { margin?: number; errorCorrectionLevel?: 'L' | 'M' | 'Q' | 'H' } = {}) {
     try {
       return await QRCode.toDataURL(code, {
-        errorCorrectionLevel: 'H',
+        errorCorrectionLevel: options.errorCorrectionLevel ?? 'H',
         type: 'image/png',
         width,
-        margin: 1,
+        margin: options.margin ?? 1,
       });
     } catch {
       throw new Error('Failed to generate QR code');
@@ -566,40 +573,6 @@ export class CollaboratorsService {
       merchant_name: merchantInfo?.merchant_name ?? null,
       merchant_city: merchantInfo?.merchant_city ?? null,
       offer: merchantInfo?.offer ?? null,
-    };
-  }
-
-  async resolveQrForMerchant(userId: string, payload: string) {
-    const { data: profile, error: profileError } = await this.supabase.getClient()
-      .from('user_profiles')
-      .select('role,user_profiles_status,merchant_id')
-      .eq('user_id', userId)
-      .maybeSingle();
-    if (profileError || !profile || profile.role !== 'merchant' ||
-        profile.user_profiles_status !== 'active' || !profile.merchant_id) {
-      throw new ForbiddenException('Active merchant access required');
-    }
-
-    const code = this.collaboratorCodeFromPayload(payload);
-    const { data: collaborator, error } = await this.supabase.getClient()
-      .from('collaborators')
-      .select('id,collaborators_code,collaborators_name,collaborators_verified,collaborators_status,merchant_system_id')
-      .eq('collaborators_code', code)
-      .eq('collaborators_verified', true)
-      .maybeSingle();
-    if (error || !collaborator) throw new NotFoundException('Invalid or unverified collaborator code');
-
-    return {
-      collaborator_id: collaborator.id,
-      collaborator_code: collaborator.collaborators_code,
-      collaborator_name: collaborator.collaborators_name,
-      verified: collaborator.collaborators_verified,
-      status: collaborator.collaborators_status,
-      association: collaborator.merchant_system_id === profile.merchant_id
-        ? 'assigned_to_this_merchant'
-        : collaborator.merchant_system_id ? 'assigned_elsewhere' : 'unassigned',
-      idempotent: true,
-      financial_action_created: false,
     };
   }
 

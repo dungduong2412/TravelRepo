@@ -42,6 +42,14 @@ export const CreateRealTransactionSchema = z.object({
 
 export type CreateRealTransaction = z.infer<typeof CreateRealTransactionSchema>;
 
+/** Read-only price preview for the Merchant payment step: the same input the real transaction takes, minus the idempotency key (nothing is written). */
+export const PreviewRealTransactionSchema = z.object({
+  collaborator_code: z.string().trim().min(1).max(100),
+  gross_amount: z.string().trim().regex(/^\d{1,14}(?:\.\d{1,4})?$/, 'Gross amount must use at most four decimal places'),
+}).strict();
+
+export type PreviewRealTransaction = z.infer<typeof PreviewRealTransactionSchema>;
+
 export const TransactionActionSchema = z.object({
   idempotency_key: PostgresUuidSchema,
 }).strict();

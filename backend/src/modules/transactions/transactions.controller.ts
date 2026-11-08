@@ -6,6 +6,8 @@ import { TransactionsService } from './transactions.service';
 import {
   CreateRealTransaction,
   CreateRealTransactionSchema,
+  PreviewRealTransaction,
+  PreviewRealTransactionSchema,
   CreateUatSimulationTransaction,
   CreateUatSimulationTransactionSchema,
   TransactionAction,
@@ -47,6 +49,20 @@ export class TransactionsController {
     @Body(new ZodValidationPipe(CreateUatSimulationTransactionSchema)) dto: CreateUatSimulationTransaction,
   ) {
     return this.service.createUatSimulation(actor.id, dto);
+  }
+
+  /** Merchant payment step: price preview with the real rules, writes nothing. (Declared before ':id' routes.) */
+  @Post('real/preview')
+  previewReal(
+    @User() actor: { id: string },
+    @Body(new ZodValidationPipe(PreviewRealTransactionSchema)) dto: PreviewRealTransaction,
+  ) {
+    return this.service.previewRealTransaction(actor.id, dto);
+  }
+
+  @Get(':id/receipt')
+  receipt(@User() actor: { id: string }, @Param('id') id: string) {
+    return this.service.receipt(actor.id, id);
   }
 
   @Post('real')

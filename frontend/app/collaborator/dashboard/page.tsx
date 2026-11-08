@@ -22,10 +22,9 @@ export default function CollaboratorDashboardPage() {
     <div className="mx-auto max-w-5xl space-y-5">
       <PageHeader title={`Xin chào, ${collaborator.collaborators_name}`} subtitle={`Mã đối tác ${collaborator.collaborators_code}`} />
       <PartnerQrCard verified={collaborator.collaborators_verified === true} />
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Metric label="Giao dịch" value={String(report.summary.transaction_count)} />
         <Metric label="Tổng chứng từ" value={money(report.summary.document_total)} />
-        <Metric label="Tổng giảm giá" value={money(report.summary.document_discount_amount)} />
         <Metric label="Hoa hồng" value={money(report.summary.commission_amount)} />
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
