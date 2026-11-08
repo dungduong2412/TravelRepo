@@ -197,24 +197,28 @@ test.describe('@experience Partner QR', () => {
     const fileName = download.suggestedFilename();
     // scan: the merchant resolves the decoded payload to this Partner, with no financial action
     const me = (await api('partner', 'GET', '/collaborators/me')).body;
+    const canonical = (await api('partner', 'GET', '/collaborators/me/qr-code')).body.qr_payload;   // the QR carries the navigable URL <site>/c/<code>
     const scan = await api('merchant', 'POST', '/qr/resolve', { payload: decoded });
+    const byCode = await api('merchant', 'POST', '/qr/resolve', { payload: code });                   // an older printed card / typed code still resolves to the same Partner
     await shot(page, 'x10-partner-home');
-    check('X10', 'QR image decodes to the canonical Partner code; download = VNO-QR-<code>.png; merchant scan → same Partner, no financial action',
-      decoded === code && decoded === me.collaborators_code && fileName === `VNO-QR-${code}.png` && scan.status === 201 && scan.body.collaborator_id === me.id && scan.body.financial_action_created === false,
-      `code=${code} decoded=${decoded} scan=${scan.status}`);
+    check('X10', 'QR image decodes to the canonical Partner QR URL (…/c/<code>); download = VNO-QR-<code>.png; merchant scan of the URL and of the bare code → same Partner, no financial action',
+      decoded === canonical && decoded!.endsWith(`/c/${code}`) && code === me.collaborators_code && fileName === `VNO-QR-${code}.png` && scan.status === 201 && scan.body.collaborator_id === me.id && scan.body.financial_action_created === false
+        && byCode.status === 201 && byCode.body.collaborator_id === me.id,
+      `code=${code} decoded=${decoded} scan=${scan.status} byCode=${byCode.status}`);
   });
 
   test('X11 remapped legacy QR cases: only the new unique codes resolve; the shared V1 codes resolve to nobody', async () => {
     const remap = [['C2500228', ['C2500228-DUP-2c495a87', 'C2500228-DUP-77f4a15e']], ['C2500240', ['C2500240-DUP-2852d043', 'C2500240-DUP-55cb956a']]] as const;
     const bad: string[] = [];
     for (const [original, replacements] of remap) {
-      if ((await api(null, 'GET', `/c/${original}`)).status !== 403) bad.push(`${original} resolves`);
-      const ids = new Set<string>();
-      for (const code of replacements) { const r = await api(null, 'GET', `/c/${code}`); if (r.status !== 200) bad.push(`${code}=${r.status}`); ids.add(r.body?.collaboratorId); }
-      if (ids.size !== replacements.length) bad.push(`${original}: replacement codes share a Partner`);
+      // The shared V1 code identifies nobody (public: 404 "Partner not found" since the customer landing page; it used to be 403).
+      if ((await api(null, 'GET', `/c/${original}`)).status !== 404) bad.push(`${original} resolves`);
+      const owners = new Set<string>();
+      for (const code of replacements) { const r = await api(null, 'GET', `/c/${code}`); if (r.status !== 200 || r.body?.partner_code !== code) bad.push(`${code}=${r.status}`); owners.add(String(r.body?.partner_name)); }
+      if (owners.size !== replacements.length) bad.push(`${original}: replacement codes share a Partner`);
       if (has('merchant')) { const r = await api('merchant', 'POST', '/qr/resolve', { payload: original }); if (r.status !== 404) bad.push(`merchant scan ${original}=${r.status}`); }
     }
-    check('X11', '4 remapped Partners resolve by their own new code (distinct ids); C2500228/C2500240 refuse (public 403, merchant scan 404)', bad.length === 0, bad.join('; '));
+    check('X11', '4 remapped Partners resolve by their own new code (distinct Partners); C2500228/C2500240 resolve to nobody (public 404, merchant scan 404)', bad.length === 0, bad.join('; '));
   });
 
   test('X12 cross-account: a Partner cannot read another Partner\'s QR; anonymous cannot read any', async () => {
