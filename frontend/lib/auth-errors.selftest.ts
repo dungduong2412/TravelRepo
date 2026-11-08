@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { classifyRecoveryError, classifyVerifyError, signupErrorMessage } from './auth-errors';
 import { errorCode } from './auth-diagnostics';
 import { decideLoginFollowUp } from './login-followup';
+import { describeAdminActionFailure, describeSubmitFailure } from './api-failure';
+import { isKnownStatus, PENDING_LABEL, statusLabel } from './status-labels';
 assert.equal(classifyRecoveryError('weak_password').kind, 'policy');
 // weak_password reaches here only AFTER the client policy passed: it must say so, and must never ask for a more complex password.
 assert.match(classifyRecoveryError('weak_password').text, /đã đáp ứng quy tắc/);
@@ -39,4 +41,40 @@ assert.equal(decideLoginFollowUp({ confirmed: false, profile: null, requestedRol
 assert.equal(decideLoginFollowUp({ confirmed: true, profile: { role: 'merchant', user_profiles_status: 'pending' }, requestedRole: 'merchant' }).kind, 'pending');
 assert.equal(decideLoginFollowUp({ confirmed: true, profile: { role: 'collaborator', user_profiles_status: 'blocked' }, requestedRole: 'collaborator' }).kind, 'inactive');
 assert.equal(decideLoginFollowUp({ confirmed: true, profile: { role: 'collaborator', user_profiles_status: 'active' }, requestedRole: 'collaborator' }).kind, 'none', 'an approved profile is not this helper\'s business');
+
+// --- Step 2/2 submit failures: every text says the application was NOT submitted, and the HTTP status is always quotable ---
+const api = (httpStatus: number, message: string, apiCode?: string) => Object.assign(new Error(message), { httpStatus, apiCode });
+for (const [status, kind] of [[401, 'session'], [403, 'forbidden'], [400, 'invalid'], [422, 'invalid'], [429, 'busy'], [500, 'server'], [503, 'server'], [409, 'exists']] as const) {
+  const f = describeSubmitFailure(api(status, 'x'), 'Đối tác');
+  assert.equal(f.kind, kind, `status ${status}`);
+  assert.ok(f.text.includes(`HTTP ${status}`), `status ${status} must be in the text`);
+  if (kind !== 'exists') assert.match(f.text, /CHƯA được gửi/, `status ${status} must say not submitted`);
+}
+assert.equal(describeSubmitFailure(api(400, 'Verified signup identity is required'), 'Đối tác').text.includes('Verified signup identity is required'), true, 'the server reason is shown');
+assert.equal(describeSubmitFailure(api(400, 'A collaborator application already exists for this identity'), 'Đối tác').kind, 'exists');
+assert.equal(describeSubmitFailure(new TypeError('Failed to fetch'), 'Đối tác').kind, 'network');
+assert.match(describeSubmitFailure(new TypeError('Failed to fetch'), 'Đối tác').text, /CHƯA được gửi/);
+assert.equal(describeSubmitFailure(new Error('boom'), 'Đối tác').kind, 'other');
+// an API error must NOT be mistaken for a Supabase Auth error: errorCode() still ignores it, so the e-mail rate-limit copy is never shown for a profile submit
+assert.equal(errorCode(api(429, 'x')), 'unknown_error');
+assert.equal(signupErrorMessage(errorCode(api(429, 'x'))), null);
+
+// --- Admin approve/reject: the 409 the owner hit is explained and says the record is unchanged ---
+const notClaimed = describeAdminActionFailure(api(409, 'Cannot approve partner: the owner has not claimed this record with a verified Auth identity', 'OWNER_NOT_CLAIMED'), 'approve');
+assert.equal(notClaimed.kind, 'not_claimed');
+assert.ok(notClaimed.text.includes('HTTP 409 · OWNER_NOT_CLAIMED') && notClaimed.text.includes('Chờ phê duyệt') && /unchanged/.test(notClaimed.text));
+assert.equal(describeAdminActionFailure(api(500, 'db'), 'approve').kind, 'server');
+assert.equal(describeAdminActionFailure(api(401, 'x'), 'reject').kind, 'session');
+assert.equal(describeAdminActionFailure(new TypeError('Failed to fetch'), 'deactivate').kind, 'network');
+
+// --- one vocabulary: database "pending" is displayed as "Chờ phê duyệt" everywhere, never "Pending" / "chờ duyệt" ---
+assert.equal(PENDING_LABEL, 'Chờ phê duyệt');
+assert.equal(statusLabel('pending'), 'Chờ phê duyệt');
+assert.equal(statusLabel(' PENDING '), 'Chờ phê duyệt');
+assert.equal(statusLabel('active'), 'Đã duyệt');
+assert.equal(statusLabel(null), 'Chưa xác định');
+assert.match(statusLabel('0'), /Trạng thái cũ: 0/, 'legacy numeric statuses stay visible');
+assert.ok(isKnownStatus('pending') && !isKnownStatus('0'));
+for (const k of ['pending', 'active', 'approved', 'inactive', 'blocked', 'rejected', 'cancelled']) assert.ok(!/chờ duyệt/i.test(statusLabel(k)), k);
+
 console.log('auth-errors selftest: all passed');

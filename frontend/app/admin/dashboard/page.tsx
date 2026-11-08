@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { api } from '../../../lib/api';
 import { PageHeader, Card } from '../../../components/ui/Brand';
 import { ErrorState, Spinner } from '../../../components/ui/Feedback';
+import { PENDING_LABEL } from '../../../lib/status-labels';
 
 interface DashboardStats {
   activeCollaborators: number;
@@ -61,9 +62,9 @@ export default function AdminDashboardPage() {
 
   const tiles = [
     { label: 'Partner đang hoạt động', value: stats.activeCollaborators, href: '/admin/collaborators' },
-    { label: 'Partner chờ duyệt', value: stats.pendingCollaborators, href: '/admin/collaborators', attention: stats.pendingCollaborators > 0 },
+    { label: `Partner ${PENDING_LABEL.toLowerCase()}`, value: stats.pendingCollaborators, href: '/admin/collaborators', attention: stats.pendingCollaborators > 0 },
     { label: 'Merchant đang hoạt động', value: stats.activeMerchants, href: '/admin/merchants' },
-    { label: 'Merchant chờ duyệt', value: stats.pendingMerchants, href: '/admin/merchants', attention: stats.pendingMerchants > 0 },
+    { label: `Merchant ${PENDING_LABEL.toLowerCase()}`, value: stats.pendingMerchants, href: '/admin/merchants', attention: stats.pendingMerchants > 0 },
   ];
   return (
     <div className="mx-auto max-w-6xl">

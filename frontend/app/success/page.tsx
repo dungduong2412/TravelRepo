@@ -8,6 +8,9 @@ function SuccessContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const type = searchParams.get('type') || 'application';
+  // Only a plain code is ever rendered (the value comes from the URL).
+  const rawRef = searchParams.get('ref') || '';
+  const ref = /^[A-Za-z0-9_-]{1,40}$/.test(rawRef) ? rawRef : '';
 
   const messages: Record<string, { title: string; description: string }> = {
     collaborator: {
@@ -49,6 +52,7 @@ function SuccessContent() {
 
         <h1 style={styles.title}>{message.title}</h1>
         <p style={styles.description}>{message.description}</p>
+        {ref && (type === 'merchant' || type === 'collaborator') && <p data-testid="application-ref" style={styles.description}>Mã hồ sơ: <strong>{ref}</strong> · Trạng thái: <strong>Chờ phê duyệt</strong>. Admin sẽ thấy hồ sơ này trong danh sách “Chờ phê duyệt”.</p>}
 
         {(type === 'merchant' || type === 'collaborator') && <PendingApplicantMedia role={type} />}
 

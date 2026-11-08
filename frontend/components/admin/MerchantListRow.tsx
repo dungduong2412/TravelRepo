@@ -2,6 +2,7 @@
 
 import { ChevronRight } from 'lucide-react';
 import { MerchantThumb } from './MerchantThumb';
+import { statusLabel } from '../../lib/status-labels';
 
 export type DirectoryRowData = {
   merchant_system_id: string; merchant_code?: string | null; merchant_name?: string | null; merchant_verified?: boolean; merchants_status?: string | null;
@@ -13,7 +14,7 @@ const text = (value?: string | null) => (typeof value === 'string' ? value.repla
 export const rowLocation = (m: DirectoryRowData) => [m.new_address_ward, m.new_address_city || m.new_address_district, m.new_address_province].map(text).filter(Boolean).filter((part, i, all) => all.indexOf(part) === i).join(', ');
 export function verificationLabel(m: DirectoryRowData) {
   if (m.merchant_verified) return { text: 'Verified', tone: 'bg-success-50 text-success-700' };
-  return m.merchants_status === 'pending' ? { text: 'Pending', tone: 'bg-warning-50 text-warning-700' } : { text: 'Not verified', tone: 'bg-canvas text-ink-muted' };
+  return m.merchants_status === 'pending' ? { text: statusLabel('pending'), tone: 'bg-warning-50 text-warning-700' } : { text: 'Not verified', tone: 'bg-canvas text-ink-muted' };
 }
 
 /** Two-line Merchant row: (name · verification) / (code · category · location). Each line truncates; the whole row opens the editor. */

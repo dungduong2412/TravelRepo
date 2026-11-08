@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../../lib/api';
+import { statusLabel } from '../../../lib/status-labels';
 
 type Role = 'admin' | 'merchant' | 'collaborator';
 type Status = 'active' | 'pending' | 'inactive' | 'blocked';
@@ -56,7 +57,7 @@ export default function UserManagementPage() {
       <tbody>{visible.map((user) => <tr key={user.id} style={styles.row}>
         <td style={styles.td}><strong>{user.full_name || '—'}</strong><div>{user.email}</div></td>
         <td style={styles.td}><select value={user.role} onChange={(e) => update(user.id, { role: e.target.value as Role })} style={styles.select}><option value="admin">Admin</option><option value="merchant">Merchant</option><option value="collaborator">Partner</option></select></td>
-        <td style={styles.td}><select value={user.user_profiles_status} onChange={(e) => update(user.id, { user_profiles_status: e.target.value as Status })} style={styles.select}><option value="active">Active</option><option value="pending">Pending</option><option value="inactive">Inactive</option><option value="blocked">Blocked</option></select></td>
+        <td style={styles.td}><select value={user.user_profiles_status} onChange={(e) => update(user.id, { user_profiles_status: e.target.value as Status })} style={styles.select}><option value="active">{statusLabel('active')}</option><option value="pending">{statusLabel('pending')}</option><option value="inactive">{statusLabel('inactive')}</option><option value="blocked">{statusLabel('blocked')}</option></select></td>
         <td style={styles.td}>{user.role === 'merchant' ? <select value={user.merchant_id || ''} onChange={(e) => update(user.id, { merchant_id: e.target.value || null })} style={styles.select}><option value="">Select merchant</option>{merchants.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select> : user.role === 'collaborator' ? <select value={user.collaborator_id || ''} onChange={(e) => update(user.id, { collaborator_id: e.target.value || null })} style={styles.select}><option value="">Select partner</option>{collaborators.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select> : 'Platform-wide'}</td>
         <td style={styles.td}>{user.login_count || 0} logins<br />{user.last_login_at ? new Date(user.last_login_at).toLocaleString() : 'Never'}</td>
         <td style={styles.td}><button disabled={saving === user.id || (user.role === 'merchant' && !user.merchant_id) || (user.role === 'collaborator' && !user.collaborator_id)} onClick={() => save(user)} style={styles.save}>{saving === user.id ? 'Saving…' : 'Save'}</button></td>

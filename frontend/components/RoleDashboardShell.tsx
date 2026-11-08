@@ -80,7 +80,7 @@ function NavLink({ item, active, mobile = false }: { item: RoleMenuItem; active:
 
 function AccountStatusNotice({ status, email, onLogout }: { status: string; email: string; onLogout: () => void }) {
   const copy = status === 'pending'
-    ? { tone: 'info' as const, title: 'Hồ sơ đang chờ duyệt', body: 'Quản trị viên đang xem xét hồ sơ của bạn. Bạn sẽ dùng được đầy đủ tính năng ngay sau khi được duyệt.' }
+    ? { tone: 'info' as const, title: 'Hồ sơ đang chờ phê duyệt', body: 'Quản trị viên đang xem xét hồ sơ của bạn. Bạn sẽ dùng được đầy đủ tính năng ngay sau khi được duyệt.' }
     : { tone: 'warning' as const, title: 'Tài khoản chưa hoạt động', body: 'Tài khoản đang bị tạm khóa hoặc bị từ chối. Vui lòng liên hệ quản trị viên để được hỗ trợ.' };
   return <AuthShell title="Trạng thái tài khoản" subtitle={email}><Alert tone={copy.tone} title={copy.title}>{copy.body}</Alert><Button variant="secondary" className="w-full" onClick={onLogout}>Đăng xuất</Button></AuthShell>;
 }

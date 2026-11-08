@@ -3,12 +3,17 @@
 import Link from 'next/link';
 import { CSSProperties } from 'react';
 import { dashboardFor, OnboardingIdentity, OnboardingRole, ROLE_LABEL } from '../lib/onboarding-identity';
+import { statusLabel as dbStatusLabel } from '../lib/status-labels';
 
 const box = (bg: string, fg: string): CSSProperties => ({ padding: 12, borderRadius: 6, fontSize: 14, backgroundColor: bg, color: fg, display: 'flex', flexDirection: 'column', gap: 8, lineHeight: 1.5 });
 const linkButton: CSSProperties = { alignSelf: 'flex-start', background: 'none', border: 'none', padding: 0, color: '#1d4ed8', textDecoration: 'underline', cursor: 'pointer', fontSize: 14 };
+const stepRow: CSSProperties = { display: 'flex', gap: 8, flexWrap: 'wrap', margin: 0, padding: 0, listStyle: 'none', fontSize: 13, fontWeight: 600 };
+const stepDone: CSSProperties = { padding: '4px 10px', borderRadius: 999, backgroundColor: '#d1fae5', color: '#065f46' };
+const stepNow: CSSProperties = { padding: '4px 10px', borderRadius: 999, backgroundColor: '#1d4ed8', color: '#ffffff' };
 
 const roleLabel = (role?: string) => ROLE_LABEL[role || ''] || 'khác';
-const statusLabel = (s?: string) => (s === 'active' ? 'đã được duyệt' : s === 'pending' ? 'đang chờ phê duyệt' : s === 'blocked' ? 'cần chỉnh sửa hoặc đã bị từ chối' : s || 'chưa xác định');
+// Shown inside a sentence, so lower-case; the wording itself comes from lib/status-labels (database "pending" = "Chờ phê duyệt").
+const statusLabel = (s?: string) => dbStatusLabel(s).toLowerCase();
 
 /**
  * Explains, above the onboarding form, which verified identity the page is acting for. It deliberately never calls the confirmed
@@ -18,9 +23,15 @@ export default function OnboardingIdentityNotice({ identity, role, onSwitch }: {
   const target = ROLE_LABEL[role];
 
   if (identity.kind === 'ready') {
-    return <div role="status" style={box('#ecfdf5', '#065f46')}>
-      <strong>Email đã xác nhận thành công. Vui lòng hoàn tất hồ sơ {target}.</strong>
-      <span>Hồ sơ sẽ được tạo cho email <b>{identity.email}</b>. Bạn không cần nhập lại mật khẩu. Hồ sơ chỉ được gửi khi bạn bấm “Gửi hồ sơ”, và chức năng {target} chỉ mở sau khi Admin phê duyệt.</span>
+    // The owner confirmed the e-mail, saw a blank form and left without pressing the button: confirmation alone submits NOTHING, so say it plainly.
+    return <div role="status" data-testid="onboarding-step2" style={{ ...box('#eff6ff', '#1e3a8a'), border: '2px solid #1d4ed8', marginBottom: 16 }}>
+      <ol style={stepRow} aria-label="Các bước đăng ký">
+        <li style={stepDone}>✓ Bước 1/2 · Xác nhận email (xong)</li>
+        <li style={stepNow} aria-current="step">Bước 2/2 · Hoàn tất và gửi hồ sơ (bạn đang ở đây)</li>
+      </ol>
+      <strong style={{ fontSize: 17 }}>Bước 2/2 — Hoàn tất và gửi hồ sơ {target}</strong>
+      <span><b>Email đã xác nhận thành công. Vui lòng hoàn tất hồ sơ {target}.</b> Xác nhận email chưa phải là đăng ký: hồ sơ của bạn <b>CHƯA được gửi</b> và Admin chưa nhìn thấy nó. Hãy điền thông tin bên dưới rồi bấm nút “Gửi hồ sơ” ở cuối trang.</span>
+      <span>Hồ sơ sẽ được tạo cho email <b>{identity.email}</b>. Bạn không cần nhập lại mật khẩu. Sau khi gửi, hồ sơ ở trạng thái “Chờ phê duyệt” và chức năng {target} chỉ mở sau khi Admin phê duyệt.</span>
       <button type="button" style={linkButton} onClick={onSwitch}>Không phải email của bạn? Đăng xuất để dùng email khác</button>
     </div>;
   }

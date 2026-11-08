@@ -1,7 +1,7 @@
 "use client";
 
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiFetch } from '../../../lib/api';
 import { signUp } from '../../../lib/supabase';
@@ -10,6 +10,7 @@ import OnboardingIdentityNotice from '../../../components/OnboardingIdentityNoti
 import AlreadyRegisteredLinks from '../../../components/AlreadyRegisteredLinks';
 import { errorCode } from '../../../lib/auth-diagnostics';
 import { signupErrorMessage } from '../../../lib/auth-errors';
+import { describeSubmitFailure } from '../../../lib/api-failure';
 import { clearDraft, DRAFT_KEYS, loadDraft, saveDraft } from '../../../lib/onboarding-draft';
 import { isValidPassword, PASSWORD_ERROR, PASSWORD_HINT } from '../../../lib/password-policy';
 
@@ -36,6 +37,12 @@ export default function MerchantOnboardPage() {
   const formVisible = identity.kind === 'anonymous' || identity.kind === 'ready';
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const feedbackRef = useRef<HTMLDivElement | null>(null);
+
+  // A refusal or failure must be seen: bring the message into view (the buttons are at the bottom of a long form).
+  useEffect(() => {
+    if (error || notice) feedbackRef.current?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+  }, [error, notice]);
 
   // A confirmed (or otherwise resolved) session supersedes whatever the sign-up attempt said before it: never show a green "email verified" banner
   // next to a red "already registered" / "check your e-mail" message from an earlier submit.
@@ -85,6 +92,19 @@ export default function MerchantOnboardPage() {
     setIsSubmitting(true);
     setError(null);
 
+    // Our own validation (the form is noValidate): a browser tooltip that is easy to miss must never be the only thing between "Gửi hồ sơ" and a silent no-op.
+    const missing: Array<[string, string]> = [];
+    if (!formData.name.trim()) missing.push(['name', 'Tên Doanh Nghiệp']);
+    if (!formData.ownerEmail.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.ownerEmail)) missing.push(['ownerEmail', 'Email chủ tài khoản']);
+    if (!hasVerifiedSession && !formData.password) missing.push(['password', 'Mật khẩu']);
+    if (!hasVerifiedSession && !formData.confirmPassword) missing.push(['confirmPassword', 'Xác nhận mật khẩu']);
+    if (missing.length) {
+      setError(`Hồ sơ CHƯA được gửi vì còn thiếu hoặc sai thông tin: ${missing.map(([, label]) => label).join(', ')}. Hãy điền các ô còn thiếu rồi bấm lại.`);
+      document.getElementById(missing[0][0])?.focus();
+      setIsSubmitting(false);
+      return;
+    }
+
     if (!hasVerifiedSession && !isValidPassword(formData.password)) {
       setError(PASSWORD_ERROR);
       setIsSubmitting(false);
@@ -116,7 +136,7 @@ export default function MerchantOnboardPage() {
         return;
       }
       const verifiedEmail = identity.kind === 'ready' ? identity.email : formData.ownerEmail;
-      await apiFetch('/merchants', {
+      const created = await apiFetch('/merchants', {
         method: 'POST',
         body: JSON.stringify({
           owner_email: verifiedEmail,
@@ -137,14 +157,18 @@ export default function MerchantOnboardPage() {
         }),
       });
       clearDraft(DRAFT_KEY);
-      router.push('/success?type=merchant');
+      // The new record's code lets the owner (and the Admin) match this application in the Pending list.
+      const ref = typeof created?.merchant_code === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(created.merchant_code) ? `&ref=${encodeURIComponent(created.merchant_code)}` : '';
+      router.push(`/success?type=merchant${ref}`);
     } catch (err: any) {
-      const code = errorCode(err);
-      if (code === 'user_already_exists' || code === 'email_exists') setError(signupErrorMessage(code));
-      else if (/already exists/i.test(err?.message || '')) {
-        // This verified identity already has an application: show its status instead of a raw API message.
-        setError('Email này đã có hồ sơ. Không thể tạo thêm hồ sơ mới.'); refresh();
-      } else setError(signupErrorMessage(code) ?? (err.message || 'Không thể gửi hồ sơ. Hãy thử lại.'));
+      // Supabase sign-up failures (already registered, weak password, e-mail rate limit) keep their own copy; everything else is the profile submit.
+      const signupText = signupErrorMessage(errorCode(err));
+      if (signupText) setError(signupText);
+      else {
+        const failure = describeSubmitFailure(err, 'Nhà cung cấp');
+        setError(failure.text);
+        if (failure.kind === 'exists') refresh(); // this verified identity already has an application: show its status
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -162,7 +186,7 @@ export default function MerchantOnboardPage() {
         <OnboardingIdentityNotice identity={identity} role="merchant" onSwitch={switchAccount} />
         {identity.kind === 'loading' && <p style={styles.hint} aria-live="polite">Đang kiểm tra phiên đăng nhập…</p>}
 
-        {formVisible && <form onSubmit={handleSubmit} style={styles.form}>
+        {formVisible && <form onSubmit={handleSubmit} style={styles.form} noValidate>
           <div style={styles.formGroup}>
             <label htmlFor="ownerEmail" style={styles.label}>Email chủ tài khoản *</label>
             <input
@@ -249,13 +273,16 @@ export default function MerchantOnboardPage() {
             />
           </div>
 
-          {notice && <div style={{ ...styles.errorBox, background: '#ecfdf5', color: '#065f46' }}>{notice}</div>}
+          <div ref={feedbackRef}>
+            {notice && <div role="status" style={{ ...styles.errorBox, background: '#ecfdf5', color: '#065f46' }}>{notice}</div>}
+            {error && (
+              <div role="alert" data-testid="submit-error" style={styles.errorBox}>
+                {error}
+              </div>
+            )}
+          </div>
 
-          {error && (
-            <div style={styles.errorBox}>
-              {error}
-            </div>
-          )}
+          {hasVerifiedSession && <p data-testid="step2-reminder" style={{ margin: 0, fontSize: 14, color: '#1e3a8a', fontWeight: 600 }}>Bước 2/2: hồ sơ chỉ được gửi khi bạn bấm “Gửi hồ sơ”. Mở được trang này chưa có nghĩa là hồ sơ đã được gửi.</p>}
 
           <div style={styles.buttonGroup}>
             <button

@@ -15,7 +15,7 @@ import { Alert } from '../../components/ui/Feedback';
 function loginMessage(raw: string): { tone: 'danger' | 'warning' | 'info'; title: string; body: string } {
   const m = raw.toLowerCase();
   if (m.includes('invalid email or password')) return { tone: 'danger', title: 'Email hoặc mật khẩu không đúng', body: 'Kiểm tra lại thông tin hoặc đặt lại mật khẩu.' };
-  if (m.includes('not approved')) return { tone: 'info', title: 'Tài khoản đang chờ duyệt', body: 'Quản trị viên chưa phê duyệt hồ sơ của bạn. Bạn sẽ đăng nhập được ngay sau khi hồ sơ được duyệt.' };
+  if (m.includes('not approved')) return { tone: 'info', title: 'Tài khoản đang chờ phê duyệt', body: 'Quản trị viên chưa phê duyệt hồ sơ của bạn. Bạn sẽ đăng nhập được ngay sau khi hồ sơ được duyệt.' };
   if (m.includes('not active')) return { tone: 'warning', title: 'Tài khoản chưa được kích hoạt', body: 'Tài khoản đang bị tạm khóa hoặc chưa kích hoạt. Vui lòng liên hệ quản trị viên.' };
   if (m.includes('confirm')) return { tone: 'warning', title: 'Email chưa được xác nhận', body: 'Hãy mở liên kết xác nhận trong email đăng ký trước khi đăng nhập.' };
   return { tone: 'danger', title: 'Không thể đăng nhập', body: 'Đã có lỗi xảy ra. Vui lòng thử lại sau ít phút.' };

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiFetch } from '../../../lib/api';
 import { signUp } from '../../../lib/supabase';
@@ -9,6 +9,7 @@ import OnboardingIdentityNotice from '../../../components/OnboardingIdentityNoti
 import AlreadyRegisteredLinks from '../../../components/AlreadyRegisteredLinks';
 import { errorCode } from '../../../lib/auth-diagnostics';
 import { signupErrorMessage } from '../../../lib/auth-errors';
+import { describeSubmitFailure } from '../../../lib/api-failure';
 import { clearDraft, DRAFT_KEYS, loadDraft, saveDraft } from '../../../lib/onboarding-draft';
 import { isValidPassword, PASSWORD_ERROR, PASSWORD_HINT } from '../../../lib/password-policy';
 
@@ -34,6 +35,12 @@ export default function CollaboratorOnboardPage() {
   const { identity, switchAccount, stillCurrent, refresh } = useOnboardingIdentity('collaborator', intendedEmail);
   const hasVerifiedSession = identity.kind === 'ready';
   const formVisible = identity.kind === 'anonymous' || identity.kind === 'ready';
+  const feedbackRef = useRef<HTMLDivElement | null>(null);
+
+  // A refusal or failure must be seen: bring the message into view (the buttons are at the bottom of a long form).
+  useEffect(() => {
+    if (error || notice || Object.keys(validationErrors).length) feedbackRef.current?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+  }, [error, notice, validationErrors]);
 
   // A confirmed (or otherwise resolved) session supersedes whatever the sign-up attempt said before it: never show a green "email verified" banner
   // next to a red "already registered" / "check your e-mail" message from an earlier submit.
@@ -104,6 +111,9 @@ export default function CollaboratorOnboardPage() {
 
     if (Object.keys(errors).length > 0) {
       setValidationErrors(errors);
+      const labels: Record<string, string> = { fullName: 'Họ và Tên', phone: 'Số Điện Thoại', email: 'Email', password: 'Mật Khẩu', confirmPassword: 'Xác Nhận Mật Khẩu' };
+      setError(`Hồ sơ CHƯA được gửi vì còn thiếu hoặc sai thông tin: ${Object.keys(errors).map((key) => labels[key] || key).join(', ')}. Hãy sửa các ô được đánh dấu đỏ rồi bấm lại.`);
+      document.getElementById(Object.keys(errors)[0])?.focus();
       setIsSubmitting(false);
       return;
     }
@@ -139,22 +149,25 @@ export default function CollaboratorOnboardPage() {
         collaborators_bank_acc_number: formData.bankAccountNumber || undefined,
       };
 
-      await apiFetch('/collaborators', {
+      const created = await apiFetch('/collaborators', {
         method: 'POST',
         body: JSON.stringify(payload),
       });
 
       clearDraft(DRAFT_KEY);
 
-      // Redirect to success page
-      router.push('/success?type=collaborator');
+      // Redirect to success page; the new record's code lets the owner (and the Admin) match this application in the Pending list.
+      const ref = typeof created?.collaborators_code === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(created.collaborators_code) ? `&ref=${encodeURIComponent(created.collaborators_code)}` : '';
+      router.push(`/success?type=collaborator${ref}`);
     } catch (err) {
-      const code = errorCode(err);
-      if (code === 'user_already_exists' || code === 'email_exists') setError(signupErrorMessage(code));
-      else if (err instanceof Error && /already exists/i.test(err.message)) {
-        // This verified identity already has an application: show its status instead of a raw API message.
-        setError('Email này đã có hồ sơ. Không thể tạo thêm hồ sơ mới.'); refresh();
-      } else setError(signupErrorMessage(code) ?? (err instanceof Error ? err.message : 'Đã xảy ra lỗi khi gửi đơn đăng ký'));
+      // Supabase sign-up failures (already registered, weak password, e-mail rate limit) keep their own copy; everything else is the profile submit.
+      const signupText = signupErrorMessage(errorCode(err));
+      if (signupText) setError(signupText);
+      else {
+        const failure = describeSubmitFailure(err, 'Đối tác');
+        setError(failure.text);
+        if (failure.kind === 'exists') refresh(); // this verified identity already has an application: show its status
+      }
       setIsSubmitting(false);
     }
   };
@@ -168,7 +181,7 @@ export default function CollaboratorOnboardPage() {
         <OnboardingIdentityNotice identity={identity} role="collaborator" onSwitch={switchAccount} />
 
         {identity.kind === 'loading' && <p style={styles.hint} aria-live="polite">Đang kiểm tra phiên đăng nhập…</p>}
-        {formVisible && <form onSubmit={handleSubmit} style={styles.form}>
+        {formVisible && <form onSubmit={handleSubmit} style={styles.form} noValidate>
           <div style={styles.formGroup}>
             <label htmlFor="fullName" style={styles.label}>
               Họ và Tên *
@@ -300,12 +313,16 @@ export default function CollaboratorOnboardPage() {
             <input id="bankAccountName" name="bankAccountName" type="text" value={formData.bankAccountName} onChange={handleChange} style={styles.input} autoComplete="off" />
           </div>
 
-          {error && (
-            <div style={styles.errorBox}>
-              {error}
-            </div>
-          )}
-          {notice && <div style={{ ...styles.errorBox, background: '#ecfdf5', color: '#065f46' }}>{notice}</div>}
+          <div ref={feedbackRef}>
+            {error && (
+              <div role="alert" data-testid="submit-error" style={styles.errorBox}>
+                {error}
+              </div>
+            )}
+            {notice && <div role="status" style={{ ...styles.errorBox, background: '#ecfdf5', color: '#065f46' }}>{notice}</div>}
+          </div>
+
+          {hasVerifiedSession && <p data-testid="step2-reminder" style={{ margin: 0, fontSize: 14, color: '#1e3a8a', fontWeight: 600 }}>Bước 2/2: hồ sơ chỉ được gửi khi bạn bấm “Gửi hồ sơ”. Mở được trang này chưa có nghĩa là hồ sơ đã được gửi.</p>}
 
           <div style={styles.buttonGroup}>
             <button

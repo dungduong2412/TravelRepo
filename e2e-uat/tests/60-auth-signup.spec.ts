@@ -109,7 +109,7 @@ for (const kind of KINDS) {
         }
         const ctx = await browser.newContext(); const p = await ctx.newPage(); await p.goto('/login');
         await p.getByPlaceholder('email@example.com').fill(email); await p.locator('input[type="password"]').fill(password); await p.locator('button[type="submit"]').click();
-        await expect(p.getByText('Tài khoản đang chờ duyệt')).toBeVisible({ timeout: 20_000 });
+        await expect(p.getByText('Tài khoản đang chờ phê duyệt')).toBeVisible({ timeout: 20_000 });
         const approve = await api('admin', 'POST', `/${kind === 'merchant' ? 'merchants' : 'collaborators'}/${entityId}/approve`, {});
         expect([200, 201], `approve HTTP ${approve.status} ${JSON.stringify(approve.body).slice(0, 120)}`).toContain(approve.status);
         await p.goto('/login');

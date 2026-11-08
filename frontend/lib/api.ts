@@ -11,6 +11,25 @@ interface FetchOptions extends RequestInit {
 }
 
 /**
+ * A non-2xx API answer. `message` is exactly what callers always received (the server's message), so existing `err.message` code is unchanged.
+ * The HTTP status and the server's error code travel with it so the UI can show them (see lib/api-failure.ts). The field names are
+ * deliberately NOT `status` / `code`: errorCode() in auth-diagnostics reads those for Supabase Auth errors and must keep ignoring API errors.
+ */
+export class ApiRequestError extends Error {
+  constructor(message: string, readonly httpStatus: number, readonly apiCode?: string, readonly method?: string, readonly path?: string) {
+    super(message);
+    this.name = 'ApiRequestError';
+  }
+}
+
+async function failureOf(response: Response, method: string, endpoint: string) {
+  const errorData = await response.json().catch(() => ({}));
+  const raw = errorData?.message;
+  const message = (Array.isArray(raw) ? raw.join('; ') : raw) || `API request failed: ${response.statusText}`;
+  return new ApiRequestError(String(message), response.status, typeof errorData?.code === 'string' ? errorData.code : undefined, method, endpoint);
+}
+
+/**
  * Make an authenticated API request
  */
 export async function apiFetch(endpoint: string, options: FetchOptions = {}) {
@@ -35,10 +54,7 @@ export async function apiFetch(endpoint: string, options: FetchOptions = {}) {
     headers,
   });
 
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.message || `API request failed: ${response.statusText}`);
-  }
+  if (!response.ok) throw await failureOf(response, String(fetchOptions.method || 'GET'), endpoint);
 
   return response.json();
 }
@@ -57,10 +73,7 @@ export async function publicApiFetch(endpoint: string, options: RequestInit = {}
     headers,
   });
 
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.message || `API request failed: ${response.statusText}`);
-  }
+  if (!response.ok) throw await failureOf(response, String(options.method || 'GET'), endpoint);
 
   return response.json();
 }

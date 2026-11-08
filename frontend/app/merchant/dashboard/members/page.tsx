@@ -172,7 +172,7 @@ export default function MerchantMembersPage() {
                       : '-'}
                   </td>
                   <td style={styles.td}>
-                    <span style={styles.verifiedBadge}>{member.collaborators_verified ? '✓ Đã xác minh' : '⏳ Chờ duyệt'}</span>
+                    <span style={styles.verifiedBadge}>{member.collaborators_verified ? '✓ Đã xác minh' : '⏳ Chờ phê duyệt'}</span>
                   </td>
                 </tr>
               ))}

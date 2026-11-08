@@ -34,8 +34,8 @@ export async function issueRecoveryToken(email: string): Promise<IssuedLink> {
 }
 
 /** Creates an unconfirmed user with a signup token (no mail). Returns the token hash to open /auth/confirm with. */
-export async function issueSignupToken(email: string, password: string): Promise<IssuedLink> {
-  const r = await admin('/admin/generate_link', { method: 'POST', body: JSON.stringify({ type: 'signup', email, password }) });
+export async function issueSignupToken(email: string, password: string, data?: Record<string, unknown>): Promise<IssuedLink> {
+  const r = await admin('/admin/generate_link', { method: 'POST', body: JSON.stringify({ type: 'signup', email, password, ...(data ? { data } : {}) }) });
   if (r.status >= 300) throw new Error(`generate_link signup failed: HTTP ${r.status} ${r.body?.error_code ?? ''}`);
   const tokenHash = r.body.hashed_token ?? r.body.properties?.hashed_token;
   process.env[`E2E_TOKEN_SIGNUP_${Date.now()}`] = tokenHash;

@@ -276,9 +276,9 @@ test.describe('@experience authentication and onboarding screens (no e-mail is s
     await uiLogin(page, 'partner'); await expect(page).toHaveURL(/collaborator\/dashboard/, { timeout: 30_000 });
     await page.route('**/user-profiles/me', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ role: 'collaborator', collaborator_id: 'x', user_profiles_status: 'pending' }) }));
     await page.reload();
-    await expect(page.getByText('Hồ sơ đang chờ duyệt')).toBeVisible();
+    await expect(page.getByText('Hồ sơ đang chờ phê duyệt')).toBeVisible();
     await shot(page, 'x16-pending-state');
-    record('X16', 'bound but unapproved account shows "Hồ sơ đang chờ duyệt" with logout', 'PASS');
+    record('X16', 'bound but unapproved account shows "Hồ sơ đang chờ phê duyệt" with logout', 'PASS');
   });
 });
 

@@ -160,10 +160,10 @@ for (const kind of ['partner', 'merchant'] as const) {
     });
 
     test(`LO6 ${kind}: a pending account logging in is told it awaits approval: no session, no form, no operational access`, async ({ browser }) => {
-      await step(`LO6-${tag}`, '/login -> "Tài khoản đang chờ duyệt", stays on /login, no session kept; operational endpoints refuse', async () => {
+      await step(`LO6-${tag}`, '/login -> "Tài khoản đang chờ phê duyệt", stays on /login, no session kept; operational endpoints refuse', async () => {
         const ctxL = await browser.newContext(); const l = await ctxL.newPage();
         await loginAs(l, email, password);
-        await expect(l.getByText('Tài khoản đang chờ duyệt')).toBeVisible({ timeout: 20_000 });
+        await expect(l.getByText('Tài khoản đang chờ phê duyệt')).toBeVisible({ timeout: 20_000 });
         await expect(l).toHaveURL(/\/login/); await expect(l).not.toHaveURL(landing);
         expect(await l.evaluate((k) => localStorage.getItem(k), SBKEY)).toBeNull();
         await ctxL.close();
