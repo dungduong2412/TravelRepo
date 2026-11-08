@@ -54,8 +54,9 @@ const last = mails[mails.length - 1];
 let state;
 if (!records[0] && !profiles[0]) state = user ? 'NOT_REGISTERED (identity only, no application)' : 'NOT_REGISTERED';
 else if (records[0]?.collaborators_status === 'pending') state = 'PENDING_APPROVAL (visible to Admin under Pending)';
-else if (records[0]?.collaborators_status === 'active' && (profiles[0]?.login_count || 0) === 0) state = `APPROVED_AWAITING_ACTIVATION (last activation e-mail: ${last ? `${last.action.replace('collaborator.activation_email_', '')}@${last.occurred_at}` : 'none recorded'})`;
-else if (records[0]?.collaborators_status === 'active') state = `ACTIVATED (entered the portal; login_count=${profiles[0].login_count}, last_login_at=${profiles[0].last_login_at})`;
+else if (records[0]?.collaborators_status === 'active' && (profiles[0]?.login_count || 0) === 0 && !events.some((e) => e.action === 'collaborator.activated')) state = `APPROVED_AWAITING_ACTIVATION (last activation e-mail: ${last ? `${last.action.replace('collaborator.activation_email_', '')}@${last.occurred_at}` : 'none recorded'})`;
+else if (records[0]?.collaborators_status === 'active' && events.some((e) => e.action === 'collaborator.activated')) state = `ACTIVATED BY LINK (collaborator.activated audited; login_count=${profiles[0].login_count}, last_login_at=${profiles[0].last_login_at})`;
+else if (records[0]?.collaborators_status === 'active') state = `ENTERED BY PASSWORD, activation LINK NOT USED (login_count=${profiles[0].login_count}, last_login_at=${profiles[0].last_login_at}; no collaborator.activated event; link outstanding=${Boolean(user?.app_metadata?.activation_nonce)})`;
 else state = `OTHER (${records[0]?.collaborators_status})`;
 line('=>', state);
 if (problems.length) { for (const p of problems) line('!!', p); process.exit(1); }
