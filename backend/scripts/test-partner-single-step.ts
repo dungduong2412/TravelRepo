@@ -9,6 +9,7 @@ import { ActivationService } from '../src/modules/activation/activation.service'
 import { AuditService } from '../src/modules/audit/audit.service';
 import { CollaboratorsService } from '../src/modules/collaborators/collaborators.service';
 import { activationSecret, signActivationToken, verifyActivationToken } from '../src/modules/activation/activation-token';
+import { renderPartnerActivationEmail } from '../src/modules/auth-email-hook/email-templates';
 
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'unit-test-service-key';
 process.env.FRONTEND_URL = 'https://web.example.test';
@@ -371,6 +372,18 @@ let controls = 0; const ok = (label: string, fn: () => void | Promise<void>) => 
     const [a, b]: any[] = await Promise.all([w.activation.sendActivation(id, 'admin_resend', admin), (async () => { w.mailer.failWith = null; return w.activation.sendActivation(id, 'admin_resend', admin); })()]);
     const delivered = w.sent[w.sent.length - 1];
     assert.ok(await w.activation.verify(token(delivered.activationUrl), '20.0.0.9'), `the delivered link must stay valid (${a.status}/${b.status})`);
+  });
+  await ok('E1 the activation e-mail: one button to the fragment link, escaped name, lifetime, resend address, text twin, no token in the subject', () => {
+    const url = 'https://web.example.test/auth/activate#token=AAAA.BBBB'; const m = renderPartnerActivationEmail({ partnerName: 'A <b>&"Tour"', activationUrl: url, requestNewLinkUrl: 'https://web.example.test/auth/activate', ttlHours: 24, subjectPrefix: '[UAT] ' });
+    assert.match(m.subject, /^\[UAT\] VNO – Tài khoản Đối tác đã được kích hoạt/); assert.equal(m.subject.includes('AAAA'), false);
+    assert.equal((m.html.match(/<a href="https:\/\/web\.example\.test\/auth\/activate#token=AAAA\.BBBB"/g) || []).length, 2, 'button + fallback link');
+    assert.ok(m.html.includes('A &lt;b&gt;&amp;&quot;Tour&quot;') && !m.html.includes('<b>&"Tour"'), 'the name is escaped');
+    assert.match(m.html, /24 giờ/); assert.match(m.html, /24 hours/); assert.match(m.html, /lang="vi"/); assert.match(m.html, /UAT/);
+    assert.ok(m.text.includes(url) && m.text.includes('https://web.example.test/auth/activate') && !/<(html|table|a )/i.test(m.text), 'plain-text twin carries both links and no markup');
+    assert.ok(!/<(form|input)/i.test(m.html), 'no form or input in the mail');
+    for (const hit of `${m.html}\n${m.text}`.matchAll(/mật khẩu|password/gi)) {
+      assert.match(`${m.html}\n${m.text}`.slice(Math.max(0, hit.index! - 24), hit.index!), /(không|no)\s+(cần\s+)?(nhập\s+)?$/i, 'the mail only ever says that NO password is needed');
+    }
   });
 
   console.log(JSON.stringify({ status: 'PASS', controls }));
