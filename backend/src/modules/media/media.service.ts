@@ -9,6 +9,11 @@ import {
 } from './media.dto';
 import { AuditService } from '../audit/audit.service';
 import { EFFECTIVE_MEDIA_STATUSES, isEffectiveMedia } from './main-media';
+import { MAX_IMAGE_SIDE, MIN_IMAGE_SIDE, readImageDimensions } from './image-info';
+import { KeyedLock } from '../../common/concurrency/keyed-lock';
+import { HttpException, HttpStatus } from '@nestjs/common';
+
+const fail = (status: HttpStatus, code: string, message: string) => new HttpException({ code, message }, status);
 
 export function hasExpectedImageSignature(bytes: Buffer, mimeType: string) {
   if (mimeType === 'image/jpeg') return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
@@ -25,6 +30,8 @@ export class MediaService {
   ) {}
 
   private readonly mainSwapQueue = new Map<string, Promise<unknown>>();
+  /** Uploads of the same owner run one at a time, so a repeated submission sees the first proposal and is refused as a duplicate. */
+  private readonly uploadLock = new KeyedLock();
 
   async findAll() {
     const { data, error } = await this.supabase.getClient().from('media_assets')
@@ -111,8 +118,20 @@ export class MediaService {
   }
 
   async upload(userId: string, dto: UploadMediaDto) {
-    const client = this.supabase.getClient();
     const profile = await this.ownerProfile(userId, true);
+    const ownerKey = profile.role === 'merchant' ? `m:${profile.merchant_id}` : profile.role === 'collaborator' ? `c:${profile.collaborator_id}` : `a:${dto.merchant_id || dto.collaborator_id || userId}`;
+    return this.uploadLock.run(ownerKey, () => this.uploadNow(userId, dto, profile));
+  }
+
+  /** Same owner + same image bytes already proposed (pending) or showing (effective): the second submission is refused instead of queuing a duplicate proposal. */
+  private async duplicateOf(ownerColumn: 'merchant_id' | 'collaborator_id', ownerId: string, sha256: string) {
+    const { data } = await this.supabase.getClient().from('media_assets').select('id,publication_status')
+      .eq(ownerColumn, ownerId).eq('sha256_hex', sha256).in('publication_status', ['pending', ...EFFECTIVE_MEDIA_STATUSES]).limit(1);
+    return (data || [])[0] as { id: string; publication_status: string } | undefined;
+  }
+
+  private async uploadNow(userId: string, dto: UploadMediaDto, profile: Awaited<ReturnType<MediaService['ownerProfile']>>) {
+    const client = this.supabase.getClient();
     let merchantId: string | null = null;
     let collaboratorId: string | null = null;
     let bucketId: 'merchant-media' | 'partner-media';
@@ -166,11 +185,36 @@ export class MediaService {
     } catch {
       throw new BadRequestException('Invalid base64 media payload');
     }
-    if (!bytes.length || bytes.length !== dto.size_bytes || bytes.length > MAX_MEDIA_BYTES) {
-      throw new BadRequestException('Media size does not match the declared size');
+    if (!bytes.length || bytes.length !== dto.size_bytes) {
+      throw fail(HttpStatus.BAD_REQUEST, 'MEDIA_SIZE_MISMATCH', 'Tệp ảnh bị lỗi khi tải lên (kích thước không khớp). Hãy chọn lại ảnh và thử lại.');
+    }
+    if (bytes.length > MAX_MEDIA_BYTES) {
+      throw fail(HttpStatus.BAD_REQUEST, 'MEDIA_TOO_LARGE', 'Ảnh quá lớn. Kích thước tối đa là 5 MB.');
     }
     if (!hasExpectedImageSignature(bytes, dto.mime_type)) {
-      throw new BadRequestException('Media content signature does not match its MIME type');
+      throw fail(HttpStatus.BAD_REQUEST, 'MEDIA_SIGNATURE', 'Nội dung tệp không phải ảnh JPEG, PNG hoặc WebP hợp lệ (đuôi tệp không khớp với nội dung). Hãy chọn một ảnh khác.');
+    }
+    // The magic bytes are right: now the structure. A truncated or degenerate file would pass the signature check but never display.
+    const size = readImageDimensions(bytes, dto.mime_type);
+    if (!size || !size.width || !size.height) {
+      throw fail(HttpStatus.BAD_REQUEST, 'MEDIA_CORRUPT', 'Không đọc được kích thước ảnh; tệp có thể bị hỏng. Hãy chọn một ảnh khác.');
+    }
+    if (size.width < MIN_IMAGE_SIDE || size.height < MIN_IMAGE_SIDE) {
+      throw fail(HttpStatus.BAD_REQUEST, 'MEDIA_TOO_SMALL', `Ảnh quá nhỏ (${size.width}×${size.height}). Mỗi cạnh cần tối thiểu ${MIN_IMAGE_SIDE} px.`);
+    }
+    if (size.width > MAX_IMAGE_SIDE || size.height > MAX_IMAGE_SIDE) {
+      throw fail(HttpStatus.BAD_REQUEST, 'MEDIA_TOO_LARGE_DIMENSIONS', `Ảnh có kích thước quá lớn (${size.width}×${size.height}). Mỗi cạnh tối đa ${MAX_IMAGE_SIDE} px.`);
+    }
+    const sha256 = createHash('sha256').update(bytes).digest('hex');
+    const duplicate = await this.duplicateOf(merchantId ? 'merchant_id' : 'collaborator_id', (merchantId || collaboratorId) as string, sha256);
+    if (duplicate) {
+      throw fail(HttpStatus.CONFLICT, 'MEDIA_DUPLICATE', duplicate.publication_status === 'pending'
+        ? 'Ảnh này đã được gửi và đang chờ Admin duyệt. Không cần gửi lại.'
+        : 'Ảnh này đã có trong hồ sơ của bạn. Hãy chọn một ảnh khác.');
+    }
+    if (targetMedia) {
+      const { data: pendingOnTarget } = await client.from('media_approval_requests').select('id').eq('target_media_id', targetMedia.id).eq('status', 'pending').limit(1);
+      if ((pendingOnTarget || []).length) throw fail(HttpStatus.CONFLICT, 'MEDIA_PENDING_EXISTS', 'Ảnh này đang có một đề xuất chờ duyệt. Hãy chờ Admin xử lý hoặc hủy đề xuất cũ trước khi gửi đề xuất mới.');
     }
 
     const id = randomUUID();
@@ -190,7 +234,7 @@ export class MediaService {
       object_path: objectPath,
       original_filename: dto.filename,
       mime_type: dto.mime_type,
-      sha256_hex: createHash('sha256').update(bytes).digest('hex'),
+      sha256_hex: sha256,
       size_bytes: bytes.length,
       uploaded_by: userId,
       is_hero: false,
@@ -260,6 +304,8 @@ export class MediaService {
 
   async requestChange(userId: string, dto: MediaChangeRequestDto) {
     const { profile, media } = await this.ownedTarget(userId, dto.target_media_id);
+    const { data: pending } = await this.supabase.getClient().from('media_approval_requests').select('id').eq('target_media_id', media.id).eq('status', 'pending').limit(1);
+    if ((pending || []).length) throw fail(HttpStatus.CONFLICT, 'MEDIA_PENDING_EXISTS', 'Ảnh này đang có một đề xuất chờ duyệt. Hãy chờ Admin xử lý hoặc hủy đề xuất cũ trước khi gửi đề xuất mới.');
     const { data, error } = await this.supabase.getClient().from('media_approval_requests').insert({
       owner_type: media.merchant_id ? 'merchant' : 'collaborator',
       merchant_id: media.merchant_id,

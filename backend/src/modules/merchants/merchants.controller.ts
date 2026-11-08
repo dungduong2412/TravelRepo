@@ -10,7 +10,7 @@ import {
   CreateMerchantMemberSchema,
   UpdateMerchantDto,
   CreateMerchantSchema,
-  UpdateMerchantSchema,
+  MerchantSelfUpdateEnvelopeSchema,
   MerchantDirectoryQuery,
   MerchantDirectoryQuerySchema,
 } from './merchants.dto';
@@ -105,7 +105,7 @@ export class MerchantsController {
   async update(
     @User() actor: { id: string },
     @Param('id') id: string,
-    @Body(new ZodValidationPipe(UpdateMerchantSchema)) dto: UpdateMerchantDto,
+    @Body(new ZodValidationPipe(MerchantSelfUpdateEnvelopeSchema)) dto: Record<string, unknown>,
   ) {
     return this.service.updateForActor(actor.id, id, dto);
   }

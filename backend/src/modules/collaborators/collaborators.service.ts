@@ -607,7 +607,7 @@ export class CollaboratorsService {
     if (dto.merchant_system_id) {
       const { data: merchant } = await this.supabase.getClient().from('merchant_details')
         .select('merchant_system_id').eq('merchant_system_id', dto.merchant_system_id).maybeSingle();
-      if (!merchant) throw new BadRequestException('Assigned merchant does not exist');
+      if (!merchant) throw new BadRequestException({ message: 'Assigned merchant does not exist', code: 'MERCHANT_NOT_FOUND', errors: [{ field: 'merchant_system_id', code: 'not_found', message: 'Không tìm thấy nhà cung cấp này.' }] });
     }
     const { data, error } = await this.supabase.getClient().from('collaborators')
       .update(dto).eq('id', id).select().single();
@@ -617,6 +617,15 @@ export class CollaboratorsService {
       previous_status: before.collaborators_status,
       status: data.collaborators_status,
     });
+    // Who the Partner works for is a business decision with consequences (the customer discount that applies, the right to record transactions):
+    // record it explicitly, with the before and after, whenever it actually changes.
+    if ('merchant_system_id' in dto && (before.merchant_system_id ?? null) !== (data.merchant_system_id ?? null)) {
+      await this.audit.record(actor, 'collaborator.merchant_association_changed', 'collaborator', id, {
+        previous_merchant_id: before.merchant_system_id ?? null,
+        merchant_id: data.merchant_system_id ?? null,
+        change: data.merchant_system_id ? (before.merchant_system_id ? 'reassigned' : 'assigned') : 'unassigned',
+      });
+    }
     return this.withoutPassword(data);
   }
 

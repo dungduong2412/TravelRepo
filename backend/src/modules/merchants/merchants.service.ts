@@ -2,6 +2,8 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { PostgresUuidSchema } from '../../common/validation/postgres-uuid';
 import { randomBytes } from 'crypto';
 import { SupabaseService } from '../../infrastructure/supabase/supabase.service';
+import { describeIssue } from '../../common/validation/field-errors';
+import { KeyedLock } from '../../common/concurrency/keyed-lock';
 import {
   AdminCreateMerchantDto,
   AdminUpdateMerchantDto,
@@ -9,6 +11,8 @@ import {
   CreateMerchantMemberDto,
   MerchantDirectoryQuery,
   UpdateMerchantDto,
+  UpdateMerchantSchema,
+  fractionalRateErrors,
 } from './merchants.dto';
 import { UserProfilesService } from '../user-profiles/user-profiles.service';
 import { AuditActor, AuditService } from '../audit/audit.service';
@@ -25,6 +29,9 @@ export class MerchantsService {
     private readonly audit: AuditService,
     private readonly appEmail: ApplicationEmailService,
   ) {}
+
+  /** Profile saves for one Merchant run one at a time, so a repeated submission sees the first one's result (no duplicate change, no duplicate audit row). */
+  private readonly profileLock = new KeyedLock();
 
   private generateMerchantCode(): string {
     // Generate 8-character uppercase alphanumeric code (e.g., "MCH12AB3")
@@ -328,25 +335,69 @@ export class MerchantsService {
     return this.withoutPassword(data);
   }
 
-  async updateForActor(userId: string, id: string, dto: UpdateMerchantDto) {
-    const { data: profile } = await this.supabase.getClient().from('user_profiles')
+  /**
+   * The Merchant saves its own profile.
+   *
+   * Which fields: the text/contact/address fields, the categories and the Merchant-owned commercial rates are DIRECT (no Admin approval; audited). Images are NOT here:
+   * they go through the approval workflow (media proposals), so a pending image proposal never affects this save. The owner e-mail, code, status and verification are Admin-only.
+   *
+   * How: the submitted values are compared with the stored ones and ONLY what changed is validated and written. A blank optional field means "cleared". A value the
+   * Merchant did not touch is never re-validated, so legacy data (a V1 e-mail with a typo, a record without a phone) cannot block an unrelated change. Errors name the field,
+   * in Vietnamese (`errors: [{ field, code, message }]`). Nothing changed = nothing written and nothing audited.
+   */
+  async updateForActor(userId: string, id: string, dto: Record<string, unknown>) {
+    const client = this.supabase.getClient();
+    const { data: profile } = await client.from('user_profiles')
       .select('role,user_profiles_status,merchant_id').eq('user_id', userId).maybeSingle();
     if (!profile || !['active', 'pending', 'blocked'].includes(profile.user_profiles_status) ||
         !(profile.role === 'merchant' && profile.merchant_id === id)) {
       throw new ForbiddenException('Merchant update access denied');
     }
-    let updated = await this.update(id, dto);
-    if (dto.category_ids) {
-      const { error } = await this.supabase.getClient().rpc('set_merchant_categories', {
-        p_merchant_id: id, p_actor_user_id: userId, p_category_ids: dto.category_ids,
-      });
-      if (error) throw new BadRequestException(error.message);
-      updated = await this.findById(id);
-    }
-    await this.audit.record({ id: userId, role: 'merchant' }, 'merchant.profile_updated', 'merchant', id, {
-      changed_fields: Object.keys(dto),
+    return this.profileLock.run(id, async () => {
+      const current = await this.findById(id);
+      const { data: links } = await client.from('merchant_category_links').select('category_id').eq('merchant_id', id);
+      const currentCategories = (links || []).map((row: any) => row.category_id).sort();
+
+      // 1. normalise what was submitted (trim; blank optional text = cleared)
+      const submitted: Record<string, unknown> = {};
+      for (const [key, raw] of Object.entries(dto)) {
+        if (raw === undefined) continue;
+        if (typeof raw === 'string') { const t = raw.trim(); submitted[key] = t === '' && key !== 'merchant_name' && key !== 'merchant_description_format' ? null : t; }
+        else submitted[key] = raw;
+      }
+      // 2. keep only what differs from what is stored
+      const same = (key: string, value: unknown) => {
+        if (key === 'category_ids') return Array.isArray(value) && value.length === currentCategories.length && [...value as string[]].sort().every((c, i) => c === currentCategories[i]);
+        const stored = (current as any)[key];
+        if (key === 'merchant_discount_value' || key === 'merchant_commission_value') {
+          if (value === null || value === undefined || stored === null || stored === undefined) return (value ?? null) === (stored ?? null);
+          return Number(value) === Number(stored);
+        }
+        return (value ?? null) === (stored ?? null) || (value === null && stored === '') || (value === '' && stored === null);
+      };
+      const changed: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(submitted)) if (!same(key, value)) changed[key] = value;
+      const changedKeys = Object.keys(changed);
+      if (changedKeys.length === 0) return { ...current, category_ids: currentCategories, changed_fields: [] as string[] };
+
+      // 3. validate the changed fields only (field-level, Vietnamese)
+      const parsed = UpdateMerchantSchema.safeParse(changed);
+      const errors = parsed.success ? [] : parsed.error.issues.map((issue) => describeIssue(issue));
+      const effective = { ...(current as any), ...changed };
+      for (const e of fractionalRateErrors(effective, changedKeys)) errors.push(describeIssue({ code: 'custom', path: [e.path], message: e.message }));
+      const unique = errors.filter((e, i) => errors.findIndex((x) => x.field === e.field) === i);
+      if (unique.length) throw new BadRequestException({ message: 'Validation failed', error: 'Bad Request', statusCode: 400, code: 'VALIDATION_FAILED', errors: unique });
+
+      // 4. write
+      let updated: any = await this.update(id, parsed.data as UpdateMerchantDto);
+      if ('category_ids' in changed) {
+        const { error } = await client.rpc('set_merchant_categories', { p_merchant_id: id, p_actor_user_id: userId, p_category_ids: changed.category_ids });
+        if (error) throw new BadRequestException({ message: error.message, code: 'CATEGORY_UPDATE_FAILED', errors: [{ field: 'category_ids', code: 'category', message: 'Không lưu được danh mục. Hãy chọn tối đa 3 danh mục đang hoạt động.' }] });
+        updated = await this.findById(id);
+      }
+      await this.audit.record({ id: userId, role: 'merchant' }, 'merchant.profile_updated', 'merchant', id, { changed_fields: changedKeys });
+      return { ...updated, category_ids: 'category_ids' in changed ? changed.category_ids : currentCategories, changed_fields: changedKeys };
     });
-    return updated;
   }
 
   async resubmit(userId: string, id: string) {

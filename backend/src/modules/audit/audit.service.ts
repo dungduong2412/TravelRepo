@@ -16,8 +16,10 @@ export class AuditService {
     entityType: string,
     entityId: string,
     details: Record<string, unknown> = {},
+    requestId?: string,
   ) {
     const { error } = await this.supabase.getClient().from('audit_events').insert({
+      ...(requestId ? { request_id: requestId } : {}),
       actor_auth_user_id: actor.id,
       actor_role: actor.role || 'unknown',
       action,

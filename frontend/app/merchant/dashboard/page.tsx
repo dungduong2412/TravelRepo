@@ -4,11 +4,13 @@ import { useEffect, useState } from 'react';
 import { apiFetch } from '../../../lib/api';
 export default function MerchantDashboardPage() {
   const [data, setData] = useState<any>(null); const [error, setError] = useState<string | null>(null);
-  useEffect(() => { Promise.all([apiFetch('/user-profiles/me'), apiFetch('/transactions/me/report?page=1&page_size=1')]).then(async ([profile, report]) => ({ merchant: await apiFetch(`/merchants/${profile.merchant_id}`), report })).then(setData).catch((err) => setError(err.message || 'Không thể tải trang chủ')); }, []);
+  useEffect(() => { Promise.all([apiFetch('/user-profiles/me'), apiFetch('/transactions/me/report?page=1&page_size=1')]).then(async ([profile, report]) => ({ merchant: await apiFetch(`/merchants/${profile.merchant_id}`), report, scans: await apiFetch('/qr/scans/summary?days=30').catch(() => null) })).then(setData).catch((err) => setError(err.message || 'Không thể tải trang chủ')); }, []);
   if (error) return <p role="alert" className="rounded-xl bg-rose-50 p-4 text-rose-800">{error}</p>;
   if (!data) return <p className="text-slate-500">Đang tải…</p>;
   return <div><h1 className="text-2xl font-bold sm:text-3xl">Xin chào, {data.merchant.merchant_name}</h1><p className="mt-2 text-slate-600">Tổng quan nhà cung cấp · {data.merchant.merchant_code || 'Chưa có mã'}</p>
     <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><Metric label="Giao dịch" value={String(data.report.summary.transaction_count)} /><Metric label="Tổng chứng từ" value={money(data.report.summary.document_total)} /><Metric label="Tổng giảm giá" value={money(data.report.summary.document_discount_amount)} /><Metric label="Hoa hồng" value={money(data.report.summary.commission_amount)} /></div>
+    {data.scans && <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4" data-testid="walkin-report"><Metric label="Lượt khách quét QR (30 ngày)" value={String(data.scans.total)} /><Metric label="Của Đối tác thuộc cửa hàng" value={String(data.scans.assigned_to_merchant)} /><Metric label="Đối tác chưa liên kết" value={String(data.scans.not_assigned)} /><Metric label="Số Đối tác khác nhau" value={String(data.scans.distinct_partners)} /></div>}
+    {data.scans && <p className="mt-2 text-xs text-slate-500">Mỗi lượt quét hợp lệ được tính một lần, kể cả khi chưa có hoá đơn. Quét không tạo giao dịch hay hoa hồng; Đối tác chưa liên kết cần Admin gán cho cửa hàng trước khi thanh toán.</p>}
     <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3"><Quick href="/merchant/dashboard/orders" title="Đơn hàng" text="Xem số chứng từ và trạng thái nguồn" /><Quick href="/merchant/dashboard/qr-scan" title="QR Scan" text="Xác minh đối tác an toàn" /><Quick href="/merchant/dashboard/profile" title="Hồ sơ & hình ảnh" text="Quản lý danh mục, địa chỉ và gallery" /></div>
   </div>;
 }

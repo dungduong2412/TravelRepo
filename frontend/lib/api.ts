@@ -15,8 +15,10 @@ interface FetchOptions extends RequestInit {
  * The HTTP status and the server's error code travel with it so the UI can show them (see lib/api-failure.ts). The field names are
  * deliberately NOT `status` / `code`: errorCode() in auth-diagnostics reads those for Supabase Auth errors and must keep ignoring API errors.
  */
+export type ApiFieldError = { field: string; code: string; message: string };
+
 export class ApiRequestError extends Error {
-  constructor(message: string, readonly httpStatus: number, readonly apiCode?: string, readonly method?: string, readonly path?: string) {
+  constructor(message: string, readonly httpStatus: number, readonly apiCode?: string, readonly method?: string, readonly path?: string, readonly fieldErrors: ApiFieldError[] = []) {
     super(message);
     this.name = 'ApiRequestError';
   }
@@ -26,7 +28,10 @@ async function failureOf(response: Response, method: string, endpoint: string) {
   const errorData = await response.json().catch(() => ({}));
   const raw = errorData?.message;
   const message = (Array.isArray(raw) ? raw.join('; ') : raw) || `API request failed: ${response.statusText}`;
-  return new ApiRequestError(String(message), response.status, typeof errorData?.code === 'string' ? errorData.code : undefined, method, endpoint);
+  const fieldErrors: ApiFieldError[] = Array.isArray(errorData?.errors)
+    ? errorData.errors.filter((e: any) => e && typeof e.field === 'string' && typeof e.message === 'string').map((e: any) => ({ field: e.field, code: String(e.code ?? ''), message: e.message }))
+    : [];
+  return new ApiRequestError(String(message), response.status, typeof errorData?.code === 'string' ? errorData.code : undefined, method, endpoint, fieldErrors);
 }
 
 /**

@@ -3,7 +3,8 @@
 // the preview's arithmetic against an independent reference, and the Partner-side discount redaction.
 import assert from 'node:assert/strict';
 import { parsePartnerQrPayload } from '../src/modules/qr/partner-qr-payload';
-import { QrService } from '../src/modules/qr/qr.service';
+import { QrService, SCAN_ACTION } from '../src/modules/qr/qr.service';
+import { AuditService } from '../src/modules/audit/audit.service';
 import { TransactionsService } from '../src/modules/transactions/transactions.service';
 
 // ---- in-memory Supabase -----------------------------------------------------------------------------------------------------------------------
@@ -12,20 +13,25 @@ class Fake {
   tables: Record<string, Row[]> = {};
   writes: string[] = []; selects: Array<{ table: string; cols: string }> = [];
   from(table: string) {
-    const db = this; const filters: Array<(r: Row) => boolean> = []; let cols = '*'; let limit = Infinity; let mode: 'select' | 'write' = 'select';
+    const db = this; const filters: Array<(r: Row) => boolean> = []; let cols = '*'; let limit = Infinity; let pending: { kind: 'insert' | 'update' | 'delete'; row?: Row } | null = null;
     const rows = () => (db.tables[table] || []).filter((r) => filters.every((f) => f(r))).slice(0, limit);
+    const read = (r: Row, col: string) => (col.includes('->>') ? (r[col.split('->>')[0]] ?? {})[col.split('->>')[1]] : r[col]);
     const q: any = {
       select: (c: string) => { cols = c; db.selects.push({ table, cols: c }); return q; },
-      insert: () => { db.writes.push(`insert ${table}`); mode = 'write'; return q; }, update: () => { db.writes.push(`update ${table}`); mode = 'write'; return q; }, delete: () => { db.writes.push(`delete ${table}`); mode = 'write'; return q; },
-      eq: (c: string, v: any) => { filters.push((r) => r[c] === v); return q; },
+      insert: (row: Row) => { db.writes.push(`insert ${table}`); (db.tables[table] ||= []).push({ id: `${table}-${(db.tables[table] || []).length + 1}`, occurred_at: new Date().toISOString(), ...row }); pending = { kind: 'insert', row }; return q; },
+      update: () => { db.writes.push(`update ${table}`); pending = { kind: 'update' }; return q; }, delete: () => { db.writes.push(`delete ${table}`); pending = { kind: 'delete' }; return q; },
+      eq: (c: string, v: any) => { filters.push((r) => read(r, c) === v); return q; },
+      filter: (c: string, op: string, v: any) => { filters.push((r) => (op === 'eq' ? read(r, c) === v : true)); return q; },
       ilike: (c: string, v: string) => { const plain = v.replace(/\\([\\%_])/g, '$1').toLowerCase(); filters.push((r) => String(r[c] ?? '').toLowerCase() === plain); return q; },
-      or: () => q, order: () => q, range: () => q, is: () => q, gte: () => q, lte: () => q,
+      in: (c: string, vs: any[]) => { filters.push((r) => vs.includes(r[c])); return q; },
+      gte: (c: string, v: string) => { filters.push((r) => String(r[c]) >= v); return q; }, lte: () => q,
+      or: () => q, order: () => q, range: () => q, is: () => q,
       limit: (n: number) => { limit = n; return q; },
       maybeSingle: async () => ({ data: rows()[0] ?? null, error: null }),
       single: async () => ({ data: rows()[0] ?? null, error: rows()[0] ? null : { message: 'none' } }),
-      then: (res: any, rej: any) => Promise.resolve({ data: rows(), error: null, count: rows().length }).then(res, rej),
+      then: (res: any, rej: any) => Promise.resolve(pending?.kind === 'insert' ? { data: null, error: null } : { data: rows(), error: null, count: rows().length }).then(res, rej),
     };
-    void mode; void cols;
+    void cols;
     return q;
   }
   rpc() { this.writes.push('rpc'); return { single: async () => ({ data: null, error: { message: 'rpc not expected' } }) }; }
@@ -49,11 +55,11 @@ function world(over: { discount?: any; discountType?: any; commission?: any; par
   ];
   const supabase: any = { getClient: () => db };
   const media: any = { effectiveAvatar: async (_t: string, id: string) => (id === 'c-1' ? { id: 'a-1', signed_url: 'https://files.example.test/avatar.png?sig=1', expires_in: 300 } : null) };
-  return { db, qr: new QrService(supabase, media), tx: new TransactionsService(supabase) };
+  return { db, qr: new QrService(supabase, media, new AuditService(supabase)), tx: new TransactionsService(supabase) };
 }
 const code = (e: any) => e?.getResponse?.().code; const http = (e: any) => e?.getStatus?.();
 let controls = 0; const ok = (label: string, fn: () => void | Promise<void>) => Promise.resolve(fn()).then(() => { controls += 1; }, (e) => { console.error(`FAIL: ${label}`); throw e; });
-const CODE = 'COL-D600ABC8D5C2C528';
+const CODE = 'COL-D600ABC8D5C2C528'; const UNKNOWN = 'COL-0000000000000000';
 
 (async () => {
   // ---- parser -----------------------------------------------------------------------------------------------------------------------------------
@@ -101,10 +107,48 @@ const CODE = 'COL-D600ABC8D5C2C528';
     const w = world({ commission: 0.123456 }); const text = JSON.stringify(await w.qr.resolveForMerchant(MERCHANT_USER, CODE));
     for (const secret of ['0.1234', 'commission', '0900000000', 'secret@x.test', 'bank', 'merchant_commission']) assert.equal(text.toLowerCase().includes(secret.toLowerCase()), false, `leaked ${secret}`);
   });
-  await ok('R6 scanning is read-only: no insert, update, delete or RPC of any kind', async () => {
+  await ok('R6 scanning creates no financial or association record: the ONLY write is the walk-in counter event', async () => {
     const w = world(); for (const p of [CODE, 'COL-ELSEWHERE00000000', 'COL-FREE0000000000000']) await w.qr.resolveForMerchant(MERCHANT_USER, p);
     await assert.rejects(w.qr.resolveForMerchant(MERCHANT_USER, 'COL-PENDING00000000000')); await assert.rejects(w.qr.resolveForMerchant(MERCHANT_USER, 'nope nope'));
-    assert.deepEqual(w.db.writes, []);
+    assert.deepEqual([...new Set(w.db.writes)], ['insert audit_events']);
+    assert.ok(!w.db.writes.some((x) => /transactions|transaction_events|collaborators|merchant_details|user_profiles|rpc/.test(x)), w.db.writes.join(','));
+    assert.deepEqual(w.db.tables.collaborators.map((c) => c.merchant_system_id), [MID, OTHER_MID, null, MID, MID], 'no association was created or changed');
+    assert.equal(w.db.writes.length, 3, 'only the three VALID scans were counted (pending Partner and junk were not)');
+  });
+  await ok('S1 a valid scan is counted ONCE: same scan id (retry / repeated detection), concurrent requests, and the no-id window', async () => {
+    const w = world(); const sid = '11111111-1111-4111-8111-111111111111';
+    const first: any = await w.qr.resolveForMerchant(MERCHANT_USER, CODE, { scanId: sid, source: 'camera' }); assert.deepEqual(first.scan, { counted: true, duplicate: false });
+    const again: any = await w.qr.resolveForMerchant(MERCHANT_USER, `https://x.test/c/${CODE}`, { scanId: sid, source: 'camera' }); assert.deepEqual(again.scan, { counted: false, duplicate: true });
+    const burst: any[] = await Promise.all([1, 2, 3, 4].map(() => w.qr.resolveForMerchant(MERCHANT_USER, CODE, { scanId: '22222222-2222-4222-8222-222222222222' })));
+    assert.equal(burst.filter((r) => r.scan.counted).length, 1, 'four simultaneous requests for one scan: one count');
+    const w2 = world(); const a: any = await w2.qr.resolveForMerchant(MERCHANT_USER, CODE); const b: any = await w2.qr.resolveForMerchant(MERCHANT_USER, CODE.toLowerCase());
+    assert.deepEqual([a.scan.counted, b.scan.counted, b.scan.duplicate], [true, false, true], 'without a scan id: one per Partner per minute');
+    const events = w.db.tables.audit_events.filter((e) => e.action === SCAN_ACTION); assert.equal(events.length, 2);
+    assert.deepEqual([events[0].details.merchant_id, events[0].details.association, events[0].details.source], [MID, 'assigned_to_this_merchant', 'camera']);
+  });
+  await ok('S2 only VALID scans count; a Partner of another Merchant or none is counted but flagged, never associated', async () => {
+    const w = world();
+    for (const p of ['hello world', UNKNOWN, 'COL-PENDING00000000000', 'COL-INACTIVE0000000000']) await assert.rejects(w.qr.resolveForMerchant(MERCHANT_USER, p, { scanId: crypto.randomUUID() }));
+    assert.equal(w.db.tables.audit_events?.length ?? 0, 0, 'invalid, unknown and inactive lookups are not walk-ins');
+    await w.qr.resolveForMerchant(MERCHANT_USER, 'COL-ELSEWHERE00000000', { scanId: crypto.randomUUID() }); await w.qr.resolveForMerchant(MERCHANT_USER, 'COL-FREE0000000000000', { scanId: crypto.randomUUID() });
+    assert.deepEqual(w.db.tables.audit_events.map((e) => e.details.association), ['assigned_elsewhere', 'unassigned']);
+    assert.deepEqual(w.db.tables.collaborators.map((c) => c.merchant_system_id), [MID, OTHER_MID, null, MID, MID]);
+  });
+  await ok('S3 a counting failure never fails the lookup', async () => {
+    const w = world(); (w.db as any).from = ((orig) => (t: string) => { if (t === 'audit_events') throw new Error('audit unavailable'); return orig.call(w.db, t); })(w.db.from);
+    const r: any = await w.qr.resolveForMerchant(MERCHANT_USER, CODE); assert.equal(r.partner.code, CODE); assert.deepEqual(r.scan, { counted: false, duplicate: false });
+  });
+  await ok('S4 the walk-in report: per day (Vietnam time), split by association, own Merchant only', async () => {
+    const w = world();
+    for (let i = 0; i < 3; i += 1) await w.qr.resolveForMerchant(MERCHANT_USER, CODE, { scanId: crypto.randomUUID() });
+    await w.qr.resolveForMerchant(MERCHANT_USER, 'COL-FREE0000000000000', { scanId: crypto.randomUUID() });
+    w.db.tables.audit_events.push({ id: 'other', action: SCAN_ACTION, occurred_at: new Date().toISOString(), entity_id: 'c-1', details: { merchant_id: OTHER_MID, association: 'assigned_elsewhere', partner_code: CODE } });
+    const sum: any = await w.qr.scanSummary(MERCHANT_USER, { days: 7 } as any);
+    assert.deepEqual([sum.total, sum.assigned_to_merchant, sum.not_assigned, sum.distinct_partners], [4, 3, 1, 2]);
+    assert.equal(sum.by_day.length, 7); assert.equal(sum.by_day.reduce((a: number, d: any) => a + d.count, 0), 4); assert.equal(sum.top_partners[0].partner_code, CODE); assert.equal(sum.top_partners[0].count, 3);
+    await assert.rejects(w.qr.scanSummary(MERCHANT_USER, { days: 7, merchant_id: OTHER_MID } as any), (e: any) => http(e) === 403, 'a Merchant cannot read another Merchant\'s report');
+    for (const user of [PARTNER_USER, 'nobody']) await assert.rejects(w.qr.scanSummary(user, { days: 7 } as any), (e: any) => http(e) === 403);
+    const asAdmin: any = await w.qr.scanSummary('user-admin', { days: 7, merchant_id: OTHER_MID } as any); assert.equal(asAdmin.total, 1);
   });
   await ok('R7 actionable errors with stable codes', async () => {
     const w = world(); const rej = (p: any, c: string, s: number) => assert.rejects(w.qr.resolveForMerchant(MERCHANT_USER, p), (e: any) => code(e) === c && http(e) === s && /[À-ỹ]/.test(String(e.getResponse().message)), `${c}`);

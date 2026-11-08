@@ -75,6 +75,8 @@ export default function MerchantQrPaymentPage() {
   const resolvingRef = useRef(false);
   const previewSeq = useRef(0);
   const keys = useRef<{ create: string; confirm: string } | null>(null);
+  /** One id per scan attempt: a retry or a repeated detection of the SAME scan is counted once as a walk-in; a new scan gets a new id. */
+  const scanUuid = useRef(crypto.randomUUID());
 
   /** Scan (or type, or upload) -> look the Partner up. Read-only: nothing is created. */
   const resolve = useCallback(async (payload: string, source: ScanSource | "manual") => {
@@ -88,7 +90,7 @@ export default function MerchantQrPaymentPage() {
     }
     resolvingRef.current = true; setResolving(true);
     try {
-      const r = (await apiFetch("/qr/resolve", { method: "POST", body: JSON.stringify({ payload }) })) as Resolved;
+      const r = (await apiFetch("/qr/resolve", { method: "POST", body: JSON.stringify({ payload, scan_id: scanUuid.current, source }) })) as Resolved;
       logQrEvent(scanId, "resolve_ok", { source });
       setResolved(r); setStage("result");
     } catch (err) {
@@ -107,7 +109,7 @@ export default function MerchantQrPaymentPage() {
 
   function backToScan() {
     setResolved(null); setGross(""); setPreview(null); setPreviewError(null); setCreated(null); setPayError(null); setReceipt(null); setNotice(null);
-    setScanId(newScanId()); setScanKey((k) => k + 1); setStage("scan");
+    scanUuid.current = crypto.randomUUID(); setScanId(newScanId()); setScanKey((k) => k + 1); setStage("scan");
   }
 
   // ---- payment: live price preview from the server (same rules and arithmetic as the transaction itself) ----

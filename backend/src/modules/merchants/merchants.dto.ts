@@ -115,6 +115,28 @@ const UpdateMerchantBaseSchema = z.object({
 
 export const UpdateMerchantSchema = UpdateMerchantBaseSchema.superRefine(validateFractionalCommercialRates);
 
+/** Every field a Merchant may submit on its own profile (anything else is refused as an unknown field). */
+export const MERCHANT_SELF_UPDATE_KEYS = Object.keys(UpdateMerchantBaseSchema.shape) as Array<keyof typeof UpdateMerchantBaseSchema.shape>;
+
+/**
+ * First gate for the Merchant's own profile save: only the SHAPE is checked here (a JSON object with known field names). The VALUES are validated by
+ * the service after it has compared them with what is stored, so a legacy value the Merchant did not touch can never block an unrelated change.
+ */
+export const MerchantSelfUpdateEnvelopeSchema = z.object(
+  Object.fromEntries(MERCHANT_SELF_UPDATE_KEYS.map((key) => [key, z.unknown().optional()])) as Record<string, z.ZodOptional<z.ZodUnknown>>,
+).strict();
+
+/** Rate pairs checked against the EFFECTIVE type (the stored one when only the value changed): a percentage must be a fraction between 0 and 1. */
+export function fractionalRateErrors(effective: Record<string, unknown>, changedKeys: string[]): Array<{ path: string; message: string }> {
+  const out: Array<{ path: string; message: string }> = [];
+  for (const [typeKey, valueKey] of [['merchant_commission_type', 'merchant_commission_value'], ['merchant_discount_type', 'merchant_discount_value']] as const) {
+    if (!changedKeys.includes(valueKey) && !changedKeys.includes(typeKey)) continue;
+    const rate = effective[valueKey] as string | number | null | undefined;
+    if (effective[typeKey] === 'percentage' && rate !== null && rate !== undefined && !isFractionalRate(rate)) out.push({ path: valueKey, message: 'Percentage rates must be stored as a fraction between 0 and 1' });
+  }
+  return out;
+}
+
 export const AdminUpdateMerchantSchema = UpdateMerchantBaseSchema.extend({
   merchant_priority: z.number().int().nullable().optional(),
   merchant_verified: z.boolean().optional(),

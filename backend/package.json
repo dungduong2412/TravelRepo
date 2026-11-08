@@ -14,6 +14,7 @@
     "test:media-lifecycle": "node -r ts-node/register/transpile-only scripts/test-media-lifecycle.ts",
     "test:d13a-contracts": "node -r ts-node/register/transpile-only scripts/test-d13a-contracts.ts",
     "test:invitation-guards": "node -r ts-node/register/transpile-only scripts/test-invitation-claim-guards.ts",
+    "test:merchant-profile-update": "node -r ts-node/register/transpile-only scripts/test-merchant-profile-update.ts",
     "test:merchant-qr-flow": "node -r ts-node/register/transpile-only scripts/test-merchant-qr-flow.ts",
     "test:partner-single-step": "node -r ts-node/register/transpile-only scripts/test-partner-single-step.ts",
     "test:approve-unclaimed": "node -r ts-node/register/transpile-only scripts/test-approve-unclaimed.ts",
