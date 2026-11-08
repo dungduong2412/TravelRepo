@@ -390,6 +390,30 @@ test.describe.serial('Partner single-step registration -> approval -> activation
     });
   });
 
+  test('S11b the Partner3 situation: an adopted Partner who already logged in with their old password can still use the emailed link', async ({ browser }) => {
+    await step('S11b', 'approve the adopted application; password login (login_count 1); then the emailed link -> dashboard, login_count 2, link spent, password still valid', async () => {
+      const [rec] = await rest(`collaborators?select=id&collaborators_email=ilike.${encodeURIComponent(orphanEmail)}`);
+      const [prof] = await rest(`user_profiles?select=user_id&collaborator_id=eq.${rec.id}`);
+      expect([200, 201]).toContain((await api('admin', 'POST', `/collaborators/${rec.id}/approve`)).status);
+      const login = await fetch(`${config().api}/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: orphanEmail, password: orphanPassword }) });
+      expect([200, 201]).toContain(login.status);
+      const [afterLogin] = await rest(`user_profiles?select=login_count&user_id=eq.${prof.user_id}`); expect(afterLogin.login_count).toBe(1);
+      const link = await emailedLink(prof.user_id, rec.id);
+      const ctx = await browser.newContext(); const p = await ctx.newPage();
+      const [act] = await Promise.all([p.waitForResponse((r) => new URL(r.url()).pathname === '/auth/activate' && r.request().method() === 'POST', { timeout: 30_000 }), p.goto(link.url)]);
+      expect([200, 201]).toContain(act.status());
+      await expect(p).toHaveURL(/\/collaborator\/dashboard/, { timeout: 30_000 });
+      const [afterLink] = await rest(`user_profiles?select=login_count&user_id=eq.${prof.user_id}`); expect(afterLink.login_count).toBe(2);
+      expect((await getAuthUser(prof.user_id)).app_metadata.activation_nonce ?? null).toBeNull();          // spent
+      const again = await fetch(`${config().api}/auth/activate`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: link.token }) });
+      expect(again.status).toBe(401);                                                                        // single use
+      const grant = await fetch(`${config().supabase}/auth/v1/token?grant_type=password`, { method: 'POST', headers: { apikey: await anonKey(), 'Content-Type': 'application/json' }, body: JSON.stringify({ email: orphanEmail, password: orphanPassword }) });
+      expect(grant.status).toBe(200);                                                                        // the owner's own password was proven earlier and is untouched
+      await ctx.close();
+      return `password login ${login.status} (login_count 1) -> link POST /auth/activate ${act.status()} -> dashboard, login_count 2; replay 401; own password still valid`;
+    });
+  });
+
   test('S12 cleanup of this run\'s own pending test application so the Admin Pending list returns to what the owner expects', async () => {
     await step('S12', 'approve the synthetic orphan-adoption application (own test data); Pending count back to the starting value', async () => {
       const [rec] = await rest(`collaborators?select=id&collaborators_email=ilike.${encodeURIComponent(orphanEmail)}`);
