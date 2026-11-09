@@ -2,7 +2,7 @@
 
 **Business rule (owner decision).** Every ACTIVE Partner may refer customers to every ACTIVE Merchant. There is **no** mandatory Partner-to-Merchant assignment. Release `5af1d86` (2026-11-08) wrongly treated the assignment as a prerequisite; this release removes that restriction without touching the Merchant Profile fixes from the same release.
 
-**Status: deployed to UAT at `4763394` (UAT only); hosted acceptance A–I and regression PASS — see §9.** Source, tests and migration were first verified locally (unit, PostgREST integration, rehearsal database), then migrated, deployed and verified on UAT. Production is untouched; owner sign-off and a real-device check are still outstanding (§9.4).
+**Status: Technical UAT PASS for the Global Partner network (deployed to UAT at `4763394`, UAT only). Business UAT is OPEN** until real-device QR testing and owner sign-off — see §9 and §10. Source, tests and migration were first verified locally (unit, PostgREST integration, rehearsal database), then migrated, deployed and verified on UAT by hosted acceptance A–I and the regression set. Production is untouched.
 
 ## 1. Root cause — the wrong rule lived in four layers
 | Layer | Where | What it did |
@@ -74,7 +74,7 @@ Additive for data, replaces two functions:
 Partner3 is only scanned (a scan row is written, as acceptance A/B/D require); it is never modified, assigned or given a transaction. Transactions are recorded for a **synthetic** unassigned Partner.
 
 ## 8. Open items / for awareness
-1. **Partner "Members" page** (`/collaborator/dashboard/members`, API `/collaborators/members`) is a separate legacy team feature keyed on the historical `merchant_system_id` ("Collaborator is not assigned to a merchant team"). It is not part of QR, discount or transactions and was left as is — please confirm whether it should be retired or re-modelled.
+1. **Partner "Members" page** (`/collaborator/dashboard/members`, API `/collaborators/members`) is a separate legacy team feature keyed on the historical `merchant_system_id` ("Collaborator is not assigned to a merchant team"). It is not part of QR, discount or transactions. **Decision (owner, 2026-11-09 evening): retire it from active navigation, preserving the historical association data** — implemented as its own change, see §10.2.
 2. **QR authenticity:** the Partner QR contract is a code/URL (no cryptographic signature). "Authentic" therefore means: well-formed VNO payload, existing Partner, verified + active. Signing the QR would be a contract change; not done.
 3. Most real Merchants have **no commercial policy**: of 16 active+verified Merchants on UAT, 14 have neither discount nor commission configured and 2 have both. Those 14 can scan Partners (walk-ins count) but get the explicit `COMMISSION_POLICY_MISSING` answer on payment until an Admin configures their commission. This is by design (nothing is invented) but is the main thing that will surprise testers.
 4. Walk-in history before this release lives in `audit_events` (32 synthetic rows); not carried over.
@@ -111,7 +111,33 @@ Both re-read after all tests: unchanged. **Rollback:** application → re-stage 
 * **Not run:** `10-onboarding.spec.ts` (consumes one-time unclaimed identities; its O03/O09 edits are type-checked only); the email / auth specs 50–90 and 96 (out of scope, no change to that code).
 
 ### 9.4 Status
-* **Hosted acceptance A–I for the global Partner network: PASS on UAT at `4763394`**, with the regression set green and nothing assigned, auto-assigned or modified.
-* This is an automated end-to-end verification. It is **not** a sign-off by the owner and **not** a real-device (iPhone-in-Zalo) check; Production is untouched and not part of this release.
+* **Technical UAT PASS** — hosted acceptance A–I for the global Partner network on UAT at `4763394`, with the regression set green and nothing assigned, auto-assigned or modified.
+* **Business UAT is OPEN.** This is an automated end-to-end verification. It is **not** a sign-off by the owner and **not** a real-device (iPhone-in-Zalo) check; both are required before Business UAT can close. Production is untouched and not part of this release.
 * Failing tests that are unrelated and unchanged (§6): `test:d13a-contracts` (stale QR-payload assertion) and `test:email-delivery` (2 hook checks).
 * Open: see §8 — in particular the 14 of 16 active Merchants without a commission policy (they can scan but payment answers `COMMISSION_POLICY_MISSING` until an Admin configures them) and the legacy Partner "Members" page.
+
+## 10. Owner decisions after the technical PASS (2026-11-09, evening) and their status
+**State: Technical UAT PASS · Business UAT OPEN (real-device QR testing + owner sign-off). Production untouched.**
+
+### 10.1 Decisions that change nothing in the system (recorded so they are not undone by accident)
+* **Commission rates for the 14 Merchants without a policy are NOT configured automatically.** They keep answering `COMMISSION_POLICY_MISSING` on payment until an authorised Admin sets a rate. Scanning and walk-in counting work for all of them.
+* **The two synthetic transactions of spec 101 and their audit / ledger records are preserved** (`VNO261109-A723C71975`, `VNO261109-38E9660298`, synthetic Partner `COL-87B72D3690FD0D1A`) until an authorised reversal is performed through the governed Admin reversal. Nothing was or will be deleted.
+* **Known, unrelated failures stay documented (§6):** `test:d13a-contracts` (stale QR-payload assertion) and `test:email-delivery` (2 hook checks), plus the archived `migration/v2/test-*.mjs` phase scripts that still assert the retired `association` field. Not fixed here; not hidden.
+* **No further deploy for the evidence commit.** `ac7cc76` (docs + the corrected spec) is on `origin`; UAT keeps running `4763394`.
+
+### 10.2 Retire the legacy Partner Members page from active navigation (separate change — NOT deployed)
+* Removed the "Giới thiệu" entry from the Partner dashboard menu (`frontend/app/collaborator/dashboard/layout.tsx`). On mobile the bottom bar (first five entries) now shows all five remaining entries.
+* `/collaborator/dashboard/members` now answers a **307 redirect** to `/collaborator/dashboard` (`redirects()` in `frontend/next.config.mjs`), so old links and bookmarks do not land on a screen that fails with "not assigned to a merchant team". The page file was removed (it could still create team members through `POST /collaborators/members` if someone typed the URL). Reverting the commit restores it.
+* **Preserved:** `collaborators.merchant_system_id`, every historical association audit row, and the backend routes `GET/POST /collaborators/members` (spec 95 PC3 probes them as closed to a profile-less session). The Merchant "Members" page is a different feature and was not touched.
+* **Verified locally only:** `tsc` clean, eslint 0 errors, `next build` passes, and on a locally started production build the old route returns `307 → /collaborator/dashboard`. Not deployed and not run on hosted UAT — it needs its own authorised deploy and a hosted check (Partner menu has no "Giới thiệu"; old URL lands on the dashboard).
+* Follow-up for a later, separately scoped change: retire the `/collaborators/members` API routes (and the probe in spec 95) once the owner confirms nothing else uses them.
+
+### 10.3 Read-only security check of `create_uat_simulation_transaction` (pending — to be run from the host terminal)
+The migration postchecks asserted the privileges of `create_real_transaction` but not those of `create_uat_simulation_transaction` (rewritten by `create or replace`, which keeps the existing ACL; D13 granted EXECUTE to `service_role` only). Because the agent sandbox cannot reach the database, a read-only check was prepared for the owner to run:
+
+    cd migration/v2 && PATH=/opt/homebrew/opt/libpq/bin:$PATH node check-function-privileges.mjs
+
+* **Read-only by construction:** the session is opened with `default_transaction_read_only=on`, the SQL runs inside `begin read only … rollback`, and it only queries catalog functions. It writes one small evidence file (ACL metadata, no row data, no credentials) under `migration/v2/evidence/`, which stays uncommitted.
+* **Checks (21):** for both transaction functions — exactly one overload, an explicit ACL (a NULL ACL would mean EXECUTE for PUBLIC), PUBLIC / `anon` / `authenticated` cannot execute, `service_role` can, no other grantee holds EXECUTE; owner / SECURITY INVOKER / `search_path` shown for review; `partner_scan_events` has RLS on and no table privilege for PUBLIC / `anon` / `authenticated`, `service_role` can select / insert / update / delete.
+* **Validated on the disposable rehearsal database:** 21 / 21 PASS on the migrated schema; negative controls each detected — EXECUTE granted to `anon` (2 FAIL), to PUBLIC (4 FAIL), a table SELECT granted to `authenticated` (1 FAIL); restored → 21 / 21 again; a write attempted through the same session options is refused (`cannot execute CREATE TABLE in a read-only transaction`).
+* **Result on UAT: NOT YET RUN.** §9.1 keeps its limit statement until the output is recorded here. A FAIL must be reviewed, never "fixed" automatically.
