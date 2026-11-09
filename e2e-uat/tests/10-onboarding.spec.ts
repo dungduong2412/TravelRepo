@@ -67,11 +67,12 @@ test.describe.serial('Onboarding (first-time): Admin creates → invitation → 
     });
   });
 
-  test('O03 Admin creates the Partner assigned to that Merchant, with an avatar', async () => {
-    await step('O03', 'partner created with merchant assignment; avatar bytes match upload', async () => {
+  test('O03 Admin creates the Partner (global Partner network: no Merchant assignment), with an avatar', async () => {
+    await step('O03', 'partner created without any Merchant assignment; avatar bytes match upload', async () => {
       await admin.goto('/admin/collaborators'); await admin.getByRole('button', { name: /Create|New/i }).first().click();
       await admin.getByLabel('Name', { exact: true }).fill(P_NAME); await admin.getByLabel('Email', { exact: true }).fill(pair!.partner.email);
-      await admin.getByLabel('Phone', { exact: true }).fill('0900000002'); await admin.getByLabel('Merchant system ID (UUID)').fill(merchantId);
+      await admin.getByLabel('Phone', { exact: true }).fill('0900000002');
+      await expect(admin.getByLabel('Merchant system ID (UUID)')).toHaveCount(0);   // no assignment control exists any more
       await admin.getByRole('button', { name: 'Create pending partner' }).click();
       const find = async () => items((await api('admin', 'GET', '/collaborators')).body).find((p) => p.collaborators_name === P_NAME);
       await expect.poll(async () => !!(await find())).toBe(true);
@@ -147,9 +148,9 @@ test.describe.serial('Onboarding (first-time): Admin creates → invitation → 
   });
 
   test('O09 Pairing verified; fixture saved for operational tests', async () => {
-    await step('O09', 'merchant scan resolves partner as assigned_to_this_merchant; fixture saved', async () => {
-      const assoc = (await api('merchant', 'POST', '/qr/resolve', { payload: partnerCode })).body;
-      expect(assoc.association).toBe('assigned_to_this_merchant'); expect(assoc.collaborator_id).toBe(partnerId);
+    await step('O09', 'merchant scan resolves the paired partner (global Partner network: no assignment involved); fixture saved', async () => {
+      const scan = (await api('merchant', 'POST', '/qr/resolve', { payload: partnerCode })).body;
+      expect(scan.collaborator_id).toBe(partnerId); expect('association' in scan).toBe(false);
       writeFixture({ run: RUN_ID, merchantId, partnerId, partnerCode, merchant: pair!.merchant, partner: pair!.partner, merchantImageSha: merchantSha, partnerImageSha: partnerSha });
     });
   });

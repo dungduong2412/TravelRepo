@@ -9,6 +9,7 @@ import {
 import { SupabaseService } from '../../infrastructure/supabase/supabase.service';
 import { HttpException, HttpStatus } from '@nestjs/common';
 import { CreateRealTransaction, CreateUatSimulationTransaction, PreviewRealTransaction, TransactionAction, TransactionReportQuery } from './transactions.dto';
+import { DB_POLICY_ERRORS, POLICY_MESSAGES as POLICY_TEXT, resolvePaymentPolicy } from '../commercial/commercial-policy';
 
 const COLUMNS = [
   'id', 'legacy_transaction_id', 'merchant_id', 'collaborator_id',
@@ -239,10 +240,18 @@ export class TransactionsService {
       p_collaborator_code: dto.collaborator_code,
       p_gross_amount: dto.gross_amount,
       p_idempotency_key: dto.idempotency_key,
+      p_scan_event_id: dto.scan_event_id ?? null,
     }).single();
     if (error) {
       if (error.code === '42501') throw new ForbiddenException(error.message);
       if (error.code === '23505') throw new ConflictException(error.message);
+      if (error.code === '22023') {
+        // The database function is the authority on the Merchant's commercial policy; its refusals become stable, actionable codes.
+        const policy = DB_POLICY_ERRORS.find(([pattern]) => pattern.test(error.message || ''));
+        if (policy) throw fail(HttpStatus.UNPROCESSABLE_ENTITY, policy[1], POLICY_TEXT[policy[1]]);
+        if (/scan event does not belong/i.test(error.message || '')) throw fail(HttpStatus.BAD_REQUEST, 'SCAN_EVENT_MISMATCH', 'Lượt quét này không thuộc cửa hàng và Đối tác của giao dịch. Hãy quét lại mã của Đối tác.');
+        if (/active verified partner required/i.test(error.message || '')) throw fail(HttpStatus.BAD_REQUEST, 'PARTNER_NOT_ACTIVE', 'Đối tác chưa hoạt động hoặc không tìm thấy.');
+      }
       if (['22003', '22023', '23514'].includes(error.code || '')) throw new BadRequestException(error.message);
       throw new InternalServerErrorException('Unable to create real transaction');
     }
@@ -256,12 +265,15 @@ export class TransactionsService {
   }
 
   /**
-   * Read-only price preview for the payment step. It applies the SAME rules as create_real_transaction — active verified Merchant, reviewed fractional
-   * rates, active verified Partner assigned to this Merchant, positive amount with at most four decimals — and the same arithmetic:
+   * Read-only price preview for the payment step. GLOBAL Partner network: any active verified Partner can be priced at any active verified Merchant —
+   * there is no Partner-to-Merchant assignment. It applies the SAME rules as create_real_transaction — active verified Merchant, the Merchant's own
+   * commercial policy (commission must be configured; the customer discount is whatever this Merchant gives, none if unconfigured), positive amount with
+   * at most four decimals — and the same arithmetic:
    *   discount   = round4(gross x discount rate)           what the customer saves
    *   final      = gross - discount                        what the customer pays
    *   commission = round4(gross x commission rate)         the Partner's share, on the ORIGINAL amount (V1-verified, 102/102 rows); independent of the discount rate
-   * Nothing is written: no transaction, commission, payment, ledger or audit row.
+   * The Merchant enters ONLY the original invoice amount; everything else comes from the Merchant policy. Nothing is written: no transaction, commission,
+   * payment, ledger or audit row.
    */
   async previewRealTransaction(userId: string, dto: PreviewRealTransaction) {
     const gross = this.decimal4(dto.gross_amount);
@@ -277,26 +289,18 @@ export class TransactionsService {
     if (!merchant || !merchant.merchant_verified || merchant.merchants_status !== 'active') {
       throw fail(HttpStatus.FORBIDDEN, 'MERCHANT_NOT_ACTIVE', 'Tài khoản nhà cung cấp chưa được duyệt.');
     }
-    const d = Number(merchant.merchant_discount_value); const c = Number(merchant.merchant_commission_value);
-    if (merchant.merchant_discount_type !== 'percentage' || merchant.merchant_commission_type !== 'percentage' ||
-        merchant.merchant_discount_value === null || merchant.merchant_commission_value === null ||
-        !Number.isFinite(d) || !Number.isFinite(c) || d < 0 || d > 1 || c < 0 || c > 1) {
-      throw fail(HttpStatus.BAD_REQUEST, 'RATES_NOT_REVIEWED', 'Cửa hàng chưa có tỷ lệ giảm giá và hoa hồng đã được Admin duyệt nên chưa thể thanh toán. Vui lòng liên hệ Admin VNO.');
-    }
+    const policy = resolvePaymentPolicy(merchant);
+    if ('code' in policy) throw fail(HttpStatus.UNPROCESSABLE_ENTITY, policy.code, policy.message);
     const { data: partner } = await client.from('collaborators')
-      .select('id,collaborators_code,collaborators_name,collaborators_verified,collaborators_status,merchant_system_id')
+      .select('id,collaborators_code,collaborators_name,collaborators_verified,collaborators_status')
       .eq('collaborators_code', dto.collaborator_code.trim()).maybeSingle();
     if (!partner || !partner.collaborators_verified || partner.collaborators_status !== 'active') {
       throw fail(HttpStatus.BAD_REQUEST, 'PARTNER_NOT_ACTIVE', 'Đối tác chưa hoạt động hoặc không tìm thấy.');
     }
-    if (partner.merchant_system_id !== merchant.merchant_system_id) {
-      throw fail(HttpStatus.FORBIDDEN, 'PARTNER_NOT_ASSIGNED', 'Đối tác chưa được gán cho cửa hàng này nên không thể tạo giao dịch.');
-    }
-    const discountRate = this.decimal4(merchant.merchant_discount_value); const commissionRate = this.decimal4(merchant.merchant_commission_value);
+    const discountRate = this.decimal4(policy.discountRate); const commissionRate = this.decimal4(policy.commissionRate);
     const discount = this.roundedProduct(gross, discountRate); const commission = this.roundedProduct(gross, commissionRate);
     return {
       partner: { id: partner.id, code: partner.collaborators_code, name: partner.collaborators_name },
-      association: 'assigned_to_this_merchant',
       currency_code: 'VND',
       gross_amount: this.format4(gross),
       discount_rate: this.format4(discountRate),

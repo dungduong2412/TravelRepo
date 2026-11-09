@@ -22,7 +22,7 @@ export const UAT = {
 
 export const MERCHANT_TO_CORRECT = { code: 'UAT-M-D5-20261016-A4722D', id: '9ea93d89-a8a1-4c11-8b07-4c3d8eb590da' } as const;
 
-export type Role = 'admin' | 'merchant' | 'partner' | 'outsider';
+export type Role = 'admin' | 'merchant' | 'merchant2' | 'partner' | 'outsider';
 
 /**
  * E2E_TARGET=candidate runs the suite against a LOCAL build of the release candidate (web on loopback :3011, API on loopback :3100).

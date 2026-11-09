@@ -78,7 +78,7 @@ test.describe.serial('Merchant QR scan, discount inquiry and payment', () => {
       const r = await api('merchant', 'POST', '/qr/resolve', { payload: `${web()}/c/${fx.partnerCode}` });
       expect(r.status).toBe(201);
       const b = r.body; expect(b.partner).toMatchObject({ code: fx.partnerCode, name: partnerName, verified: true, status: 'active' });
-      expect(b.association).toBe('assigned_to_this_merchant'); expect(b.financial_action_created).toBe(false);
+      expect('association' in b).toBe(false); expect(b.financial_action_created).toBe(false); expect(b.payment).toEqual({ available: true });
       expect(b.discount).toMatchObject({ available: true, kind: 'percentage' }); expect(eq4(b.discount.rate, rates.d)).toBe(true);
       expect(b.discount.label).toBe(`Giảm ${formatRate(rates.d).replace('%', '')}%`);
       if (b.partner.avatar_url) expect(b.partner.avatar_url).toMatch(/^https:\/\//);

@@ -1,6 +1,6 @@
 // Adopts an ALREADY-CLAIMED Merchant+Partner pair as the operational fixture, but only if it is provably a same-run pair:
 // records named UAT-E2E-M-<run> / UAT-E2E-P-<run> with the same <run>, both bound to those records, both active, and the
-// application itself reports the partner as assigned_to_this_merchant. Anything else is refused (no substitution).
+// application itself resolves that Partner for the Merchant (global Partner network: identity, not an assignment). Anything else is refused (no substitution).
 import { api, useIdentity } from './api';
 import { creds, poolFor, Cred, loadEnvFile } from './env';
 import { readFixture, sha256, writeFixture } from './fixture';
@@ -24,9 +24,9 @@ import fs from 'node:fs'; import path from 'node:path';
     const mn = await dir(m.rec); const pr = await pname(p.rec); const mr = mn?.match(/^UAT-E2E-M-(.+)$/)?.[1]; const prr = pr?.collaborators_name?.match(/^UAT-E2E-P-(.+)$/)?.[1];
     if (!mr || mr !== prr) continue;
     useIdentity('merchant', m.c); useIdentity('partner', p.c);
-    const assoc = (await api('merchant', 'POST', '/qr/resolve', { payload: pr.collaborators_code })).body?.association;
+    const resolvedId = (await api('merchant', 'POST', '/qr/resolve', { payload: pr.collaborators_code })).body?.collaborator_id;
     const act = [(await api('merchant', 'GET', '/user-profiles/me')).body?.user_profiles_status, (await api('partner', 'GET', '/user-profiles/me')).body?.user_profiles_status];
-    if (assoc !== 'assigned_to_this_merchant' || act.some((a) => a !== 'active')) { console.log(`run ${mr}: not usable (assoc=${assoc}, status=${act})`); continue; }
+    if (resolvedId !== p.rec || act.some((a) => a !== 'active')) { console.log(`run ${mr}: not usable (resolved=${resolvedId}, status=${act})`); continue; }
     writeFixture({ run: mr, merchantId: m.rec, partnerId: p.rec, partnerCode: pr.collaborators_code, merchant: m.c, partner: p.c, merchantImageSha: sha256(makePng(`m${mr}`)), partnerImageSha: sha256(makePng(`p${mr}`, 256, 256)) });
     console.log(`ADOPTED same-run pair from run ${mr} (merchant ${m.rec}, partner ${p.rec})`); return;
   }

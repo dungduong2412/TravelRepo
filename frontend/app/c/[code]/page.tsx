@@ -2,17 +2,16 @@
 
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { MapPin, QrCode, ArrowLeft } from "lucide-react";
+import { QrCode, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { publicApiFetch } from "@/lib/api";
 
+/** Global Partner network: the code is valid at every active Merchant, so the page identifies the Partner only. */
 type PartnerInfo = {
   partner_code: string;
   partner_name: string;
-  merchant_id: string | null;
-  merchant_name: string | null;
-  merchant_city: string | null;
-  offer: { type: string; value: number; label: string } | null;
+  active?: boolean;
+  applies_to?: string;
 };
 
 type View =
@@ -82,53 +81,16 @@ function PartnerCard({ info }: { info: PartnerInfo }) {
         </div>
       </div>
 
-      {/* Merchant offer */}
-      {info.merchant_name ? (
-        <div className="rounded-2xl border border-emerald-200 bg-white p-6 shadow-sm">
-          <p className="text-sm font-medium text-slate-500">Nhà cung cấp liên kết</p>
-          <h2 className="mt-1 text-lg font-bold text-slate-900">{info.merchant_name}</h2>
-          {info.merchant_city && (
-            <p className="mt-1 flex items-center gap-1 text-sm text-slate-500">
-              <MapPin aria-hidden="true" className="size-4 shrink-0" />
-              {info.merchant_city}
-            </p>
-          )}
-
-          {info.offer ? (
-            <div className="mt-4 rounded-xl bg-emerald-50 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-emerald-600">Ưu đãi dành cho bạn</p>
-              <p className="mt-1 text-3xl font-extrabold text-emerald-700">{info.offer.label}</p>
-            </div>
-          ) : (
-            <p className="mt-4 text-sm text-slate-400">Nhà cung cấp chưa công bố ưu đãi.</p>
-          )}
-
-          <div className="mt-5 rounded-xl border border-violet-100 bg-violet-50 p-4">
-            <p className="text-sm font-semibold text-violet-900">Cách nhận ưu đãi</p>
-            <ol className="mt-2 list-decimal pl-5 text-sm text-violet-800 space-y-1">
-              <li>Trình trang này (hoặc mã QR của đối tác) cho nhân viên tại quầy.</li>
-              <li>Nhân viên quét mã QR của đối tác để ghi nhận giới thiệu.</li>
-              <li>Giảm giá {info.offer ? info.offer.label : ""} được áp dụng ngay trên hóa đơn.</li>
-            </ol>
-          </div>
-
-          {info.merchant_id && (
-            <Link
-              href={`/merchants/${info.merchant_id}`}
-              className="mt-4 flex min-h-11 w-full items-center justify-center rounded-xl bg-violet-700 px-4 font-semibold text-white hover:bg-violet-800"
-            >
-              Xem thông tin nhà cung cấp
-            </Link>
-          )}
-        </div>
-      ) : (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6">
-          <p className="text-sm font-semibold text-amber-900">Đối tác chưa liên kết với nhà cung cấp</p>
-          <p className="mt-1 text-sm text-amber-700">
-            Đối tác này chưa được gán cho một nhà cung cấp. Liên hệ với đối tác để biết thêm thông tin.
-          </p>
-        </div>
-      )}
+      {/* Valid at every active Merchant; the discount belongs to each Merchant and is shown to its staff when they scan */}
+      <div className="rounded-2xl border border-emerald-200 bg-white p-6 shadow-sm" data-testid="partner-network-note">
+        <p className="text-sm font-semibold text-emerald-800">Mã này dùng được tại mọi nhà cung cấp VNO đang hoạt động</p>
+        <ol className="mt-3 list-decimal space-y-1 pl-5 text-sm text-slate-700">
+          <li>Trình trang này (hoặc mã QR của đối tác) cho nhân viên tại quầy.</li>
+          <li>Nhân viên quét mã QR của đối tác để ghi nhận giới thiệu.</li>
+          <li>Ưu đãi (nếu nhà cung cấp có áp dụng) được hiển thị cho nhân viên khi quét và tính ngay trên hóa đơn.</li>
+        </ol>
+        {info.active === false && <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">Đối tác này hiện chưa hoạt động. Vui lòng liên hệ đối tác để biết thêm thông tin.</p>}
+      </div>
 
       <p className="px-2 text-center text-xs text-slate-400">
         Trang này xác nhận giới thiệu của đối tác. Không lưu trữ thông tin cá nhân của bạn.

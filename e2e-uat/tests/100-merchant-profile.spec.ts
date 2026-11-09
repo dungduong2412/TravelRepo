@@ -7,7 +7,7 @@ import { readFixture, Fixture } from '../lib/fixture';
 import { makePng } from '../lib/images';
 
 // ISSUE 1 — Merchant profile "Validation failed": legacy invalid values (a V1 e-mail with a typo, a record with no phone) made an UNCHANGED profile unsaveable and no field was named.
-// ISSUE 2 — a Partner that is active but not assigned to a Merchant: identity yes, association no. Admin assigns it; scans are counted once; nothing financial happens without the association.
+// (The Partner/Merchant scenarios moved to 101-global-partner-network.spec.ts: there is no Partner-to-Merchant assignment any more.)
 // Runs on the paired synthetic fixture (never on a real/V1 Merchant or on Partner3). Everything it changes is restored in afterAll.
 // Run through `railway run --service vno-api`; before a deploy also with E2E_TARGET=candidate.
 const step = async (id: string, title: string, fn: () => Promise<string | void>) => {
@@ -25,7 +25,7 @@ const BAD_EMAIL = 'nhakhoavinhan.@gmail.com';                                   
 
 test.skip(!process.env.SUPABASE_SERVICE_ROLE_KEY || !hasCreds('admin') || !readFixture(), 'BLOCKED: run via `railway run --service vno-api` with admin credentials and the paired fixture');
 
-test.describe.serial('Merchant profile save and Partner–Merchant association', () => {
+test.describe.serial('Merchant profile save (field-level errors, pending proposals, uploads)', () => {
   const web = () => config().web; const apiBase = () => config().api;
   let fx: Fixture; let original: Record<string, unknown> = {}; let merchantName = ''; let merchantCode = '';
   const proposalIds: string[] = [];
@@ -50,7 +50,7 @@ test.describe.serial('Merchant profile save and Partner–Merchant association',
     if (!fx) return;
     await rest(`merchant_details?merchant_system_id=eq.${fx.merchantId}`, { method: 'PATCH', body: JSON.stringify(original) }).catch(() => undefined);
     for (const id of proposalIds) await api('merchant', 'DELETE', `/media/requests/${id}`).catch(() => undefined);
-    fs.writeFileSync(`${EVIDENCE_DIR}/merchant-profile-association-${RUN_ID}.json`, JSON.stringify(evidence, null, 2));
+    fs.writeFileSync(`${EVIDENCE_DIR}/merchant-profile-${RUN_ID}.json`, JSON.stringify(evidence, null, 2));
   });
 
   // ================================ ISSUE 1 ================================================================================================================
@@ -166,120 +166,6 @@ test.describe.serial('Merchant profile save and Partner–Merchant association',
       expect(patches).toHaveLength(1); expect((await profileAudits()).length).toBe(before + 1); expect((await stored()).merchant_phone).toBe('0912 345 678');
       await page.getByTestId('profile-save').click(); await expect(page.getByTestId('profile-nochange')).toContainText('Không có thay đổi'); expect(patches).toHaveLength(1);
       await ctx.close(); return `1 PATCH for a double click; 1 audit row; a further Save with no change sends nothing ("Không có thay đổi nào để lưu.")`;
-    });
-  });
-
-  // ================================ ISSUE 2 ================================================================================================================
-  let partner: { id: string; code: string; name: string } | null = null;
-  const resolve = (payload: string, extra: Record<string, unknown> = {}) => api('merchant', 'POST', '/qr/resolve', { payload, ...extra });
-  const summary = async (days = 1) => (await api('merchant', 'GET', `/qr/scans/summary?days=${days}`)).body;
-  const ledgerTotal = async () => Number((await api('admin', 'GET', `/transactions/report?merchant_id=${fx.merchantId}&page_size=1`)).body.total);
-
-  test('A1 an active Partner with no Merchant: identified, no association, no discount, no transaction possible', async () => {
-    await step('A1', 'synthetic active Partner without a Merchant -> association "unassigned", discount unavailable; preview 403 and real transaction 403 (nothing recorded)', async () => {
-      const rows = await rest(`collaborators?select=id,collaborators_code,collaborators_name&collaborators_status=eq.active&collaborators_verified=eq.true&merchant_system_id=is.null&collaborators_email=ilike.*vno-uat-synthetic.example&order=created_at.desc&limit=1`);
-      test.skip(!rows.length, 'no synthetic unassigned active Partner is available');
-      partner = { id: rows[0].id, code: rows[0].collaborators_code, name: rows[0].collaborators_name };
-      const r = await resolve(partner.code); expect(r.status).toBe(201);
-      expect(r.body.partner).toMatchObject({ code: partner.code, verified: true, status: 'active' }); expect(r.body.association).toBe('unassigned');
-      expect(r.body.discount).toEqual({ available: false, kind: null, rate: null, label: null, reason: 'partner_not_assigned' });
-      const t0 = await ledgerTotal();
-      const preview = await api('merchant', 'POST', '/transactions/real/preview', { collaborator_code: partner.code, gross_amount: '100000' }); expect(preview.status).toBe(403); expect(preview.body.code).toBe('PARTNER_NOT_ASSIGNED');
-      const real = await api('merchant', 'POST', '/transactions/real', { collaborator_code: partner.code, gross_amount: '100000', idempotency_key: crypto.randomUUID() }); expect(real.status).toBe(403);
-      expect(await ledgerTotal()).toBe(t0);
-      evidence.unassigned = { partner: partner.code, preview: preview.status, real: real.status };
-      return `${partner.code}: association=unassigned, discount.available=false (partner_not_assigned); preview 403 PARTNER_NOT_ASSIGNED; POST /transactions/real 403; ledger ${t0} unchanged`;
-    });
-  });
-
-  test('A2 scans are counted once, even without an invoice, and never create a commission, a transaction or an association', async () => {
-    test.skip(!partner, 'needs A1');
-    await step('A2', 'same scan id x5 (sequential + parallel) -> counted once; no-id scans -> once per minute; ledger, partner earnings and the association unchanged', async () => {
-      const before = await summary(); const t0 = await ledgerTotal();
-      const partnerEarn = async () => String((await api('partner', 'GET', '/transactions/me/report?record_kind=real_transaction&lifecycle_status=confirmed&page_size=1')).body.summary.commission_amount);
-      const earn0 = await partnerEarn(); const sid = crypto.randomUUID();
-      const results = await Promise.all([1, 2, 3, 4, 5].map(() => resolve(partner!.code, { scan_id: sid, source: 'manual' })));
-      expect(results.filter((r) => r.body.scan?.counted).length).toBe(1); expect(results.filter((r) => r.body.scan?.duplicate).length).toBe(4);
-      const again = await resolve(`${web()}/c/${partner!.code}`, { scan_id: sid, source: 'camera' }); expect(again.body.scan).toEqual({ counted: false, duplicate: true });
-      // a client that sends no scan id is counted once per (Merchant, Partner, minute); A1's lookup may already have used this minute's window
-      const t1 = Date.now(); const noId1 = await resolve(partner!.code); const noId2 = await resolve(partner!.code.toLowerCase()); const sameMinute = Math.floor(t1 / 60_000) === Math.floor(Date.now() / 60_000);
-      if (sameMinute) expect(noId2.body.scan).toEqual({ counted: false, duplicate: true });
-      const counted = [...results, again, noId1, noId2].filter((r) => r.body.scan?.counted).length;                 // exactly the lookups the server says it counted ...
-      const after = await summary(); expect(after.total - before.total).toBe(counted);                               // ... are what the report shows
-      expect(counted).toBeGreaterThanOrEqual(1); expect(counted).toBeLessThanOrEqual(3);
-      expect(after.not_assigned - before.not_assigned).toBe(counted);
-      expect(await ledgerTotal()).toBe(t0); expect(await partnerEarn()).toBe(earn0);
-      const [p] = await rest(`collaborators?select=merchant_system_id&id=eq.${partner!.id}`); expect(p.merchant_system_id).toBeNull();
-      const invalid = await resolve('hello world', { scan_id: crypto.randomUUID() }); expect(invalid.status).toBe(400); expect((await summary()).total).toBe(after.total);   // an invalid scan is not a walk-in
-      evidence.scanCounting = { before: before.total, after: after.total, notAssigned: after.not_assigned };
-      return `8 lookups -> counted ${counted} (scan id x1, plus the minute window at most once); report +${after.total - before.total} = counted; invalid scan not counted; ledger ${t0} and partner earnings ${earn0} unchanged; Partner still unassigned`;
-    });
-  });
-
-  test('A3 the walk-in report is private: own Merchant and Admin only', async () => {
-    await step('A3', 'Merchant sees its own report; another merchant_id -> 403; Partner 403; anonymous 401; Admin can read any Merchant', async () => {
-      const own = await api('merchant', 'GET', `/qr/scans/summary?days=30`); expect(own.status).toBe(200); expect(own.body.merchant_id).toBe(fx.merchantId); expect(own.body.by_day.length).toBe(30);
-      const other = await api('merchant', 'GET', '/qr/scans/summary?days=7&merchant_id=00000000-0000-4000-8000-000000000001'); expect(other.status).toBe(403);
-      expect((await api('partner', 'GET', '/qr/scans/summary')).status).toBe(403);
-      expect((await fetch(`${apiBase()}/qr/scans/summary`)).status).toBe(401);
-      const adm = await api('admin', 'GET', `/qr/scans/summary?days=30&merchant_id=${fx.merchantId}`); expect(adm.status).toBe(200); expect(adm.body.total).toBe(own.body.total);
-      return `own report ${own.body.total} scans in 30 days (${own.body.not_assigned} for Partners not assigned); foreign id 403; Partner 403; anonymous 401; Admin same total`;
-    });
-  });
-
-  test('A4 Admin assigns the Partner to the Merchant in the UI: audited; the Merchant now sees the customer discount and can price a payment', async ({ browser }) => {
-    test.skip(!partner, 'needs A1');
-    await step('A4', 'Admin > Partners > drawer > search Merchant > Assign -> DB + audit collaborator.merchant_association_changed(assigned); scan shows "Giảm 5%"; preview 200 with correct amounts', async () => {
-      const ctx = await browser.newContext({ viewport: { width: 1280, height: 1000 } }); const page = await ctx.newPage(); page.on('dialog', (d) => d.accept());
-      const a = creds('admin')!; await page.goto(`${web()}/login`); await page.getByPlaceholder('email@example.com').fill(a.email); await page.locator('input[type="password"]').fill(a.password); await page.locator('button[type="submit"]').click(); await expect(page).toHaveURL(/\/admin/, { timeout: 30_000 });
-      await page.goto(`${web()}/admin/collaborators`); await expect(page.getByText('Loading partners…')).toHaveCount(0, { timeout: 30_000 });
-      await page.getByPlaceholder('Name, code, email or phone').fill(partner!.code); const row = page.locator('tbody tr', { hasText: partner!.code }); await expect(row).toHaveCount(1, { timeout: 30_000 });
-      await row.getByRole('button', { name: 'View details' }).click(); const box = page.getByTestId('merchant-association'); await expect(box).toContainText('Not assigned');
-      await page.getByTestId('assoc-search').fill(merchantName); await expect(page.getByTestId('assoc-results')).toBeVisible({ timeout: 20_000 });
-      await page.getByTestId(`assign-${merchantCode}`).click(); await expect(page.getByTestId('assoc-message')).toContainText('Assigned to', { timeout: 20_000 }); await expect(box).toContainText(merchantName);
-      await shot(page, 'A4-admin-assigned');
-      const [p] = await rest(`collaborators?select=merchant_system_id&id=eq.${partner!.id}`); expect(p.merchant_system_id).toBe(fx.merchantId);
-      const ev = await rest(`audit_events?select=details,occurred_at,actor_role&action=eq.collaborator.merchant_association_changed&entity_id=eq.${partner!.id}&order=occurred_at.desc&limit=1`);
-      expect(ev[0].details).toMatchObject({ change: 'assigned', previous_merchant_id: null, merchant_id: fx.merchantId }); expect(ev[0].actor_role).toBe('admin');
-      await ctx.close();
-      const r = await resolve(partner!.code); expect(r.body.association).toBe('assigned_to_this_merchant'); expect(r.body.discount).toMatchObject({ available: true, label: 'Giảm 5%' }); expect(r.body.discount.rate).toBe('0.0500');
-      const preview = await api('merchant', 'POST', '/transactions/real/preview', { collaborator_code: partner!.code, gross_amount: '1000000' });
-      expect(preview.status).toBe(201); expect([preview.body.discount_amount, preview.body.final_payable, preview.body.commission_amount]).toEqual(['50000.0000', '950000.0000', '100000.0000']);
-      // the Merchant's own scan page shows it
-      const mctx = await browser.newContext({ viewport: { width: 390, height: 844 } }); const mp = await mctx.newPage(); await merchantLogin(mp);
-      await mp.goto(`${web()}/merchant/dashboard/new-transaction`); await mp.getByRole('tab', { name: /Nhập mã/ }).click(); await mp.getByTestId('manual-code').fill(partner!.code); await mp.getByRole('button', { name: /Xem Đối tác và ưu đãi/ }).click();
-      await expect(mp.getByTestId('discount-label')).toHaveText('Giảm 5%', { timeout: 20_000 }); await expect(mp.getByTestId('continue-payment')).toBeEnabled(); await shot(mp, 'A4-merchant-sees-discount'); await mctx.close();
-      evidence.assigned = { audit: ev[0].details, preview: preview.body };
-      return `assigned; audit ${JSON.stringify(ev[0].details)}; resolve -> assigned_to_this_merchant + "Giảm 5%" (0.0500); preview: discount 50000.0000, final 950000.0000, commission 100000.0000; continue-payment enabled`;
-    });
-  });
-
-  test('A5 Admin removes the association: the Partner is recognised but gets no discount and cannot transact again; the walk-in history is kept', async ({ browser }) => {
-    test.skip(!partner, 'needs A1');
-    await step('A5', 'Admin > Remove association -> audit (unassigned); resolve = unassigned, preview/real 403; summary history unchanged', async () => {
-      const histBefore = (await summary(30)).total;
-      const ctx = await browser.newContext({ viewport: { width: 1280, height: 1000 } }); const page = await ctx.newPage(); page.on('dialog', (d) => d.accept());
-      const a = creds('admin')!; await page.goto(`${web()}/login`); await page.getByPlaceholder('email@example.com').fill(a.email); await page.locator('input[type="password"]').fill(a.password); await page.locator('button[type="submit"]').click(); await expect(page).toHaveURL(/\/admin/, { timeout: 30_000 });
-      await page.goto(`${web()}/admin/collaborators`); await expect(page.getByText('Loading partners…')).toHaveCount(0, { timeout: 30_000 });
-      await page.getByPlaceholder('Name, code, email or phone').fill(partner!.code); await page.locator('tbody tr', { hasText: partner!.code }).getByRole('button', { name: 'View details' }).click();
-      await expect(page.getByTestId('merchant-association')).toContainText(merchantName); await page.getByTestId('assoc-remove').click(); await expect(page.getByTestId('assoc-message')).toContainText('Removed', { timeout: 20_000 }); await ctx.close();
-      const ev = await rest(`audit_events?select=details&action=eq.collaborator.merchant_association_changed&entity_id=eq.${partner!.id}&order=occurred_at.desc&limit=1`); expect(ev[0].details).toMatchObject({ change: 'unassigned', previous_merchant_id: fx.merchantId, merchant_id: null });
-      const r = await resolve(partner!.code); expect(r.body.association).toBe('unassigned'); expect(r.body.discount.available).toBe(false);
-      expect((await api('merchant', 'POST', '/transactions/real/preview', { collaborator_code: partner!.code, gross_amount: '1000' })).status).toBe(403);
-      expect((await api('merchant', 'POST', '/transactions/real', { collaborator_code: partner!.code, gross_amount: '1000', idempotency_key: crypto.randomUUID() })).status).toBe(403);
-      expect((await summary(30)).total).toBeGreaterThanOrEqual(histBefore);
-      return `unassigned (audit ${JSON.stringify(ev[0].details)}); resolve -> unassigned, no discount; preview 403, real transaction 403; walk-in history kept (${histBefore} -> ${(await summary(30)).total})`;
-    });
-  });
-
-  test('A6 isolation is intact: only the authorised Merchant gets the discount; Partner / Admin / anonymous cannot resolve; Partner earnings views stay discount-free', async () => {
-    test.skip(!partner, 'needs A1');
-    await step('A6', 'resolve: Partner 403, Admin 403, anonymous 401; Partner transaction views contain no discount; Partner cannot call preview/receipt/scan report', async () => {
-      expect((await api('partner', 'POST', '/qr/resolve', { payload: partner!.code })).status).toBe(403); expect((await api('admin', 'POST', '/qr/resolve', { payload: partner!.code })).status).toBe(403);
-      expect((await fetch(`${apiBase()}/qr/resolve`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ payload: partner!.code }) })).status).toBe(401);
-      const views = JSON.stringify([(await api('partner', 'GET', '/transactions/me/report?page_size=5')).body, (await api('partner', 'GET', '/transactions/me')).body]); expect(views).not.toMatch(/discount/i);
-      expect((await api('partner', 'POST', '/transactions/real/preview', { collaborator_code: fx.partnerCode, gross_amount: '1000' })).status).toBe(403);
-      return 'Partner 403 / Admin 403 / anonymous 401 on resolve; Partner transaction views carry no discount; Partner preview 403, scan report 403';
     });
   });
 });

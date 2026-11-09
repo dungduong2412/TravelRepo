@@ -26,9 +26,9 @@ test.describe.serial('Operational (reusable): governed rate change, QR → trans
     // Pairing proof: both identities are bound to records of the same onboarding run, and the app agrees they are paired.
     const m = (await api('merchant', 'GET', '/user-profiles/me')).body; const p = (await api('partner', 'GET', '/user-profiles/me')).body;
     const rec = (await api('admin', 'GET', `/merchants/${fx.merchantId}`)).body;
-    const assoc = (await api('merchant', 'POST', '/qr/resolve', { payload: fx.partnerCode })).body?.association;
-    const ok = m?.merchant_id === fx.merchantId && p?.collaborator_id === fx.partnerId && m?.user_profiles_status === 'active' && p?.user_profiles_status === 'active' && assoc === 'assigned_to_this_merchant' && String(rec?.merchant_name).endsWith(fx.run);
-    if (!ok) { reason = `BLOCKED: fixture from run ${fx.run} is no longer a valid paired set (assoc=${assoc}); refusing to substitute other identities`; fx = null; return; }
+    const resolvedPartner = (await api('merchant', 'POST', '/qr/resolve', { payload: fx.partnerCode })).body?.collaborator_id;   // global Partner network: the pairing proof is identity, not an assignment
+    const ok = m?.merchant_id === fx.merchantId && p?.collaborator_id === fx.partnerId && m?.user_profiles_status === 'active' && p?.user_profiles_status === 'active' && resolvedPartner === fx.partnerId && String(rec?.merchant_name).endsWith(fx.run);
+    if (!ok) { reason = `BLOCKED: fixture from run ${fx.run} is no longer a valid paired set (resolved=${resolvedPartner}); refusing to substitute other identities`; fx = null; return; }
     rates = { d: String(rec.merchant_discount_value), c: String(rec.merchant_commission_value) };
   });
 

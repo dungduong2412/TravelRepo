@@ -9,11 +9,16 @@ import { parsePartnerQrPayload } from "../../../../lib/qr/payload";
 import { logQrEvent, newScanId, safeToken } from "../../../../lib/qr/diagnostics";
 import { formatRate, formatVnd } from "../../../../lib/qr/money";
 
-type Discount = { available: boolean; kind: "percentage" | null; rate: string | null; label: string | null; reason?: "partner_not_assigned" | "no_discount" | "rate_not_reviewed" };
+type Discount = { available: boolean; kind: "percentage" | null; rate: string | null; label: string | null; reason?: "no_discount" | "rate_not_reviewed" };
+/** Can THIS Merchant record a transaction? false = its commission policy is not configured/reviewed (an explicit business-rule answer from the server). */
+type PaymentReadiness = { available: boolean; reason?: string; message?: string };
 type Resolved = {
-  collaborator_code: string; association: "assigned_to_this_merchant" | "assigned_elsewhere" | "unassigned";
+  collaborator_code: string;
   partner: { id: string; code: string; name: string; avatar_url: string | null; verified: boolean; status: string };
   discount: Discount;
+  payment: PaymentReadiness;
+  /** the walk-in event this scan recorded; a transaction made from this scan links to it */
+  scan: { id: string | null; counted: boolean; duplicate: boolean };
 };
 type Preview = { partner: { code: string; name: string }; gross_amount: string; discount_rate: string; discount_amount: string; final_payable: string; commission_rate: string; commission_amount: string };
 type Created = { transaction_id: string; document_number: string; lifecycle_status: string; gross_amount: string; discount_amount: string; commission_amount: string; idempotent_replay: boolean };
@@ -135,7 +140,7 @@ export default function MerchantQrPaymentPage() {
     try {
       let tx = created;
       if (!tx) {
-        tx = (await apiFetch("/transactions/real", { method: "POST", body: JSON.stringify({ collaborator_code: resolved.partner.code, gross_amount: gross, idempotency_key: k.create }) })) as Created;
+        tx = (await apiFetch("/transactions/real", { method: "POST", body: JSON.stringify({ collaborator_code: resolved.partner.code, gross_amount: gross, idempotency_key: k.create, ...(resolved.scan?.id ? { scan_event_id: resolved.scan.id } : {}) }) })) as Created;
         setCreated(tx);
       }
       try {
@@ -163,12 +168,13 @@ export default function MerchantQrPaymentPage() {
     finally { submitting.current = false; setBusy(false); }
   }
 
-  const assigned = resolved?.association === "assigned_to_this_merchant";
+  /** Global Partner network: every active Partner can be scanned at every active Merchant. The only gate to PAYING is this Merchant's own commission policy. */
+  const canPay = resolved?.payment?.available !== false;
 
   return (
     <div className="mx-auto max-w-2xl pb-24">
       <h1 className="text-2xl font-bold sm:text-3xl">Quét mã QR Đối tác</h1>
-      <p className="mt-2 text-slate-600">Quét để xem Đối tác và ưu đãi dành cho khách. Chỉ khi bạn bấm “Tiếp tục thanh toán” và xác nhận mới có giao dịch được tạo.</p>
+      <p className="mt-2 text-slate-600">Mọi Đối tác đang hoạt động đều dùng được tại cửa hàng của bạn. Quét để xem Đối tác và ưu đãi dành cho khách; chỉ khi bạn nhập hoá đơn và bấm xác nhận mới có giao dịch được tạo.</p>
 
       {/* 1 — scan */}
       {stage === "scan" && (
@@ -211,14 +217,13 @@ export default function MerchantQrPaymentPage() {
               {resolved.discount.available
                 ? <p className="text-xl font-bold" data-testid="discount-label">{resolved.discount.label}</p>
                 : <p className="text-lg font-semibold" data-testid="discount-label">Không có ưu đãi áp dụng</p>}
-              {!resolved.discount.available && resolved.discount.reason === "partner_not_assigned" && <p className="mt-1 text-sm">Đối tác này chưa được gán cho cửa hàng của bạn.</p>}
             </div>
           </div>
-          {!assigned && <p className="mt-3 rounded-lg bg-amber-100 p-3 text-sm text-amber-900" data-testid="not-assigned">Đối tác chưa được gán cho cửa hàng này nên chưa thể tạo giao dịch cho Đối tác này.</p>}
-          <p className="mt-3 text-xs text-slate-500">Chưa có giao dịch, thanh toán hay hoa hồng nào được tạo. Đây chỉ là kiểm tra ưu đãi.</p>
+          {!canPay && resolved.payment.message && <p role="status" className="mt-3 rounded-lg bg-amber-100 p-3 text-sm text-amber-900" data-testid="payment-unavailable" data-reason={resolved.payment.reason}>{resolved.payment.message}</p>}
+          <p className="mt-3 text-xs text-slate-500" data-testid="inquiry-note">{resolved.scan?.id ? "Lượt quét đã được ghi nhận là một khách ghé cửa hàng. " : ""}Chưa có giao dịch, thanh toán hay hoa hồng nào được tạo — đây chỉ là kiểm tra ưu đãi.</p>
           <div className="mt-4 grid gap-2 sm:grid-cols-2">
             <button type="button" onClick={backToScan} className="min-h-12 rounded-xl border border-slate-300 bg-white px-4 font-semibold text-slate-700" data-testid="close-result">Đóng</button>
-            <button type="button" disabled={!assigned} onClick={() => setStage("payment")} className="min-h-12 rounded-xl bg-violet-700 px-4 font-semibold text-white disabled:opacity-50" data-testid="continue-payment">Tiếp tục thanh toán</button>
+            <button type="button" disabled={!canPay} onClick={() => setStage("payment")} className="min-h-12 rounded-xl bg-violet-700 px-4 font-semibold text-white disabled:opacity-50" data-testid="continue-payment">Tiếp tục thanh toán</button>
           </div>
         </section>
       )}

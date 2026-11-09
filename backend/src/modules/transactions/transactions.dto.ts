@@ -38,6 +38,8 @@ export const CreateRealTransactionSchema = z.object({
   collaborator_code: z.string().trim().min(1).max(100),
   gross_amount: z.string().trim().regex(/^\d{1,14}(?:\.\d{1,4})?$/, 'Gross amount must use at most four decimal places'),
   idempotency_key: PostgresUuidSchema,
+  /** the scan event (`scan.id` from POST /qr/resolve) this transaction comes from; optional, validated by the database against this Merchant and Partner */
+  scan_event_id: PostgresUuidSchema.optional(),
 }).strict();
 
 export type CreateRealTransaction = z.infer<typeof CreateRealTransactionSchema>;

@@ -40,7 +40,6 @@ import { SupabaseService } from '../../infrastructure/supabase/supabase.service'
 import { UserProfilesService } from '../user-profiles/user-profiles.service';
 import * as QRCode from 'qrcode';
 import { AuditActor, AuditService } from '../audit/audit.service';
-import { publicOffer } from '../public-catalog/public-catalog.projection';
 import { ActivationService } from '../activation/activation.service';
 import { MediaService } from '../media/media.service';
 
@@ -537,42 +536,25 @@ export class CollaboratorsService {
     return this.resolveByCode(this.collaboratorCodeFromPayload(qrToken));
   }
 
+  /**
+   * Public (customer-facing) landing for a Partner QR. GLOBAL Partner network: the code is valid at every active Merchant, so this answers who the
+   * Partner is and nothing about one particular Merchant. The customer discount depends on the Merchant and is shown to its staff when they scan.
+   */
   async resolveByQrTokenPublic(qrToken: string) {
     const code = this.collaboratorCodeFromPayload(qrToken);
     const { data: collaborator } = await this.supabase.getClient()
       .from('collaborators')
-      .select('id,collaborators_code,collaborators_name,collaborators_verified,collaborators_status,merchant_system_id')
+      .select('id,collaborators_code,collaborators_name,collaborators_verified,collaborators_status')
       .eq('collaborators_code', code)
       .eq('collaborators_verified', true)
       .maybeSingle();
     if (!collaborator) throw new NotFoundException('Partner not found');
 
-    let merchantInfo: { merchant_id: string; merchant_name: string; merchant_city: string | null; offer: ReturnType<typeof publicOffer> } | null = null;
-    if (collaborator.merchant_system_id) {
-      const { data: m } = await this.supabase.getClient()
-        .from('merchant_details')
-        .select('merchant_system_id,merchant_name,new_address_city,merchant_discount_type,merchant_discount_value,merchant_verified,merchants_status')
-        .eq('merchant_system_id', collaborator.merchant_system_id)
-        .eq('merchant_verified', true)
-        .eq('merchants_status', 'active')
-        .maybeSingle();
-      if (m) {
-        merchantInfo = {
-          merchant_id: m.merchant_system_id,
-          merchant_name: m.merchant_name,
-          merchant_city: m.new_address_city ?? null,
-          offer: publicOffer(m.merchant_discount_type, m.merchant_discount_value),
-        };
-      }
-    }
-
     return {
       partner_code: collaborator.collaborators_code,
       partner_name: collaborator.collaborators_name,
-      merchant_id: merchantInfo?.merchant_id ?? null,
-      merchant_name: merchantInfo?.merchant_name ?? null,
-      merchant_city: merchantInfo?.merchant_city ?? null,
-      offer: merchantInfo?.offer ?? null,
+      active: collaborator.collaborators_status === 'active',
+      applies_to: 'all_active_merchants',
     };
   }
 
@@ -617,8 +599,8 @@ export class CollaboratorsService {
       previous_status: before.collaborators_status,
       status: data.collaborators_status,
     });
-    // Who the Partner works for is a business decision with consequences (the customer discount that applies, the right to record transactions):
-    // record it explicitly, with the before and after, whenever it actually changes.
+    // LEGACY: Partner-to-Merchant assignment is no longer consulted anywhere (global Partner network: every active Partner can work with every active
+    // Merchant). The column and its history are kept, so a change made through the API is still recorded with its before and after.
     if ('merchant_system_id' in dto && (before.merchant_system_id ?? null) !== (data.merchant_system_id ?? null)) {
       await this.audit.record(actor, 'collaborator.merchant_association_changed', 'collaborator', id, {
         previous_merchant_id: before.merchant_system_id ?? null,
