@@ -2,7 +2,7 @@
 
 **Business rule (owner decision).** Every ACTIVE Partner may refer customers to every ACTIVE Merchant. There is **no** mandatory Partner-to-Merchant assignment. Release `5af1d86` (2026-11-08) wrongly treated the assignment as a prerequisite; this release removes that restriction without touching the Merchant Profile fixes from the same release.
 
-**Status: see §9.** Source, tests and migration are complete and verified locally (unit, PostgREST integration, rehearsal database). The UAT migration, the deploy and the hosted acceptance run are tracked in §9 — nothing in this document is a hosted PASS unless §9 says so.
+**Status: deployed to UAT at `4763394` (UAT only); hosted acceptance A–I and regression PASS — see §9.** Source, tests and migration were first verified locally (unit, PostgREST integration, rehearsal database), then migrated, deployed and verified on UAT. Production is untouched; owner sign-off and a real-device check are still outstanding (§9.4).
 
 ## 1. Root cause — the wrong rule lived in four layers
 | Layer | Where | What it did |
@@ -19,7 +19,7 @@ Because the rule was also in the database function, removing it needs a **contro
 * QR resolve: validates the code and that the Partner is active + verified; returns name, avatar, code, status, **this Merchant's own** customer discount (or `Không có ưu đãi áp dụng`), and `payment.available` (whether *this* Merchant can record a transaction). No `association` field exists any more; nothing says "not assigned".
 * Transactions: any active verified Partner at any active verified Merchant. The Merchant sends only the original invoice amount (+ optionally the scan it came from); discount, final payable and commission come from the Merchant policy; one explicit confirmation; existing idempotency / ledger / audit unchanged.
 * Commercial policy (`backend/src/modules/commercial/commercial-policy.ts`, mirrored in SQL):
-  * **Commission** must be explicitly configured (`percentage`, 0 ≤ value ≤ 1). Absent → `422 COMMISSION_POLICY_MISSING`; out of range / legacy → `422 COMMISSION_POLICY_NOT_REVIEWED`. **0 is allowed only when the policy itself says 0**; it is never defaulted.
+  * **Commission** must be explicitly configured (`percentage`, 0 ≤ value ≤ 1). Absent, or any type other than `percentage` (e.g. a legacy "points" rate) → `422 COMMISSION_POLICY_MISSING`; a stored `percentage` value outside 0..1 → `422 COMMISSION_POLICY_NOT_REVIEWED`. The second case can only be a historical row: the D13A database guard (`merchant_details_fractional_rates_trg`) refuses to store such a value, so it cannot be seeded on UAT and is proven by `test:merchant-qr-flow` and the rehearsal database instead (the hosted spec proves the guard itself: a 150% write is refused with HTTP 400). **0 is allowed only when the policy itself says 0**; it is never defaulted.
   * **Customer discount** is independent: NULL or 0 → no discount (the customer pays the full amount); a policy that is present must be a reviewed percentage fraction, otherwise `422 DISCOUNT_POLICY_NOT_REVIEWED` (legacy "points" are never guessed).
   * No offer/campaign model exists in the database, so the Merchant-level policy is the only source today; nothing is invented. If campaigns are introduced they plug into this one module.
 * Walk-ins: every successfully resolved scan is one row in the new `partner_scan_events` table, unique per `(Merchant, scan key)`; a transaction stores `scan_event_id` and links to it. Scan-only activity writes that one row and nothing else.
@@ -67,7 +67,7 @@ Additive for data, replaces two functions:
 | D scan with no invoice = one walk-in, no commission | `D` |
 | E Merchant enters only the invoice amount | `E` (UI: the payment step has exactly one input) |
 | F transaction succeeds without assignment; idempotent; audited; linked to its scan | `F` |
-| G inactive Partner / unauthorised actions denied | `G`; policy-missing answers `P` |
+| G inactive Partner / unauthorised actions denied | `G`; policy-missing answers, approved zero commission, out-of-range commission refused by the database, legacy type → explicit answer: `P` |
 | H Merchant Profile fixes + audit controls intact; no assignment UI | `H` + spec `100-merchant-profile` M1–M7 |
 | I regression: authorization, QR, commission arithmetic, idempotency, reporting | `I` + specs 00, 10-adjacent, 20, 30, 40, 95, 98, 99 |
 
@@ -81,4 +81,37 @@ Partner3 is only scanned (a scan row is written, as acceptance A/B/D require); i
 5. Still open from earlier releases: real iPhone-in-Zalo QR validation; Partner3 activation-link click; `POST /transactions/:id/confirm|cancel|reverse` return 500 for a malformed id.
 
 ## 9. Deployment status and hosted evidence
-_(filled in as the steps are executed — see the end of this file)_
+**UAT only. Production untouched.** Deployed commit **`4763394c643c1f50674ee020bff98fd3b36e3611`** (pushed to `origin/codex/vno-phase-d4-security`, 2026-11-09).
+
+### 9.1 Migration `20261109000001` (applied by the owner from the authorised host terminal; the agent sandbox cannot reach the database and did not try to bypass that)
+* Applied with `migration/v2/apply-global-partner-network.mjs` (non-dry-run) at 2026-11-09T07:45–07:46Z (14:45 Vietnam time); project ref guard `hsezyogfxgnkpweoqqny`. Applied file sha256 `bfa3b88245a1d515904b592a1a4eaa11819d4c5710c4de121db6cc15474d6dd6` = the committed file at `4763394` (compared byte for byte).
+* Backup taken before DDL: schema, current function definitions, financial tables, row counts + checksums (`migration/v2/evidence/global-network-apply-2026-11-09T07-45-14/`; kept local and **not committed** because `data-financial-before.sql` holds financial rows).
+* `apply-evidence.json`: **17 / 17 postchecks passed, 0 failed**. The script writes this file only after the history registration has been read back, so `20261109000001` is registered in `supabase_migrations.schema_migrations`.
+* Release gates, as evidenced: (1) registered ✔ · (2) 17/17 ✔ · (3) `partner_scan_events` RLS on, no `anon`/`authenticated` privilege (the migration text revokes **all** from `public, anon, authenticated`, grants only `service_role`); exactly one `create_real_transaction` (5 arguments), not executable by `anon`/`authenticated`, executable by `service_role`, no leftover 4-argument overload, no "not assigned" text in either function ✔ · (4) data intact — `referral_transactions` 154, `transaction_events` 93, `audit_events` 448, `collaborators` 381, `merchant_details` 173 unchanged; transactions checksum `4c8684ed…` and Partner-assignment checksum `07c90f54…` identical before/after ✔ · (5) migration file hash matches the committed file ✔.
+* Limits of this evidence: the agent read the host run's evidence files and the migration text; it did not query the database itself. `create_uat_simulation_transaction` privileges were not asserted by a postcheck (`create or replace` keeps its existing grants).
+
+### 9.2 Deployment (Railway project `vno-v2-uat`, environment `uat`; migration → API → Web)
+| Service | Deployment | Status | `meta.commitHash` read back |
+|---|---|---|---|
+| API (`4fc48af8-…`) | `50fce891-7d9c-4677-9415-9ab473b130d2` | SUCCESS | `4763394c643c1f50674ee020bff98fd3b36e3611` |
+| Web (`f23dacf5-…`) | `53f989a1-9fbf-4898-b6b6-01c1ea8aa4a5` | SUCCESS | `4763394c643c1f50674ee020bff98fd3b36e3611` |
+
+Both re-read after all tests: unchanged. **Rollback:** application → re-stage both services to `5af1d86` (API `ee0a8062-8763-4171-99b6-cf1b8c8744c6`, Web `29fc4986-7585-4675-812e-c0a7f8f5e02b`); database → the rollback script in §4 (it refuses while any transaction references a scan; the 4-argument calls of `5af1d86` keep working against the new function, so the application can be rolled back first without touching the database).
+
+### 9.3 Hosted results on the deployed `4763394`
+| Run | Result |
+|---|---|
+| `tests/101-global-partner-network.spec.ts` (scenarios A–I) | **9 / 9 PASS** (final run). |
+| `tests/100-merchant-profile.spec.ts` (Merchant Profile fixes, audit controls, M1–M7) | **7 / 7 PASS** |
+| Regression `00-unauth, 20-regression, 30-operational, 40-experience, 95-onboarding-identity, 98-partner-single-step, 99-merchant-qr-scan` | **82 / 82 PASS**, 0 failed, 0 skipped |
+
+* **First 101 run: 8 of 9 — step P failed, and the cause was the test, not the product.** P tried to *store* a 150% commission to reach `COMMISSION_POLICY_NOT_REVIEWED`; the pre-existing D13A database guard refused the write (HTTP 400) — correct behaviour. The spec was corrected (it now asserts that refusal, that the policy stays 0%, and that a legacy non-percentage commission type gets `COMMISSION_POLICY_MISSING`) and the **whole spec was re-run from scratch**; no application code changed between the two runs. `NOT_REVIEWED` for historical rows remains proven by `test:merchant-qr-flow` and the rehearsal database, not hosted.
+* Acceptance map (§7): A Partner3 resolved at an unassigned Merchant (name + code, that Merchant's 5%, one walk-in, Partner3 row identical before/after) · B same Partner at a second active Merchant (own scan row, 3%) · C each Merchant its own discount; no policy → "Không có ưu đãi áp dụng"; legacy points never guessed · D five parallel detections of one scan = one walk-in, ledger / events / audit unchanged, invalid code not counted · E the payment step has one input (the invoice amount); discount 62,500 / final 1,187,500 / commission 125,000 on 1,250,000 shown from the server · F one confirmation → transaction for an **unassigned** Partner, linked to its scan, audited, idempotent replay, commission once · P commission missing → scan counts, 422 `COMMISSION_POLICY_MISSING` on preview and create, UI explains, nothing recorded; approved 0% → commission 0.0000; 150% cannot be stored · G inactive / unknown Partner refused; Partner, Admin, anonymous, outsider and unapproved Merchant denied; foreign scan → `SCAN_EVENT_MISMATCH` · H no assignment column / panel / form field; `/c/<code>` is global; no association audit row added · I reports scoped (Merchant own, Admin all = sum, Partner / anonymous none).
+* **Partner3 `COL-986A45914FA0BF7E`:** only scanned (walk-in rows only). Row identical before/after in A and H; `merchant_system_id` still NULL; no transaction. The temporary second Merchant of each 101 run was removed (`removed: true`, no notes, for both runs `…143751` and `…144122`). Spec 101 recorded one confirmed transaction per run, only for the synthetic unassigned Partner `COL-87B72D3690FD0D1A` at the fixture Merchant (`VNO261109-A723C71975` from the first run, `VNO261109-38E9660298` from the second; 125,000 commission each). **These two synthetic transactions remain on UAT** — spec 101 does not reverse them (financial rows are append-only); an Admin can reverse them through the governed reversal if the fixture totals should be restored. Spec 99 reversed its own confirmed transactions (Q16).
+* **Not run:** `10-onboarding.spec.ts` (consumes one-time unclaimed identities; its O03/O09 edits are type-checked only); the email / auth specs 50–90 and 96 (out of scope, no change to that code).
+
+### 9.4 Status
+* **Hosted acceptance A–I for the global Partner network: PASS on UAT at `4763394`**, with the regression set green and nothing assigned, auto-assigned or modified.
+* This is an automated end-to-end verification. It is **not** a sign-off by the owner and **not** a real-device (iPhone-in-Zalo) check; Production is untouched and not part of this release.
+* Failing tests that are unrelated and unchanged (§6): `test:d13a-contracts` (stale QR-payload assertion) and `test:email-delivery` (2 hook checks).
+* Open: see §8 — in particular the 14 of 16 active Merchants without a commission policy (they can scan but payment answers `COMMISSION_POLICY_MISSING` until an Admin configures them) and the legacy Partner "Members" page.

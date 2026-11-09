@@ -219,7 +219,7 @@ test.describe.serial('Global Partner network: any active Partner at any active M
   // ============================ P : no commercial policy configured -> an explicit answer ======================================================================
   test('P a Merchant without a commission policy gets an explicit configuration answer; nothing is guessed or recorded; an approved zero is allowed', async ({ browser }) => {
     test.skip(!synth, 'BLOCKED: no synthetic active unassigned Partner is available');
-    await step('P', 'commission missing -> scan still counts, payment.available=false + 422 COMMISSION_POLICY_MISSING on preview and create, UI explains; nothing configured -> no discount AND no payment; explicit 0% commission -> allowed, 0 commission', async () => {
+    await step('P', 'commission missing -> scan still counts, payment.available=false + 422 COMMISSION_POLICY_MISSING on preview and create, UI explains; nothing configured -> no discount AND no payment; explicit 0% commission -> allowed, 0 commission; out-of-range commission cannot be stored; legacy commission type -> explicit answer', async () => {
       const l0 = await ledgerOf(B!.id);
       await patchB({ merchant_commission_type: null, merchant_commission_value: null });
       const r = await resolve('merchant2', synth!.code, { scan_id: randomUUID() }); expect(r.status).toBe(201); expect(r.body.scan.counted).toBe(true);
@@ -236,11 +236,17 @@ test.describe.serial('Global Partner network: any active Partner at any active M
       await patchB({ merchant_discount_type: 'percentage', merchant_discount_value: Number(b2.d), merchant_commission_type: 'percentage', merchant_commission_value: 0 });
       const zero = await preview('merchant2', synth!.code, '1000000'); expect(zero.status).toBe(201);
       expect([zero.body.discount_amount, zero.body.commission_rate, zero.body.commission_amount, zero.body.final_payable]).toEqual(['30000.0000', '0.0000', '0.0000', '970000.0000']);
-      await patchB({ merchant_commission_type: 'percentage', merchant_commission_value: 1.5 });
-      const bad = await preview('merchant2', synth!.code); expect(bad.status).toBe(422); expect(bad.body.code).toBe('COMMISSION_POLICY_NOT_REVIEWED');
+      // The D13A database guard refuses to STORE a percentage rate outside 0..1, so a 150% commission cannot be seeded on UAT: that is the control to prove here.
+      // (COMMISSION_POLICY_NOT_REVIEWED only exists for historical rows that predate the guard; it is covered by test:merchant-qr-flow and the rehearsal database.)
+      const tooHigh = await patchB({ merchant_commission_type: 'percentage', merchant_commission_value: 1.5 }).then(() => 'STORED', (e: any) => String(e?.message));
+      expect(tooHigh).toMatch(/HTTP 400/);
+      const stillZero = await preview('merchant2', synth!.code, '1000000'); expect(stillZero.status).toBe(201); expect(stillZero.body.commission_rate).toBe('0.0000');
+      // A legacy, non-percentage commission type is not a configured policy: explicit answer, nothing guessed.
+      await patchB({ merchant_commission_type: 'points', merchant_commission_value: 5 });
+      const bad = await preview('merchant2', synth!.code); expect(bad.status).toBe(422); expect(bad.body.code).toBe('COMMISSION_POLICY_MISSING');
       await restoreB(); const back = await preview('merchant2', synth!.code, '1000000'); expect([back.body.discount_amount, back.body.commission_amount]).toEqual([fmt(toUnits(mul('1000000.0000', b2.d))), fmt(toUnits(mul('1000000.0000', b2.c)))]);
       expect(await ledgerOf(B!.id)).toBe(l0);
-      return 'COMMISSION_POLICY_MISSING (scan, preview 422, create 422, UI message, button disabled; 0 transactions); nothing configured -> "Không có ưu đãi áp dụng" + payment unavailable; explicit 0% -> commission 0.0000; 150% -> COMMISSION_POLICY_NOT_REVIEWED; restored';
+      return 'COMMISSION_POLICY_MISSING (scan, preview 422, create 422, UI message, button disabled; 0 transactions); nothing configured -> "Không có ưu đãi áp dụng" + payment unavailable; explicit 0% -> commission 0.0000; a stored 150% commission is refused by the database (400) and the policy stays 0%; legacy "points" commission -> COMMISSION_POLICY_MISSING; restored';
     });
   });
 
