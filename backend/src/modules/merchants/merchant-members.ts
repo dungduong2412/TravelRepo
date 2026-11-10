@@ -1,0 +1,131 @@
+import { z } from 'zod';
+
+/**
+ * Merchant "Members" (a Merchant adds a pending Partner application): input normalisation and validation, duplicate comparison, limits and
+ * the PRIVACY projections. Everything here is pure so it can be tested without a database.
+ *
+ * Privacy rules (the reason this module exists):
+ *  - a Merchant is shown only masked contact details of the Partners tagged to it (they may be real Partners it merely shares a history with);
+ *  - bank details are never returned by any Members route, to anybody;
+ *  - the answer to "create" carries no contact or bank data at all (the Merchant typed it a moment ago);
+ *  - "this e-mail is already used" never discloses who or what holds it.
+ */
+
+// ---- limits (policy values; overridable by environment, defaults chosen for a Merchant adding a handful of people) ----------------------------------
+export type MemberLimits = { perHour: number; perDay: number; pendingCap: number };
+const intFromEnv = (raw: string | undefined, fallback: number, min: number, max: number) => {
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= min && n <= max ? n : fallback;
+};
+export function memberLimits(env: Record<string, string | undefined> = process.env): MemberLimits {
+  return {
+    perHour: intFromEnv(env.MERCHANT_MEMBER_CREATES_PER_HOUR, 10, 1, 1000),
+    perDay: intFromEnv(env.MERCHANT_MEMBER_CREATES_PER_DAY, 40, 1, 10_000),
+    pendingCap: intFromEnv(env.MERCHANT_MEMBER_PENDING_CAP, 50, 1, 100_000),
+  };
+}
+
+// ---- normalisation ---------------------------------------------------------------------------------------------------------------------------------
+export const collapseSpaces = (s: string) => s.normalize('NFC').replace(/\s+/g, ' ').trim();
+export const normalizeEmail = (s: string) => s.trim().toLowerCase();
+/** Phone numbers are stored without separators: digits with an optional leading "+". */
+export const normalizePhone = (s: string) => {
+  const t = s.trim();
+  const plus = t.startsWith('+') ? '+' : '';
+  return plus + t.replace(/^\+/, '').replace(/[\s.\-()]/g, '');
+};
+export const normalizeAccountNumber = (s: string) => s.trim().replace(/[\s\-]/g, '');
+
+const CONTROL_OR_MARKUP = /[\p{Cc}\p{Cf}<>]/u;
+const BANK_NAME_CHARS = /^[\p{L}\p{N} .,&()/'-]+$/u;
+const emptyToUndefined = (v: unknown) => (typeof v === 'string' && v.trim() === '' ? undefined : v);
+
+const nameSchema = z.string().transform(collapseSpaces).pipe(z.string().min(2).max(120).refine((v) => !CONTROL_OR_MARKUP.test(v)));
+const phoneSchema = z.string().transform(normalizePhone).pipe(z.string().regex(/^\+?\d{8,15}$/));
+const emailSchema = z.string().transform(normalizeEmail).pipe(z.string().max(254).email().refine((v) => !/\.\.|\.@|^\./.test(v)));
+const bankNameSchema = z.preprocess(emptyToUndefined, z.string().transform(collapseSpaces).pipe(z.string().min(2).max(100).regex(BANK_NAME_CHARS)).optional());
+const accountSchema = z.preprocess(emptyToUndefined, z.string().transform(normalizeAccountNumber).pipe(z.string().regex(/^\d{6,20}$/)).optional());
+
+/** `.strict()`: an unknown key is an error, so nothing the caller sends can reach the insert except these five fields. */
+export const CreateMerchantMemberSchema = z.object({
+  collaborators_name: nameSchema,
+  collaborators_phone: phoneSchema,
+  collaborators_email: emailSchema,
+  collaborators_bank_name: bankNameSchema,
+  collaborators_bank_acc_number: accountSchema,
+}).strict();
+export type CreateMerchantMemberDto = z.infer<typeof CreateMerchantMemberSchema>;
+
+// ---- duplicate comparison ----------------------------------------------------------------------------------------------------------------------------
+export type MemberRow = {
+  id: string;
+  merchant_system_id?: string | null;
+  collaborators_code?: string | null;
+  collaborators_name?: string | null;
+  collaborators_phone?: string | null;
+  collaborators_email?: string | null;
+  collaborators_bank_name?: string | null;
+  collaborators_bank_acc_number?: string | null;
+  collaborators_avatar_url?: string | null;
+  collaborators_status?: string | null;
+  collaborators_verified?: boolean | null;
+  collaborators_registered_date?: string | null;
+};
+
+const fold = (s: string | null | undefined) => collapseSpaces(String(s ?? '')).toLowerCase();
+/** Is an existing row the very same submission? (an idempotent replay). Compares the NORMALISED values only. */
+export function sameMemberData(row: MemberRow, dto: CreateMerchantMemberDto): boolean {
+  return fold(row.collaborators_name) === fold(dto.collaborators_name)
+    && normalizePhone(String(row.collaborators_phone ?? '')) === dto.collaborators_phone
+    && normalizeEmail(String(row.collaborators_email ?? '')) === dto.collaborators_email
+    && fold(row.collaborators_bank_name) === fold(dto.collaborators_bank_name)
+    && normalizeAccountNumber(String(row.collaborators_bank_acc_number ?? '')) === String(dto.collaborators_bank_acc_number ?? '');
+}
+
+/** The row that "wins" when several rows hold one e-mail: earliest registration, then id. Deterministic, so concurrent requests agree. */
+export function canonicalMember<T extends MemberRow>(rows: T[]): T | undefined {
+  return [...rows].sort((a, b) => String(a.collaborators_registered_date ?? '').localeCompare(String(b.collaborators_registered_date ?? '')) || String(a.id).localeCompare(String(b.id)))[0];
+}
+
+/** Escapes LIKE wildcards so an e-mail such as a_b@x.vn is matched literally by ILIKE. */
+export const escapeLike = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
+
+// ---- privacy projections -----------------------------------------------------------------------------------------------------------------------------
+export function maskEmail(email: string | null | undefined): string | null {
+  if (!email) return null;
+  const at = email.lastIndexOf('@');
+  if (at < 1) return '***';
+  return `${email.slice(0, 1)}***${email.slice(at)}`;
+}
+export function maskPhone(phone: string | null | undefined): string | null {
+  if (!phone) return null;
+  const digits = phone.replace(/\D/g, '');
+  return digits.length <= 3 ? '***' : `${'*'.repeat(Math.max(3, digits.length - 3))}${digits.slice(-3)}`;
+}
+
+/** One row of a Members list: contact details masked, NO bank details, no code, no internal columns. */
+export function toMemberListItem(row: MemberRow) {
+  return {
+    id: row.id,
+    collaborators_name: row.collaborators_name ?? null,
+    collaborators_phone: maskPhone(row.collaborators_phone),
+    collaborators_email: maskEmail(row.collaborators_email),
+    collaborators_avatar_url: row.collaborators_avatar_url ?? null,
+    collaborators_registered_date: row.collaborators_registered_date ?? null,
+    collaborators_verified: row.collaborators_verified ?? false,
+    collaborators_status: row.collaborators_status ?? null,
+  };
+}
+
+/** The answer to a successful create: identification and state only. */
+export function toCreatedMemberView(row: MemberRow, replay: boolean) {
+  return {
+    id: row.id,
+    collaborators_code: row.collaborators_code ?? null,
+    collaborators_name: row.collaborators_name ?? null,
+    collaborators_status: row.collaborators_status ?? 'pending',
+    collaborators_verified: row.collaborators_verified ?? false,
+    collaborators_registered_date: row.collaborators_registered_date ?? null,
+    idempotent_replay: replay,
+  };
+}

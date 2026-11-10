@@ -10,6 +10,9 @@ import { readFixture, Fixture } from '../lib/fixture';
 //   N2  the old URL answers a real HTTP 307 to the Partner dashboard (and a signed-in browser lands there)
 //   N3  Merchant Members is unchanged: the page still loads and GET /merchants/members still answers for the Merchant
 //   N4  no cross-role regression on both Members API routes (Partner / Merchant / Admin / anonymous), and the legacy Partner route keeps answering as before
+//   N5  (Members security release) POST /collaborators/members answers 410 FEATURE_RETIRED to every authenticated role, 401 anonymous. It is sent with an EMPTY body, which can never
+//        create a row even on the old code (the old route answered 400), so this step is write-safe before and after the deploy
+//   N6  (Members security release) the Merchant list shows masked contact details and no bank data; an INVALID create is a 400 with Vietnamese field errors (nothing is written)
 // READ-ONLY: logins and GETs only. It never POSTs to a Members route, so it creates no team members and no records.
 // Run through `railway run --service vno-api` (paired fixture + admin credentials).
 const step = async (id: string, title: string, fn: () => Promise<string | void>) => {
@@ -99,6 +102,39 @@ test.describe.serial('Partner Members page retired from navigation', () => {
       out.statuses = { merchantOnPartnerRoute: merchantOnPartnerRoute.status, adminOnPartnerRoute: adminOnPartnerRoute.status, partnerOnMerchantRoute: partnerOnMerchantRoute.status, adminOnMerchantRoute: adminOnMerchantRoute.status, partnerOnPartnerRoute: partnerOnPartnerRoute.status };
       evidence.crossRole = out;
       return `anonymous 401/401; Merchant->Partner route 403; Admin->Partner route 403; Partner->Merchant route 403; Admin->Merchant route 403; Partner->own route ${partnerOnPartnerRoute.status} (no POST was sent)`;
+    });
+  });
+  test('N5 POST /collaborators/members is retired: 410 FEATURE_RETIRED for every authenticated role, 401 anonymous (empty body: write-safe)', async () => {
+    await step('N5', 'Partner / Merchant / Admin -> 410 {code, message} only; anonymous -> 401', async () => {
+      const out: Record<string, number> = {};
+      for (const who of ['partner', 'merchant', 'admin'] as const) {
+        const r = await api(who, 'POST', '/collaborators/members', {});
+        expect(r.status, `${who}`).toBe(410); expect(r.body.code).toBe('FEATURE_RETIRED'); expect(String(r.body.message)).toMatch(/[À-ỹ]/); expect(Object.keys(r.body).sort()).toEqual(['code', 'message']);
+        out[who] = r.status;
+      }
+      const anon = await fetch(`${apiBase()}/collaborators/members`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+      expect(anon.status).toBe(401); out.anonymous = anon.status;
+      evidence.retiredPost = out;
+      return `Partner ${out.partner}, Merchant ${out.merchant}, Admin ${out.admin}, anonymous ${out.anonymous}; the body was empty, so nothing could have been created`;
+    });
+  });
+
+  test('N6 Merchant Members: masked contact details, no bank data; an invalid create is a Vietnamese 400 (write-safe)', async () => {
+    await step('N6', 'GET /merchants/members rows have exactly the masked key set; POST with an invalid body -> 400 VALIDATION_FAILED, Vietnamese field errors', async () => {
+      const list = await api('merchant', 'GET', '/merchants/members'); expect(list.status).toBe(200);
+      const allowed = ['collaborators_avatar_url', 'collaborators_email', 'collaborators_name', 'collaborators_phone', 'collaborators_registered_date', 'collaborators_status', 'collaborators_verified', 'id'];
+      for (const m of list.body as any[]) {
+        expect(Object.keys(m).sort()).toEqual(allowed);
+        if (m.collaborators_phone) expect(m.collaborators_phone).toMatch(/^\*+\d{0,3}$/);
+        if (m.collaborators_email) expect(m.collaborators_email).toMatch(/^.\*\*\*@|^\*\*\*$/);
+      }
+      expect(JSON.stringify(list.body)).not.toMatch(/bank/i);
+      const bad = await api('merchant', 'POST', '/merchants/members', { collaborators_name: '', collaborators_phone: 'abc', collaborators_email: 'abc@' });
+      expect(bad.status).toBe(400); expect(bad.body.code).toBe('VALIDATION_FAILED');
+      expect((bad.body.errors as any[]).map((e) => e.field).sort()).toEqual(['collaborators_email', 'collaborators_name', 'collaborators_phone']);
+      for (const e of bad.body.errors as any[]) expect(e.message).toMatch(/[À-ỹ]/);
+      evidence.merchantList = { rows: (list.body as any[]).length };
+      return `${(list.body as any[]).length} row(s), all masked with the exact key set; invalid create -> 400 with ${(bad.body.errors as any[]).length} Vietnamese field errors`;
     });
   });
 });

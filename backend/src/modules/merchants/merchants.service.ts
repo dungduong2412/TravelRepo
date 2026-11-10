@@ -1,9 +1,11 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, Inject, NotFoundException, UnprocessableEntityException, forwardRef } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, HttpException, HttpStatus, Injectable, Inject, NotFoundException, UnprocessableEntityException, forwardRef } from '@nestjs/common';
 import { PostgresUuidSchema } from '../../common/validation/postgres-uuid';
 import { randomBytes } from 'crypto';
 import { SupabaseService } from '../../infrastructure/supabase/supabase.service';
 import { describeIssue } from '../../common/validation/field-errors';
 import { KeyedLock } from '../../common/concurrency/keyed-lock';
+import { SlidingWindowLimiter } from '../../common/http/rate-limiter';
+import { MemberRow, canonicalMember, escapeLike, memberLimits, sameMemberData, toCreatedMemberView, toMemberListItem } from './merchant-members';
 import {
   AdminCreateMerchantDto,
   AdminUpdateMerchantDto,
@@ -32,6 +34,16 @@ export class MerchantsService {
 
   /** Profile saves for one Merchant run one at a time, so a repeated submission sees the first one's result (no duplicate change, no duplicate audit row). */
   private readonly profileLock = new KeyedLock();
+
+  /**
+   * Members: a Merchant adds pending Partner applications. Burst limits are per Merchant (process scope; one API instance runs per environment) and a
+   * durable cap counts the pending rows already in the database, so neither a restart nor a second instance lifts it. Values: merchant-members.ts.
+   */
+  private readonly memberLimits = memberLimits();
+  private readonly memberPerHour = new SlidingWindowLimiter(this.memberLimits.perHour, 60 * 60_000);
+  private readonly memberPerDay = new SlidingWindowLimiter(this.memberLimits.perDay, 24 * 60 * 60_000);
+  /** Creations for one (Merchant, e-mail) run one after the other, so a double click or a retry sees the first one's result. */
+  private readonly memberLock = new KeyedLock();
 
   private generateMerchantCode(): string {
     // Generate 8-character uppercase alphanumeric code (e.g., "MCH12AB3")
@@ -447,6 +459,7 @@ export class MerchantsService {
     return profile;
   }
 
+  /** Partners tagged to this Merchant (historical assignment + applications it added). Contact details are MASKED and bank details never leave the database. */
   async listMembers(userId: string) {
     const profile = await this.requireActiveMerchantProfile(userId);
     const { data, error } = await this.supabase.getClient().from('collaborators')
@@ -454,34 +467,122 @@ export class MerchantsService {
       .eq('merchant_system_id', profile.merchant_id)
       .order('collaborators_registered_date', { ascending: false });
     if (error) throw new Error(`Failed to fetch merchant members: ${error.message}`);
-    return data || [];
+    return (data || []).map((row) => toMemberListItem(row as MemberRow));
   }
 
+  private memberFail(status: HttpStatus, code: string, message: string, extra: Record<string, unknown> = {}) {
+    return new HttpException({ code, message, ...extra }, status);
+  }
+
+  /** Adding people is for an operating Merchant: active AND verified (an application still under review cannot recruit). */
+  private async requireOperatingMerchant(merchantId: string) {
+    const { data, error } = await this.supabase.getClient().from('merchant_details')
+      .select('merchants_status,merchant_verified').eq('merchant_system_id', merchantId).maybeSingle();
+    if (error || !data || data.merchants_status !== 'active' || data.merchant_verified !== true) {
+      throw this.memberFail(HttpStatus.FORBIDDEN, 'MERCHANT_NOT_ACTIVE', 'Cửa hàng cần được Admin VNO phê duyệt và đang hoạt động mới có thể thêm thành viên.');
+    }
+  }
+
+  private async membersByEmail(email: string): Promise<MemberRow[]> {
+    const { data, error } = await this.supabase.getClient().from('collaborators')
+      .select('id,merchant_system_id,collaborators_code,collaborators_name,collaborators_phone,collaborators_email,collaborators_bank_name,collaborators_bank_acc_number,collaborators_status,collaborators_verified,collaborators_registered_date')
+      .ilike('collaborators_email', escapeLike(email));
+    if (error) throw this.memberFail(HttpStatus.INTERNAL_SERVER_ERROR, 'MEMBER_LOOKUP_FAILED', 'Chưa thể kiểm tra email lúc này. Vui lòng thử lại sau.');
+    return (data || []) as MemberRow[];
+  }
+
+  /** The same e-mail is held by something else (another Merchant, an approved Partner, an account). Says nothing about WHAT holds it. */
+  private emailUnavailable() {
+    return this.memberFail(HttpStatus.CONFLICT, 'MEMBER_EMAIL_UNAVAILABLE', 'Email này đã được sử dụng trong hệ thống VNO. Hãy dùng email khác hoặc liên hệ Admin VNO.');
+  }
+
+  /**
+   * A Merchant adds a pending Partner application (never an active Partner: Admin approval and the person's own sign-in are still required).
+   *  - validation + normalisation: CreateMerchantMemberSchema (trim, lower-case e-mail, phone/account digits, strict keys)
+   *  - limits: per-hour and per-day bursts (429) and a durable cap of pending applications (409)
+   *  - duplicates: the e-mail is compared case-insensitively. The SAME submission again (same Merchant, still pending, same details) is an idempotent
+   *    replay and returns the original row; anything else holding that e-mail is a generic 409
+   *  - the answer carries identification and state only: no phone, e-mail or bank data
+   */
   async createMember(userId: string, dto: CreateMerchantMemberDto) {
     const profile = await this.requireActiveMerchantProfile(userId);
+    const merchantId: string = profile.merchant_id;
+    await this.requireOperatingMerchant(merchantId);
+
+    if (!this.memberPerHour.take(merchantId)) {
+      throw this.memberFail(HttpStatus.TOO_MANY_REQUESTS, 'MEMBER_RATE_LIMITED', 'Bạn thêm thành viên quá nhanh. Hãy thử lại sau ít phút.', { limit: this.memberLimits.perHour, window: 'hour' });
+    }
+    if (!this.memberPerDay.take(merchantId)) {
+      throw this.memberFail(HttpStatus.TOO_MANY_REQUESTS, 'MEMBER_DAILY_LIMIT', `Hôm nay cửa hàng đã thêm tối đa ${this.memberLimits.perDay} thành viên. Hãy thử lại vào ngày mai.`, { limit: this.memberLimits.perDay, window: 'day' });
+    }
+    return this.memberLock.run(`${merchantId}:${dto.collaborators_email}`, () => this.createMemberSerialised(userId, merchantId, dto));
+  }
+
+  private async createMemberSerialised(userId: string, merchantId: string, dto: CreateMerchantMemberDto) {
     const client = this.supabase.getClient();
-    await this.userProfilesService.assertIdentityAvailable(dto.collaborators_email);
+    const verdictFor = (rows: MemberRow[]) => {
+      const mine = rows.find((r) => r.merchant_system_id === merchantId && r.collaborators_status === 'pending' && r.collaborators_verified === false && sameMemberData(r, dto));
+      return mine && rows.length === 1 ? mine : null;
+    };
 
-    const { data, error } = await client.from('collaborators').insert({
-      merchant_system_id: profile.merchant_id,
-      collaborators_code: `COL${randomBytes(4).toString('hex').toUpperCase().slice(0, 7)}`,
-      collaborators_name: dto.collaborators_name,
-      collaborators_phone: dto.collaborators_phone,
-      collaborators_email: dto.collaborators_email,
-      collaborators_bank_name: dto.collaborators_bank_name,
-      collaborators_bank_acc_number: dto.collaborators_bank_acc_number,
-      collaborators_password: null,
-      collaborators_registered_date: new Date().toISOString(),
-      collaborators_verified: false,
-      collaborators_status: 'pending',
-    }).select().single();
-    if (error) throw new BadRequestException(`Failed to create member: ${error.message}`);
+    // 1) already there? the very same submission is a replay; anything else holding the e-mail is a conflict
+    const before = await this.membersByEmail(dto.collaborators_email);
+    if (before.length) {
+      const replay = verdictFor(before);
+      if (replay) return toCreatedMemberView(replay, true);
+      throw this.emailUnavailable();
+    }
+    // 2) an existing account / sign-in with that e-mail (not disclosed which)
+    try { await this.userProfilesService.assertIdentityAvailable(dto.collaborators_email); }
+    catch (e) { if (e instanceof BadRequestException) throw this.emailUnavailable(); throw e; }
+    // 3) durable cap of pending applications
+    const pending = await client.from('collaborators').select('id', { count: 'exact', head: true })
+      .eq('merchant_system_id', merchantId).eq('collaborators_status', 'pending').eq('collaborators_verified', false);
+    if (pending.error) throw this.memberFail(HttpStatus.INTERNAL_SERVER_ERROR, 'MEMBER_LOOKUP_FAILED', 'Chưa thể kiểm tra danh sách lúc này. Vui lòng thử lại sau.');
+    if ((pending.count ?? 0) >= this.memberLimits.pendingCap) {
+      throw this.memberFail(HttpStatus.CONFLICT, 'MEMBER_LIMIT_REACHED', `Cửa hàng đang có ${this.memberLimits.pendingCap} hồ sơ chờ phê duyệt. Hãy chờ Admin VNO xử lý trước khi thêm mới.`, { limit: this.memberLimits.pendingCap });
+    }
 
-    await this.audit.record({ id: userId, role: 'merchant' }, 'collaborator.member_application_created', 'collaborator', data.id, {
-      merchant_id: profile.merchant_id,
+    // 4) insert (a code collision is retried with a fresh code; the failure text of the database is never returned)
+    let created: MemberRow | null = null;
+    for (let attempt = 0; attempt < 3 && !created; attempt += 1) {
+      const { data, error } = await client.from('collaborators').insert({
+        merchant_system_id: merchantId,
+        collaborators_code: `COL${randomBytes(4).toString('hex').toUpperCase().slice(0, 7)}`,
+        collaborators_name: dto.collaborators_name,
+        collaborators_phone: dto.collaborators_phone,
+        collaborators_email: dto.collaborators_email,
+        collaborators_bank_name: dto.collaborators_bank_name ?? null,
+        collaborators_bank_acc_number: dto.collaborators_bank_acc_number ?? null,
+        collaborators_password: null,
+        collaborators_registered_date: new Date().toISOString(),
+        collaborators_verified: false,
+        collaborators_status: 'pending',
+      }).select('id,merchant_system_id,collaborators_code,collaborators_name,collaborators_phone,collaborators_email,collaborators_bank_name,collaborators_bank_acc_number,collaborators_status,collaborators_verified,collaborators_registered_date').single();
+      if (!error) { created = data as MemberRow; break; }
+      const text = String(error.message || '');
+      if (error.code === '23505' && /code/i.test(text) && !/email/i.test(text)) continue;
+      if (error.code === '23505') throw this.emailUnavailable();
+      throw this.memberFail(HttpStatus.INTERNAL_SERVER_ERROR, 'MEMBER_CREATE_FAILED', 'Chưa thể thêm thành viên lúc này. Vui lòng thử lại sau.');
+    }
+    if (!created) throw this.memberFail(HttpStatus.INTERNAL_SERVER_ERROR, 'MEMBER_CREATE_FAILED', 'Chưa thể thêm thành viên lúc này. Vui lòng thử lại sau.');
+
+    // 5) convergence: if another instance inserted the same e-mail at the same moment, the earliest row wins and this request removes ITS OWN row
+    const after = await this.membersByEmail(dto.collaborators_email);
+    const winner = canonicalMember(after);
+    if (winner && winner.id !== created.id) {
+      await client.from('collaborators').delete().eq('id', created.id).eq('collaborators_status', 'pending');
+      const replay = verdictFor([winner]);
+      if (replay) return toCreatedMemberView(replay, true);
+      throw this.emailUnavailable();
+    }
+
+    // The audit trail records WHO added a pending application and for which Merchant: no name, phone, e-mail or bank data.
+    await this.audit.record({ id: userId, role: 'merchant' }, 'collaborator.member_application_created', 'collaborator', created.id, {
+      merchant_id: merchantId,
       auth_invitation_required: true,
     });
-    return data;
+    return toCreatedMemberView(created, false);
   }
 
   async deactivate(actor: AuditActor, id: string) {

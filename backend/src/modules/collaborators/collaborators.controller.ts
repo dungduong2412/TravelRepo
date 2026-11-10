@@ -6,6 +6,8 @@ import {
   Delete,
   Param,
   Body,
+  HttpException,
+  HttpStatus,
   UseGuards,
 } from '@nestjs/common';
 import { CollaboratorsService } from './collaborators.service';
@@ -18,8 +20,6 @@ import {
   CreateCollaboratorDto,
   AdminCreateCollaboratorSchema,
   AdminCreateCollaboratorDto,
-  CreateCollaboratorMemberSchema,
-  CreateCollaboratorMemberDto,
   AdminUpdateCollaboratorSchema,
   AdminUpdateCollaboratorDto,
   UpdateCollaboratorSchema,
@@ -75,12 +75,17 @@ export class CollaboratorsController {
     return this.service.listMembers(actor.id);
   }
 
+  /**
+   * RETIRED (2026-11-10). Under the global Partner network there is no per-Merchant team, so a Partner can no longer add team members.
+   * Every authenticated caller gets the same explicit answer; the body is neither read nor validated and NOTHING is written. Anonymous callers
+   * are still refused by the JwtGuard (401). Existing records, the history and the audit trail are untouched; GET /collaborators/members stays.
+   */
   @Post('members')
-  createMember(
-    @User() actor: { id: string },
-    @Body(new ZodValidationPipe(CreateCollaboratorMemberSchema)) dto: CreateCollaboratorMemberDto,
-  ) {
-    return this.service.createMember(actor.id, dto);
+  createMemberRetired(): never {
+    throw new HttpException({
+      code: 'FEATURE_RETIRED',
+      message: 'Tính năng thêm thành viên cho Đối tác đã ngừng. Hồ sơ cũ vẫn được giữ nguyên. Để giới thiệu người mới, hãy để họ tự đăng ký Đối tác.',
+    }, HttpStatus.GONE);
   }
 
   @Get('code/:code')

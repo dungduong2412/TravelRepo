@@ -32,11 +32,11 @@ import {
   AdminUpdateCollaboratorDto,
   AdminCreateCollaboratorDto,
   CreateCollaboratorDto,
-  CreateCollaboratorMemberDto,
   UpdateCollaboratorDto,
 } from './collaborators.dto';
 import { randomBytes } from 'crypto';
 import { SupabaseService } from '../../infrastructure/supabase/supabase.service';
+import { MemberRow, toMemberListItem } from '../merchants/merchant-members';
 import { UserProfilesService } from '../user-profiles/user-profiles.service';
 import * as QRCode from 'qrcode';
 import { AuditActor, AuditService } from '../audit/audit.service';
@@ -327,34 +327,8 @@ export class CollaboratorsService {
       .eq('merchant_system_id', self.merchant_system_id)
       .order('collaborators_registered_date', { ascending: false });
     if (error) throw new Error(`Failed to fetch collaborator members: ${error.message}`);
-    return data || [];
-  }
-
-  async createMember(userId: string, dto: CreateCollaboratorMemberDto) {
-    const profile = await this.requireActiveCollaboratorProfile(userId);
-    const { data: self } = await this.supabase.getClient().from('collaborators')
-      .select('merchant_system_id').eq('id', profile.collaborator_id).maybeSingle();
-    if (!self?.merchant_system_id) {
-      throw new BadRequestException('Collaborator is not assigned to a merchant team');
-    }
-    await this.userProfilesService.assertIdentityAvailable(dto.collaborators_email);
-
-    const client = this.supabase.getClient();
-    const { data, error } = await client.from('collaborators').insert({
-      ...dto,
-      merchant_system_id: self.merchant_system_id,
-      collaborators_code: this.generateCollaboratorCode(),
-      collaborators_password: null,
-      collaborators_registered_date: new Date().toISOString(),
-      collaborators_verified: false,
-      collaborators_status: 'pending',
-    }).select().single();
-    if (error) throw new BadRequestException(`Failed to create member: ${error.message}`);
-    await this.audit.record({ id: userId, role: 'collaborator' }, 'collaborator.member_application_created', 'collaborator', data.id, {
-      merchant_id: self.merchant_system_id,
-      auth_invitation_required: true,
-    });
-    return this.withoutPassword(data);
+    // Legacy team list (history only): contact details are masked and bank details are never selected.
+    return (data || []).map((row) => toMemberListItem(row as MemberRow));
   }
 
   async resolveByCode(code: string) {

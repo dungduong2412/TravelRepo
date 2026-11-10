@@ -109,7 +109,11 @@ export default function MerchantMembersPage() {
       // Refresh member list
       fetchMembers();
     } catch (err: any) {
-      setError(err.message || 'Không thể thêm thành viên');
+      // Field-level Vietnamese sentences from the API when the input is invalid; otherwise the API's own Vietnamese message (duplicate e-mail,
+      // too many requests, pending-application limit ...). The English "Validation failed" is never shown.
+      const fields: Array<{ message?: string }> = Array.isArray(err?.fieldErrors) ? err.fieldErrors : [];
+      const detail = fields.map((f) => f.message).filter(Boolean).join(' ');
+      setError(detail || (err?.apiCode === 'VALIDATION_FAILED' ? 'Thông tin chưa hợp lệ. Vui lòng kiểm tra lại các ô đã nhập.' : err?.message) || 'Không thể thêm thành viên');
     } finally {
       setSubmitting(false);
     }

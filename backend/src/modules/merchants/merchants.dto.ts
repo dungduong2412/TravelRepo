@@ -162,12 +162,6 @@ export const MerchantDirectoryQuerySchema = z.object({
 
 export type MerchantDirectoryQuery = z.infer<typeof MerchantDirectoryQuerySchema>;
 
-export const CreateMerchantMemberSchema = z.object({
-  collaborators_name: z.string().min(1).max(200),
-  collaborators_phone: z.string().min(7).max(20),
-  collaborators_email: z.string().email(),
-  collaborators_bank_name: z.string().max(200).optional(),
-  collaborators_bank_acc_number: z.string().max(100).optional(),
-}).strict();
-
-export type CreateMerchantMemberDto = z.infer<typeof CreateMerchantMemberSchema>;
+// The Members input rules (trim / normalise / strict fields) live with the rest of the Members logic.
+export { CreateMerchantMemberSchema } from './merchant-members';
+export type { CreateMerchantMemberDto } from './merchant-members';

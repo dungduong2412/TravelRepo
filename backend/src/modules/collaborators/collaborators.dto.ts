@@ -39,5 +39,3 @@ export const AdminUpdateCollaboratorSchema = UpdateCollaboratorSchema.extend({
 
 export type AdminUpdateCollaboratorDto = z.infer<typeof AdminUpdateCollaboratorSchema>;
 
-export const CreateCollaboratorMemberSchema = CreateCollaboratorSchema;
-export type CreateCollaboratorMemberDto = z.infer<typeof CreateCollaboratorMemberSchema>;
