@@ -141,3 +141,32 @@ The migration postchecks asserted the privileges of `create_real_transaction` bu
 * **Checks (21):** for both transaction functions — exactly one overload, an explicit ACL (a NULL ACL would mean EXECUTE for PUBLIC), PUBLIC / `anon` / `authenticated` cannot execute, `service_role` can, no other grantee holds EXECUTE; owner / SECURITY INVOKER / `search_path` shown for review; `partner_scan_events` has RLS on and no table privilege for PUBLIC / `anon` / `authenticated`, `service_role` can select / insert / update / delete.
 * **Validated on the disposable rehearsal database:** 21 / 21 PASS on the migrated schema; negative controls each detected — EXECUTE granted to `anon` (2 FAIL), to PUBLIC (4 FAIL), a table SELECT granted to `authenticated` (1 FAIL); restored → 21 / 21 again; a write attempted through the same session options is refused (`cannot execute CREATE TABLE in a read-only transaction`).
 * **Result on UAT: NOT YET RUN.** §9.1 keeps its limit statement until the output is recorded here. A FAIL must be reviewed, never "fixed" automatically.
+
+### 10.4 Review: does the legacy Members API still allow unintended team-member creation? (findings only — nothing removed in this release)
+**Short answer: yes, at API level, for a small set of callers; there is no UI path for Partners any more, and no privilege escalation or financial effect.**
+
+| Route | Who can call it | What it does |
+|---|---|---|
+| `POST /collaborators/members` | an **active Partner** whose own historical `merchant_system_id` is set (Admin, Merchant, anonymous, outsider, and Partners that were never assigned are refused: 403 / 401 / 400 "not assigned to a merchant team") | inserts one `collaborators` row |
+| `POST /merchants/members` | any **active Merchant** (its Members page is still in the UI, unchanged) | inserts one `collaborators` row tagged with that Merchant |
+| `GET /collaborators/members`, `GET /merchants/members` | same callers | list the Partners that share the caller's historical `merchant_system_id` (name, phone, e-mail, avatar) |
+
+What a created member is: a `pending`, `verified = false` Partner application with no password, no Auth user and no `user_profiles` row. The DTO is `.strict()` (name, phone, e-mail, bank fields only) and the server overrides status, verified, password, code and registration date, so there is no mass assignment. **It cannot become an active Partner by itself:** approval refuses a record without a linked, matching Auth identity (`OWNER_NOT_CLAIMED`), and a profile can only be linked by Admin routes or an Admin-approved invitation.
+
+Findings (none are exploitable for money or role escalation):
+1. **Still reachable by direct API call.** On hosted UAT the paired fixture Partner answers `GET /collaborators/members` with 200, i.e. it carries a historical assignment, so assigned Partners can still POST. The number of such Partners on UAT was not counted (see the read-only query below).
+2. **The historical assignment propagates.** Both routes stamp the new row with the creator's `merchant_system_id` — the opposite of the global-network rule, although nothing consults that column for QR, discounts or transactions.
+3. **Third-party personal data is stored without that person's involvement** (name, phone, e-mail, bank name / account number) and the pending row shows up in the Admin pending list.
+4. **No rate limit, no idempotency, no e-mail uniqueness on `collaborators`**: repeated POSTs create duplicate pending rows. `assertIdentityAvailable` only checks existing accounts, so the squatting risk is low but duplicates are possible.
+5. **No automated test covers creation** — spec 95 PC3 only probes `GET` for a profile-less session, and the hosted spec 102 (N4) deliberately sends no POST.
+6. The Merchant side (`POST /merchants/members`) is the more reachable one: its page is still in the UI.
+
+Recommendation for a separately scoped change (needs an owner decision, not done here): answer `POST /collaborators/members` with a clear "feature retired" error (and decide the same for `POST /merchants/members`), add a regression test for it, and optionally review existing pending member rows with Admin. Keep `GET` and the data for history. Optional read-only counts for the owner (psql, host terminal):
+
+    select count(*) filter (where collaborators_status = 'active'  and merchant_system_id is not null) as active_assigned_partners,
+           count(*) filter (where collaborators_status = 'pending' and merchant_system_id is not null) as pending_assigned_rows
+      from public.collaborators;
+    select actor_role, count(*) from public.audit_events where action = 'collaborator.member_application_created' group by 1;
+
+### 10.5 Deployment plan for the Members retirement (Web only) — gated
+Gate: the 21 read-only privilege checks of §10.3 must pass (21 / 21) on UAT first; any FAIL stops the release and is reported as the exact gap. Then: deploy the **Web service only** pinned to a pushed SHA (API stays at `4763394`; no migration), read back the Web commit hash and re-read the API's, then run `tests/102-partner-members-retired.spec.ts` (N1–N4) plus `99`, `100`, `00`, `20`, `95`. Baseline on the not-yet-deployed Web (`4763394`): N3 and N4 PASS, N1 FAIL (3 Members links found) and N2 FAIL (old URL answers 200) — the expected negative controls. Production is untouched; synthetic transactions and Merchant commission policies are not touched.
