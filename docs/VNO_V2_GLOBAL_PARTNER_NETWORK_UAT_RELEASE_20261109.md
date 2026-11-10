@@ -88,7 +88,7 @@ Partner3 is only scanned (a scan row is written, as acceptance A/B/D require); i
 * Backup taken before DDL: schema, current function definitions, financial tables, row counts + checksums (`migration/v2/evidence/global-network-apply-2026-11-09T07-45-14/`; kept local and **not committed** because `data-financial-before.sql` holds financial rows).
 * `apply-evidence.json`: **17 / 17 postchecks passed, 0 failed**. The script writes this file only after the history registration has been read back, so `20261109000001` is registered in `supabase_migrations.schema_migrations`.
 * Release gates, as evidenced: (1) registered ✔ · (2) 17/17 ✔ · (3) `partner_scan_events` RLS on, no `anon`/`authenticated` privilege (the migration text revokes **all** from `public, anon, authenticated`, grants only `service_role`); exactly one `create_real_transaction` (5 arguments), not executable by `anon`/`authenticated`, executable by `service_role`, no leftover 4-argument overload, no "not assigned" text in either function ✔ · (4) data intact — `referral_transactions` 154, `transaction_events` 93, `audit_events` 448, `collaborators` 381, `merchant_details` 173 unchanged; transactions checksum `4c8684ed…` and Partner-assignment checksum `07c90f54…` identical before/after ✔ · (5) migration file hash matches the committed file ✔.
-* Limits of this evidence: the agent read the host run's evidence files and the migration text; it did not query the database itself. `create_uat_simulation_transaction` privileges were not asserted by a postcheck (`create or replace` keeps its existing grants).
+* Limits of this evidence: the agent read the host run's evidence files and the migration text; it did not query the database itself. `create_uat_simulation_transaction` privileges were not asserted by a postcheck (`create or replace` keeps its existing grants) — **closed on 2026-11-10 by the read-only 21-check privilege run, 21 / 21 PASS (§10.3).**
 
 ### 9.2 Deployment (Railway project `vno-v2-uat`, environment `uat`; migration → API → Web)
 | Service | Deployment | Status | `meta.commitHash` read back |
@@ -140,7 +140,7 @@ The migration postchecks asserted the privileges of `create_real_transaction` bu
 * **Read-only by construction:** the session is opened with `default_transaction_read_only=on`, the SQL runs inside `begin read only … rollback`, and it only queries catalog functions. It writes one small evidence file (ACL metadata, no row data, no credentials) under `migration/v2/evidence/`, which stays uncommitted.
 * **Checks (21):** for both transaction functions — exactly one overload, an explicit ACL (a NULL ACL would mean EXECUTE for PUBLIC), PUBLIC / `anon` / `authenticated` cannot execute, `service_role` can, no other grantee holds EXECUTE; owner / SECURITY INVOKER / `search_path` shown for review; `partner_scan_events` has RLS on and no table privilege for PUBLIC / `anon` / `authenticated`, `service_role` can select / insert / update / delete.
 * **Validated on the disposable rehearsal database:** 21 / 21 PASS on the migrated schema; negative controls each detected — EXECUTE granted to `anon` (2 FAIL), to PUBLIC (4 FAIL), a table SELECT granted to `authenticated` (1 FAIL); restored → 21 / 21 again; a write attempted through the same session options is refused (`cannot execute CREATE TABLE in a read-only transaction`).
-* **Result on UAT: NOT YET RUN.** §9.1 keeps its limit statement until the output is recorded here. A FAIL must be reviewed, never "fixed" automatically.
+* **Result on UAT: 21 / 21 PASS, 0 failed** (run by the owner from the authorised host terminal; session read-only; evidence file `migration/v2/evidence/privilege-check-2026-11-10T09-31-56/privilege-check.json`, checked_at 2026-11-10T09:31:58Z, target "UAT project hsezyogfxgnkpweoqqny" via the Supabase connection pooler (host not recorded here); ACL metadata only, kept uncommitted). Both functions are single-overload, SECURITY INVOKER with `search_path = pg_catalog, public`, owner `postgres`, with the explicit ACL `{postgres=X/postgres, service_role=X/postgres}`: PUBLIC / `anon` / `authenticated` cannot execute, no other grantee holds EXECUTE. `partner_scan_events`: RLS on (not forced), no table privilege for PUBLIC / `anon` / `authenticated`, `service_role` has select / insert / update / delete. **No security gap.** This closes the limit stated in §9.1 for `create_uat_simulation_transaction`.
 
 ### 10.4 Review: does the legacy Members API still allow unintended team-member creation? (findings only — nothing removed in this release)
 **Short answer: yes, at API level, for a small set of callers; there is no UI path for Partners any more, and no privilege escalation or financial effect.**
@@ -168,5 +168,27 @@ Recommendation for a separately scoped change (needs an owner decision, not done
       from public.collaborators;
     select actor_role, count(*) from public.audit_events where action = 'collaborator.member_application_created' group by 1;
 
-### 10.5 Deployment plan for the Members retirement (Web only) — gated
+### 10.5 Deployment plan for the Members retirement (Web only) — gated (EXECUTED 2026-11-10, see §10.6)
 Gate: the 21 read-only privilege checks of §10.3 must pass (21 / 21) on UAT first; any FAIL stops the release and is reported as the exact gap. Then: deploy the **Web service only** pinned to a pushed SHA (API stays at `4763394`; no migration), read back the Web commit hash and re-read the API's, then run `tests/102-partner-members-retired.spec.ts` (N1–N4) plus `99`, `100`, `00`, `20`, `95`. Baseline on the not-yet-deployed Web (`4763394`): N3 and N4 PASS, N1 FAIL (3 Members links found) and N2 FAIL (old URL answers 200) — the expected negative controls. Production is untouched; synthetic transactions and Merchant commission policies are not touched.
+
+### 10.6 Hosted evidence for the Members retirement (UAT only; Web-only release)
+**Gate:** the 21 read-only privilege checks passed 21 / 21 on UAT (§10.3) before anything was deployed.
+
+| Item | Result |
+|---|---|
+| Deployment | **Web only.** Railway Web service `f23dacf5-…`: deployment `76204cba-a731-47de-838b-e0827a40bfe1`, SUCCESS, `meta.commitHash` read back = **`bcd6e603345a536c841b8b053f6fa8c635c9261c`** (frontend identical to the feature commit `9d7dcd1`; `bcd6e60` only adds docs on top). Previous Web: `53f989a1-9fbf-4898-b6b6-01c1ea8aa4a5` at `4763394` (rollback target — re-stage that SHA). |
+| API unchanged | deployment `50fce891-7d9c-4677-9415-9ab473b130d2`, SUCCESS, commitHash `4763394c643c1f50674ee020bff98fd3b36e3611`, created 2026-11-09T14:35:00Z — read back before and after all tests, identical. No API redeploy, **no migration**, no database change. |
+| `tests/102-partner-members-retired.spec.ts` | **4 / 4 PASS** (before the deploy, as a baseline on `4763394`: N3, N4 PASS; N1 FAIL — 3 Members links; N2 FAIL — old URL 200). |
+| Regression: `00-unauth` 7, `20-regression` 9, `95-onboarding-identity` 9, `99-merchant-qr-scan` 16, `100-merchant-profile` 7 | **48 / 48 PASS**, 0 failed, 0 skipped |
+
+Verified items (the owner's list):
+* **Partner navigation has no Members** — desktop sidebar and the mobile menu both list exactly `/collaborator/dashboard`, `/qr-code`, `/reports`, `/profile`, `/settings`; no link to `/collaborator/dashboard/members`, no "Giới thiệu" entry (N1).
+* **Old Partner Members URL → HTTP 307 to the Partner dashboard** — unauthenticated fetch without following redirects: `307`, `Location: /collaborator/dashboard`; a signed-in Partner browser lands on the dashboard with its QR card visible (N2).
+* **Merchant Members unchanged** — the page "Thành Viên Nhóm" renders, `GET /merchants/members` answers 200 (list), the Merchant menu entries are intact (N3).
+* **Partner QR and Merchant Profile operational** — spec 99 (Partner portal Q15: name, avatar, QR image, own code; Merchant scan → discount inquiry → payment → receipt Q1–Q16) and spec 100 (profile saves, field-level errors, uploads, audit M1–M7) pass on the new Web.
+* **No cross-role regression** — N4: anonymous 401 on both Members routes; Merchant → Partner route 403; Admin → Partner route 403; Partner → Merchant route 403; Admin → Merchant route 403; Partner → its own legacy route 200 as before (no POST sent). Specs 00, 20 and 95 (unauthenticated, role isolation, outsider refusal, profile-less probes of both Members routes) pass.
+
+Left untouched, as instructed: Production; the API and database; the two spec-101 synthetic transactions (`VNO261109-A723C71975`, `VNO261109-38E9660298`) and their audit records — spec 99's cleanup reversed only the two transactions that run itself created, as it does on every run; Merchant commission policies (spec 100 M4 restores and re-asserts the fixture rates 0.05 / 0.10).
+
+**Status after this release:** Technical UAT PASS for the Global Partner network and for the Members retirement. **Business UAT remains OPEN** until real-device (iPhone-in-Zalo) QR testing and owner acceptance. Production untouched.
+
