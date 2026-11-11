@@ -5,6 +5,7 @@
 //     cd migration/v2 && PATH=/opt/homebrew/opt/libpq/bin:$PATH node check-function-privileges.mjs
 //   Disposable local rehearsal database only (docker container vno-rehearsal-pg on :54999):
 //     node check-function-privileges.mjs --rehearsal
+//   Add --members to check the two Merchant-member functions of 20261111000001 instead (check-member-function-privileges.sql), e.g. `--rehearsal --members`.
 //
 // It cannot change anything: the session is opened with default_transaction_read_only=on, the SQL runs inside
 // `begin read only … rollback`, and only catalog functions (pg_proc, has_*_privilege, aclexplode) are queried.
@@ -17,6 +18,7 @@ import { join, resolve } from 'node:path';
 const REPO = new URL('../../', import.meta.url).pathname;
 const EXPECTED_PROJECT_REF = 'hsezyogfxgnkpweoqqny';
 const rehearsal = process.argv.includes('--rehearsal');
+const members = process.argv.includes('--members');   // check the two Merchant-member functions (20261111000001) instead of the transaction functions
 const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
 const die = (msg) => { console.error(`\nFATAL: ${msg}`); process.exit(1); };
 
@@ -33,7 +35,7 @@ const conn = getConn();
 const redact = (s) => (s || '').split(conn.password).join('<redacted>');
 console.log(`Read-only privilege check — ${conn.label}`);
 
-const sql = readFileSync(join(REPO, 'migration/v2/check-function-privileges.sql'), 'utf8');
+const sql = readFileSync(join(REPO, members ? 'migration/v2/check-member-function-privileges.sql' : 'migration/v2/check-function-privileges.sql'), 'utf8');
 const r = spawnSync('psql', ['-X', '-q', '-At', '-v', 'ON_ERROR_STOP=1', '-f', '-'], {
   input: sql, encoding: 'utf8', maxBuffer: 1 << 22,
   env: { ...process.env, PGHOST: conn.host, PGPORT: String(conn.port), PGUSER: conn.user, PGDATABASE: conn.db, PGPASSWORD: conn.password,
@@ -54,7 +56,7 @@ if (!summary || summary.passed + summary.failed !== checks.length) die('the chec
 
 const dir = resolve(join(REPO, `migration/v2/evidence/privilege-check-${ts}`));
 mkdirSync(dir, { recursive: true, mode: 0o700 });
-writeFileSync(join(dir, 'privilege-check.json'), JSON.stringify({ checked_at: new Date().toISOString(), target: conn.label, read_only: true, summary, checks }, null, 2), { mode: 0o600 });
-console.log(`\n${summary.passed} passed, ${summary.failed} failed. Evidence (ACL metadata only): ${dir}/privilege-check.json`);
+writeFileSync(join(dir, members ? 'member-function-privilege-check.json' : 'privilege-check.json'), JSON.stringify({ checked_at: new Date().toISOString(), target: conn.label, read_only: true, summary, checks }, null, 2), { mode: 0o600 });
+console.log(`\n${summary.passed} passed, ${summary.failed} failed. Evidence (ACL metadata only): ${dir}/${members ? 'member-function-privilege-check.json' : 'privilege-check.json'}`);
 if (summary.failed) { console.error('\nAt least one privilege check FAILED — do not change anything automatically; send the output above for review.'); process.exit(1); }
 console.log('All privilege checks passed. Nothing was changed.');

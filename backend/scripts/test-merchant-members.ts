@@ -8,7 +8,7 @@ import { ZodValidationPipe } from '../src/common/pipes/zod-validation.pipe';
 import { describeZodError } from '../src/common/validation/field-errors';
 import { JwtGuard } from '../src/common/auth/jwt.guard';
 import {
-  CreateMerchantMemberSchema, canonicalMember, escapeLike, maskEmail, maskPhone, memberLimits, normalizeEmail, normalizePhone, sameMemberData, toCreatedMemberView, toMemberListItem,
+  CreateMerchantMemberSchema, escapeLike, maskEmail, maskPhone, memberLimits, normalizeEmail, normalizePhone, parseCreateMemberRpc, parseReconcileRpc, sameMemberData, toCreatedMemberView, toMemberListItem,
 } from '../src/modules/merchants/merchant-members';
 import { CollaboratorsController } from '../src/modules/collaborators/collaborators.controller';
 import { MerchantsController } from '../src/modules/merchants/merchants.controller';
@@ -87,9 +87,19 @@ ok('sameMemberData: any difference is a different submission', () => {
     assert.equal(sameMemberData(row(over), dto()), false, JSON.stringify(over));
   }
 });
-ok('canonicalMember: earliest registration wins, ties broken by id (deterministic)', () => {
-  assert.equal(canonicalMember([row({ id: 'b', collaborators_registered_date: '2026-11-10T01:00:02Z' }), row({ id: 'a', collaborators_registered_date: '2026-11-10T01:00:01Z' })])!.id, 'a');
-  assert.equal(canonicalMember([row({ id: 'z' }), row({ id: 'c' })])!.id, 'c'); assert.equal(canonicalMember([]), undefined);
+ok('parseCreateMemberRpc: CREATED needs a member with an id; EMAIL_HELD / NOT_ALLOWED are recognised; anything else fails closed (INVALID)', () => {
+  const member = { id: '11111111-1111-1111-1111-111111111111', collaborators_code: 'COLABC1234', collaborators_status: 'pending', collaborators_verified: false };
+  assert.deepEqual(parseCreateMemberRpc({ outcome: 'CREATED', member }), { kind: 'CREATED', row: member });
+  assert.deepEqual(parseCreateMemberRpc([{ outcome: 'CREATED', member }]), { kind: 'CREATED', row: member }, 'an array-wrapped answer is accepted');
+  assert.deepEqual(parseCreateMemberRpc({ outcome: 'EMAIL_HELD' }), { kind: 'EMAIL_HELD' });
+  assert.deepEqual(parseCreateMemberRpc({ outcome: 'NOT_ALLOWED' }), { kind: 'NOT_ALLOWED' });
+  for (const bad of [null, undefined, 'CREATED', 42, [], {}, { outcome: 'CREATED' }, { outcome: 'CREATED', member: {} }, { outcome: 'CREATED', member: { id: '' } }, { outcome: 'CREATED', member: { id: 7 } }, { outcome: 'created', member }, { outcome: 'EMAIL_HELD_', member }, { member }]) {
+    assert.deepEqual(parseCreateMemberRpc(bad), { kind: 'INVALID' }, JSON.stringify(bad));
+  }
+});
+ok('parseReconcileRpc: the five documented outcomes are recognised; anything else fails closed (INVALID)', () => {
+  for (const o of ['ALREADY_AUDITED', 'RECONCILED', 'IN_FLIGHT', 'NOT_ELIGIBLE', 'NOT_ALLOWED'] as const) { assert.equal(parseReconcileRpc(o), o); assert.equal(parseReconcileRpc([o]), o); }
+  for (const bad of [null, undefined, '', 'reconciled', 'OK', true, 1, {}, { outcome: 'RECONCILED' }, []]) assert.equal(parseReconcileRpc(bad), 'INVALID', JSON.stringify(bad));
 });
 ok('escapeLike: LIKE wildcards in an e-mail are matched literally', () => { assert.equal(escapeLike('a_b%c\\d@x.vn'), 'a\\_b\\%c\\\\d@x.vn'); });
 

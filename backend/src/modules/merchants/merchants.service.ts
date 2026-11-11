@@ -5,7 +5,7 @@ import { SupabaseService } from '../../infrastructure/supabase/supabase.service'
 import { describeIssue } from '../../common/validation/field-errors';
 import { KeyedLock } from '../../common/concurrency/keyed-lock';
 import { SlidingWindowLimiter } from '../../common/http/rate-limiter';
-import { MemberRow, canonicalMember, escapeLike, memberLimits, sameMemberData, toCreatedMemberView, toMemberListItem } from './merchant-members';
+import { MemberRow, escapeLike, memberLimits, parseCreateMemberRpc, parseReconcileRpc, sameMemberData, toCreatedMemberView, toMemberListItem } from './merchant-members';
 import {
   AdminCreateMerchantDto,
   AdminUpdateMerchantDto,
@@ -525,13 +525,18 @@ export class MerchantsService {
       return mine && rows.length === 1 ? mine : null;
     };
 
-    // 1) already there? the very same submission is a replay; anything else holding the e-mail is a conflict
+    // The e-mail is already held. The very same submission is an idempotent replay (and a replay never leaves its application without a creation audit event);
+    // anything else holding the e-mail is the generic conflict.
+    const answerExisting = async (rows: MemberRow[]) => {
+      const replay = verdictFor(rows);
+      if (!replay) throw this.emailUnavailable();
+      await this.ensureCreationAudit(userId, merchantId, replay.id);
+      return toCreatedMemberView(replay, true);
+    };
+
+    // 1) already there?
     const before = await this.membersByEmail(dto.collaborators_email);
-    if (before.length) {
-      const replay = verdictFor(before);
-      if (replay) return toCreatedMemberView(replay, true);
-      throw this.emailUnavailable();
-    }
+    if (before.length) return answerExisting(before);
     // 2) an existing account / sign-in with that e-mail (not disclosed which)
     try { await this.userProfilesService.assertIdentityAvailable(dto.collaborators_email); }
     catch (e) { if (e instanceof BadRequestException) throw this.emailUnavailable(); throw e; }
@@ -543,46 +548,51 @@ export class MerchantsService {
       throw this.memberFail(HttpStatus.CONFLICT, 'MEMBER_LIMIT_REACHED', `Cửa hàng đang có ${this.memberLimits.pendingCap} hồ sơ chờ phê duyệt. Hãy chờ Admin VNO xử lý trước khi thêm mới.`, { limit: this.memberLimits.pendingCap });
     }
 
-    // 4) insert (a code collision is retried with a fresh code; the failure text of the database is never returned)
-    let created: MemberRow | null = null;
-    for (let attempt = 0; attempt < 3 && !created; attempt += 1) {
-      const { data, error } = await client.from('collaborators').insert({
-        merchant_system_id: merchantId,
-        collaborators_code: `COL${randomBytes(4).toString('hex').toUpperCase().slice(0, 7)}`,
-        collaborators_name: dto.collaborators_name,
-        collaborators_phone: dto.collaborators_phone,
-        collaborators_email: dto.collaborators_email,
-        collaborators_bank_name: dto.collaborators_bank_name ?? null,
-        collaborators_bank_acc_number: dto.collaborators_bank_acc_number ?? null,
-        collaborators_password: null,
-        collaborators_registered_date: new Date().toISOString(),
-        collaborators_verified: false,
-        collaborators_status: 'pending',
-      }).select('id,merchant_system_id,collaborators_code,collaborators_name,collaborators_phone,collaborators_email,collaborators_bank_name,collaborators_bank_acc_number,collaborators_status,collaborators_verified,collaborators_registered_date').single();
-      if (!error) { created = data as MemberRow; break; }
-      const text = String(error.message || '');
-      if (error.code === '23505' && /code/i.test(text) && !/email/i.test(text)) continue;
-      if (error.code === '23505') throw this.emailUnavailable();
-      throw this.memberFail(HttpStatus.INTERNAL_SERVER_ERROR, 'MEMBER_CREATE_FAILED', 'Chưa thể thêm thành viên lúc này. Vui lòng thử lại sau.');
+    // 4) ONE database transaction writes the application row AND its creation audit event: either both commit or neither does (a failure of either leaves nothing
+    //    behind). The function also serialises concurrent CALLS OF ITSELF per e-mail across API instances, so a request that lost such a race sees the winner's
+    //    committed row (EMAIL_HELD) instead of inserting a second one. (A writer that takes no lock - the previous API during a rolling deploy, Partner registration,
+    //    Admin create - is not covered; only a unique index would close that.) A code collision is retried with a fresh code; the database's failure text is never
+    //    returned. If the migration is not applied the call fails and so does the request (it never falls back to a non-atomic write).
+    const createFailed = () => this.memberFail(HttpStatus.INTERNAL_SERVER_ERROR, 'MEMBER_CREATE_FAILED', 'Chưa thể thêm thành viên lúc này. Vui lòng thử lại sau.');
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const { data, error } = await client.rpc('create_merchant_member_application', {
+        p_actor_user_id: userId,
+        p_merchant_id: merchantId,
+        p_code: `COL${randomBytes(4).toString('hex').toUpperCase().slice(0, 7)}`,
+        p_name: dto.collaborators_name,
+        p_phone: dto.collaborators_phone,
+        p_email: dto.collaborators_email,
+        p_bank_name: dto.collaborators_bank_name ?? null,
+        p_bank_acc_number: dto.collaborators_bank_acc_number ?? null,
+      });
+      if (error) {
+        const text = String(error.message || '');
+        if (error.code === '23505' && /code/i.test(text) && !/email/i.test(text)) continue;
+        if (error.code === '23505') throw this.emailUnavailable();
+        throw createFailed();
+      }
+      const result = parseCreateMemberRpc(data);
+      if (result.kind === 'CREATED') return toCreatedMemberView(result.row, false);
+      if (result.kind === 'EMAIL_HELD') return answerExisting(await this.membersByEmail(dto.collaborators_email));
+      if (result.kind === 'NOT_ALLOWED') throw this.memberFail(HttpStatus.FORBIDDEN, 'MERCHANT_NOT_ACTIVE', 'Cửa hàng cần được Admin VNO phê duyệt và đang hoạt động mới có thể thêm thành viên.');
+      throw createFailed();
     }
-    if (!created) throw this.memberFail(HttpStatus.INTERNAL_SERVER_ERROR, 'MEMBER_CREATE_FAILED', 'Chưa thể thêm thành viên lúc này. Vui lòng thử lại sau.');
+    throw createFailed();
+  }
 
-    // 5) convergence: if another instance inserted the same e-mail at the same moment, the earliest row wins and this request removes ITS OWN row
-    const after = await this.membersByEmail(dto.collaborators_email);
-    const winner = canonicalMember(after);
-    if (winner && winner.id !== created.id) {
-      await client.from('collaborators').delete().eq('id', created.id).eq('collaborators_status', 'pending');
-      const replay = verdictFor([winner]);
-      if (replay) return toCreatedMemberView(replay, true);
-      throw this.emailUnavailable();
-    }
-
-    // The audit trail records WHO added a pending application and for which Merchant: no name, phone, e-mail or bank data.
-    await this.audit.record({ id: userId, role: 'merchant' }, 'collaborator.member_application_created', 'collaborator', created.id, {
-      merchant_id: merchantId,
-      auth_invitation_required: true,
-    });
-    return toCreatedMemberView(created, false);
+  /**
+   * A replay answers 2xx ONLY when the application has an audit trail. The database function writes ONE distinct 'collaborator.member_application_audit_reconciled'
+   * event if, and only if, the application was created by this API, has no creation / reconciliation event and is older than 30 seconds. A younger one may still
+   * be being audited by its creator (the previous API during a rolling deploy): nothing is written and the caller gets a retryable 409. Anything else fails.
+   */
+  private async ensureCreationAudit(userId: string, merchantId: string, memberId: string) {
+    const { data, error } = await this.supabase.getClient().rpc('reconcile_merchant_member_audit', { p_actor_user_id: userId, p_merchant_id: merchantId, p_member_id: memberId });
+    const outcome = error ? 'INVALID' : parseReconcileRpc(data);
+    if (outcome === 'ALREADY_AUDITED' || outcome === 'RECONCILED') return;
+    if (outcome === 'IN_FLIGHT') throw this.memberFail(HttpStatus.CONFLICT, 'MEMBER_AUDIT_PENDING', 'Hồ sơ này vừa được tạo và đang được ghi nhận. Vui lòng thử lại sau ít giây.', { retry_after_seconds: 30 });
+    if (outcome === 'NOT_ALLOWED') throw this.memberFail(HttpStatus.FORBIDDEN, 'MERCHANT_NOT_ACTIVE', 'Cửa hàng cần được Admin VNO phê duyệt và đang hoạt động mới có thể thêm thành viên.');
+    if (outcome === 'NOT_ELIGIBLE') throw this.emailUnavailable();      // not this Merchant's own API-created pending application (or it changed state in the meantime)
+    throw this.memberFail(HttpStatus.INTERNAL_SERVER_ERROR, 'MEMBER_AUDIT_FAILED', 'Chưa thể ghi nhận hồ sơ này lúc này. Vui lòng thử lại sau.');
   }
 
   async deactivate(actor: AuditActor, id: string) {

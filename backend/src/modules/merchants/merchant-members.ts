@@ -82,9 +82,23 @@ export function sameMemberData(row: MemberRow, dto: CreateMerchantMemberDto): bo
     && normalizeAccountNumber(String(row.collaborators_bank_acc_number ?? '')) === String(dto.collaborators_bank_acc_number ?? '');
 }
 
-/** The row that "wins" when several rows hold one e-mail: earliest registration, then id. Deterministic, so concurrent requests agree. */
-export function canonicalMember<T extends MemberRow>(rows: T[]): T | undefined {
-  return [...rows].sort((a, b) => String(a.collaborators_registered_date ?? '').localeCompare(String(b.collaborators_registered_date ?? '')) || String(a.id).localeCompare(String(b.id)))[0];
+// ---- the two database functions (supabase/migrations/20261111000001): their answers are parsed STRICTLY and anything unexpected fails closed ------------------
+/** create_merchant_member_application: the application row and its creation audit event are written by one database transaction. */
+export type CreateMemberRpcResult = { kind: 'CREATED'; row: MemberRow } | { kind: 'EMAIL_HELD' } | { kind: 'NOT_ALLOWED' } | { kind: 'INVALID' };
+export function parseCreateMemberRpc(data: unknown): CreateMemberRpcResult {
+  const d = (Array.isArray(data) ? data[0] : data) as { outcome?: unknown; member?: Record<string, unknown> } | null | undefined;
+  if (!d || typeof d !== 'object') return { kind: 'INVALID' };
+  if (d.outcome === 'EMAIL_HELD') return { kind: 'EMAIL_HELD' };
+  if (d.outcome === 'NOT_ALLOWED') return { kind: 'NOT_ALLOWED' };
+  if (d.outcome === 'CREATED' && d.member && typeof d.member === 'object' && typeof d.member.id === 'string' && d.member.id) return { kind: 'CREATED', row: d.member as unknown as MemberRow };
+  return { kind: 'INVALID' };
+}
+
+/** reconcile_merchant_member_audit: ensures an idempotent replay of an application never leaves its creation unaudited. */
+export type ReconcileRpcOutcome = 'ALREADY_AUDITED' | 'RECONCILED' | 'IN_FLIGHT' | 'NOT_ELIGIBLE' | 'NOT_ALLOWED' | 'INVALID';
+export function parseReconcileRpc(data: unknown): ReconcileRpcOutcome {
+  const d = Array.isArray(data) ? data[0] : data;
+  return d === 'ALREADY_AUDITED' || d === 'RECONCILED' || d === 'IN_FLIGHT' || d === 'NOT_ELIGIBLE' || d === 'NOT_ALLOWED' ? d : 'INVALID';
 }
 
 /** Escapes LIKE wildcards so an e-mail such as a_b@x.vn is matched literally by ILIKE. */
