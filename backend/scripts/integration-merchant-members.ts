@@ -8,9 +8,10 @@
 // personal data) · idempotent replay · duplicate-e-mail answers that do not enumerate · LIKE-wildcard safety · validation over HTTP · concurrency · cross-instance
 // races · rate limits (429) · the pending cap (409) · authorization matrix · isolation between Merchants · masked contact details and no bank data anywhere ·
 // AUDIT ATOMICITY (section 9): application row + creation audit event commit together or not at all (fault injection on the audit write), two-instance races,
-// REPLAY VERIFICATION (a replay succeeds only when a matching creation audit event can be read; a row without one - old or young, API-shaped code or not - fails
-// closed, is flagged in the log and nothing is ever written to repair it; a late audit write by the creator is the only thing that makes it succeed), the database
-// function's own guards and ACL, an unavailable function (revoked / dropped) and the ROLLBACK DRILL (the real rollback script; re-apply, twice, restores).
+// REPLAY VERIFICATION (a replay succeeds only when exactly ONE coherent creation audit event can be read AND its actor is a Merchant user of the requesting Merchant
+// who already existed when it was written - same or different user of that Merchant; anything else is the generic 409, logged with ids only, and nothing is ever written
+// to repair it; forged / external events, several events, moved / removed creators, failed lookups, the selectivity of the audit query), the database function's own
+// guards and ACL, an unavailable function (revoked / dropped) and the ROLLBACK DRILL (the real rollback script; re-apply, twice, restores).
 // VNO_CONTINUE_ON_FAIL=1 runs everything and lists every failing control (used to reproduce the defect on the previously deployed build).
 //
 // Needs the rehearsal database (migration/v2/rehearsal/start-rehearsal-stack.sh). It talks to the hosted environment NEVER and refuses any non-loopback target.
@@ -75,7 +76,7 @@ const VIETNAMESE = /[À-ỹ]/;
 
   // ---- seed (unique per run; the rehearsal database is disposable) ---------------------------------------------------------------------------------------
   const tag = randomUUID().slice(0, 8).toLowerCase();
-  const who = ['mA', 'mB', 'mPending', 'mInactive', 'partnerH', 'partnerU', 'admin'] as const;
+  const who = ['mA', 'mA2', 'mB', 'mPending', 'mInactive', 'partnerH', 'partnerU', 'admin'] as const;
   const uid = Object.fromEntries(who.map((k) => [k, randomUUID()])) as Record<typeof who[number], string>;
   const mail = (k: string) => `${k.toLowerCase()}-${tag}@rehearsal.invalid`;
   for (const k of who) execFileSync('docker', ['exec', '-i', PG, 'psql', '-U', 'postgres', '-h', '127.0.0.1', '-q', '-v', 'ON_ERROR_STOP=1', '-c',
@@ -96,6 +97,7 @@ const VIETNAMESE = /[À-ỹ]/;
   ]));
   await must(db.from('user_profiles').insert([
     { user_id: uid.mA, email: mail('mA'), role: 'merchant', merchant_id: mid.A, user_profiles_status: 'active' },
+    { user_id: uid.mA2, email: mail('mA2'), role: 'merchant', merchant_id: mid.A, user_profiles_status: 'active' },     // a SECOND user of Merchant A (cross-actor replays)
     { user_id: uid.mB, email: mail('mB'), role: 'merchant', merchant_id: mid.B, user_profiles_status: 'active' },
     { user_id: uid.mPending, email: mail('mPending'), role: 'merchant', merchant_id: mid.P, user_profiles_status: 'active' },
     { user_id: uid.mInactive, email: mail('mInactive'), role: 'merchant', merchant_id: mid.B, user_profiles_status: 'inactive' },
@@ -120,10 +122,10 @@ const VIETNAMESE = /[À-ỹ]/;
     },
   };
   const audit = new AuditService(supabase);
-  const makeMerchants = (env: Record<string, string>) => {
+  const makeMerchants = (env: Record<string, string>, sb: any = supabase) => {
     const keys = ['MERCHANT_MEMBER_CREATES_PER_HOUR', 'MERCHANT_MEMBER_CREATES_PER_DAY', 'MERCHANT_MEMBER_PENDING_CAP']; const saved = keys.map((k) => process.env[k]);
     Object.assign(process.env, { MERCHANT_MEMBER_CREATES_PER_HOUR: '1000', MERCHANT_MEMBER_CREATES_PER_DAY: '1000', MERCHANT_MEMBER_PENDING_CAP: '1000', ...env });
-    const svc = new MerchantsService(supabase, userProfilesStub, audit, {} as any);
+    const svc = new MerchantsService(sb, userProfilesStub, audit, {} as any);
     keys.forEach((k, i) => { if (saved[i] === undefined) delete process.env[k]; else process.env[k] = saved[i]; });
     return svc;
   };
@@ -226,7 +228,7 @@ const VIETNAMESE = /[À-ỹ]/;
     assert.equal(rs.filter((r) => r.json.idempotent_replay === false).length, 1); assert.equal((await rowsByEmail(body.collaborators_email)).length, 1);
     assert.equal((await db.from('audit_events').select('id', { count: 'exact', head: true }).eq('action', 'collaborator.member_application_created').eq('entity_id', rs[0].json.id)).count, 1);
   });
-  await ok('a competing row committed between our pre-check and our insert: the function reports EMAIL_HELD and writes nothing; another Merchant\'s row -> generic 409; our own identical row WITH its audit event -> replay; WITHOUT one -> fail closed', async () => {
+  await ok('a competing row committed between our pre-check and our insert: the function reports EMAIL_HELD and writes nothing; another Merchant\'s row -> generic 409; our own identical row WITH its audit event -> replay; WITHOUT one -> the generic 409 (fail closed)', async () => {
     // (a) the competing row belongs to ANOTHER Merchant and is older: we must end with 409 and the competing row intact
     const a = member('race-a'); let competing = '';
     beforeInsertHook = async (email) => { beforeInsertHook = null; const { data } = await db.from('collaborators').insert({ merchant_system_id: mid.B, collaborators_code: `COL-RACE-${tag}-a`, collaborators_name: 'Competing', collaborators_phone: '0900000001', collaborators_email: email, collaborators_status: 'pending', collaborators_verified: false, collaborators_registered_date: '2020-01-01T00:00:00Z' }).select('id').single(); competing = data!.id; };
@@ -244,7 +246,7 @@ const VIETNAMESE = /[À-ỹ]/;
     // (c) the competing row is the SAME submission but was left WITHOUT an audit event (the previous API\'s partial write): the loser must not turn it into a success
     const c = member('race-c'); let partial = '';
     beforeInsertHook = async (email) => { beforeInsertHook = null; const { data } = await db.from('collaborators').insert({ merchant_system_id: mid.A, collaborators_code: memberCode(), collaborators_name: c.collaborators_name, collaborators_phone: c.collaborators_phone, collaborators_email: email, collaborators_status: 'pending', collaborators_verified: false, collaborators_registered_date: '2020-01-01T00:00:00Z' }).select('id').single(); partial = data!.id; seededIds.add(partial); };
-    const rc = await api(token.mA, 'POST', '/merchants/members', c); assert.equal(rc.status, 500, rc.text); assert.equal(rc.json?.code, 'MEMBER_AUDIT_MISSING');
+    const rc = await api(token.mA, 'POST', '/merchants/members', c); assert.equal(rc.status, 409, rc.text); assert.equal(rc.json?.code, 'MEMBER_EMAIL_UNAVAILABLE');
     assert.equal((await rowsByEmail(c.collaborators_email)).length, 1); assert.equal(await anyAuditCount(partial), 0, 'the loser writes no audit event');
   });
 
@@ -409,69 +411,115 @@ const VIETNAMESE = /[À-ỹ]/;
     const rows = await rowsByEmail(base.collaborators_email); assert.equal(rows.length, 1); assert.equal(rows[0].id, wins[0].v.id);
     assert.equal(await auditCount(CREATED, wins[0].v.id), 1);
   });
-  await ok('FI-5 replay of an application that has NO creation audit event (the partial write the previous API could leave): fail closed 500 MEMBER_AUDIT_MISSING, flagged in the log, NOTHING written - however old or young the row is', async () => {
+  // ---- helpers for the REPLAY-VERIFICATION controls (sections FI-5 .. FI-21) ---------------------------------------------------------------------------------
+  type Body = { collaborators_name: string; collaborators_phone: string; collaborators_email: string };
+  const genericConflict = conflictBody(await api(token.mB, 'POST', '/merchants/members', { ...A1 }));   // what EVERY kind of conflict looks like to the caller
+  // an audit row as the create function / AuditService would write it for Merchant A's user mA; every control overrides what it wants to forge
+  const plant = (entityId: string, over: Record<string, unknown> = {}) => ({ actor_auth_user_id: uid.mA, actor_role: 'merchant', action: CREATED, entity_type: 'collaborator', entity_id: entityId, source: 'v2-admin-api', details: { merchant_id: mid.A, auth_invitation_required: true }, ...over });
+  const insertAudit = async (rows: any[]) => { const { data, error } = await db.from('audit_events').insert(rows).select('id'); if (error) throw new Error(error.message); return (data ?? []).map((x: any) => x.id as number); };
+  const newAuthUser = (label: string) => {
+    const id = randomUUID(); const email = `${label}-${tag}@rehearsal.invalid`;
+    execFileSync('docker', ['exec', '-i', PG, 'psql', '-U', 'postgres', '-h', '127.0.0.1', '-q', '-v', 'ON_ERROR_STOP=1', '-c', `insert into auth.users (id,email,instance_id,aud,role) values ('${id}','${email}','00000000-0000-0000-0000-000000000000','authenticated','authenticated')`]);
+    return { id, email };
+  };
+  const newMerchantUser = async (label: string, merchantId: string) => {
+    const u = newAuthUser(label); await must(db.from('user_profiles').insert({ user_id: u.id, email: u.email, role: 'merchant', merchant_id: merchantId, user_profiles_status: 'active' }));
+    const tok = `tok-${label}-${tag}`; users.set(tok, u); return { ...u, tok };
+  };
+  // a refused replay: the generic 409 (identical to every other conflict, no hint of the cause), exactly ONE log line with ids only and the specific reason, nothing written
+  const expectRefused = async (label: string, tok: string, requester: string, body: Body, reason: string, appId: string) => {
+    const before = await scoped(); const events = await anyAuditCount(appId); flagged.length = 0;
+    const r = await api(tok, 'POST', '/merchants/members', body);
+    assert.equal(r.status, 409, `${label}: ${r.text}`); assert.equal(r.json?.code, 'MEMBER_EMAIL_UNAVAILABLE', label); assert.deepEqual(Object.keys(r.json).sort(), ['code', 'message'], label);
+    assert.equal(conflictBody(r), genericConflict, `${label}: must look exactly like every other conflict`); assert.doesNotMatch(r.text, /MEMBER_AUDIT_MISSING|audit|idempotent|replay/i, label);
+    assert.equal(flagged.length, 1, `${label}: exactly one log line, got ${JSON.stringify(flagged)}`);
+    const line = flagged[0]; assert.ok(line.includes(`MEMBER_REPLAY_REFUSED reason=${reason} `), `${label}: ${line}`);
+    for (const idv of [appId, mid.A, requester]) assert.ok(line.includes(idv), `${label}: the log line carries ${idv}: ${line}`);
+    assert.ok(!line.includes(body.collaborators_email) && !line.includes(body.collaborators_phone) && !line.includes(body.collaborators_name), `${label}: ids only, no personal data in the log`);
+    assert.equal(await anyAuditCount(appId), events, `${label}: the API writes no audit event`); assert.deepEqual(await scoped(), before, `${label}: nothing added`);
+    assert.equal((await rowsByEmail(body.collaborators_email)).length, 1, `${label}: the application is untouched`);
+  };
+  const expectReplay = async (label: string, tok: string, body: Body, appId: string) => {
+    const before = await scoped(); const events = await anyAuditCount(appId);
+    const r = await api(tok, 'POST', '/merchants/members', body);
+    assert.equal(r.status, 201, `${label}: ${r.text}`); assert.equal(r.json.idempotent_replay, true, label); assert.equal(r.json.id, appId, label);
+    assert.equal(await anyAuditCount(appId), events, `${label}: a replay writes no audit event`); assert.deepEqual(await scoped(), before, label);
+  };
+
+  await ok('FI-5 replay of an application that has NO creation audit event (the partial write the previous API could leave): the generic 409 MEMBER_EMAIL_UNAVAILABLE - identical to any other conflict - flagged in the log, NOTHING written, however old or young the row is', async () => {
     for (const [n, registered] of [['gap-old', '2020-02-02T00:00:00Z'], ['gap-young', new Date().toISOString()]] as const) {
-      const { body, id } = await seedPartialWrite(n, registered); const before = await scoped(); const rowBefore = (await db.from('collaborators').select('*').eq('id', id).single()).data;
-      flagged.length = 0;
-      for (let i = 0; i < 3; i += 1) {
-        const r = await api(token.mA, 'POST', '/merchants/members', body);
-        assert.equal(r.status, 500, r.text); assert.equal(r.json?.code, 'MEMBER_AUDIT_MISSING'); assert.match(r.json.message, VIETNAMESE); assert.deepEqual(Object.keys(r.json).sort(), ['code', 'message']);
-        assert.ok(!r.text.includes(id) && !r.text.includes(body.collaborators_email) && !/audit_events|injected|reconcil/i.test(r.text), 'no internal detail or personal data may reach the caller');
-      }
+      const { body, id } = await seedPartialWrite(n, registered); const rowBefore = (await db.from('collaborators').select('*').eq('id', id).single()).data;
+      for (let i = 0; i < 3; i += 1) await expectRefused(`${n} #${i}`, token.mA, uid.mA, body, 'NO_CREATION_AUDIT', id);
       assert.equal(await anyAuditCount(id), 0, 'the API must not write ANY audit event for an application it did not create'); assert.equal(await auditCount(REMOVED, id), 0);
-      assert.deepEqual(await scoped(), before, 'no row and no audit event added'); assert.deepEqual((await db.from('collaborators').select('*').eq('id', id).single()).data, rowBefore, 'the application is untouched');
-      assert.equal(flagged.length, 3, 'every refused replay is flagged for manual investigation');
-      for (const line of flagged) { assert.ok(line.includes('MEMBER_AUDIT_MISSING') && line.includes(id) && line.includes(mid.A) && line.includes(uid.mA)); assert.ok(!line.includes(body.collaborators_email) && !line.includes(body.collaborators_phone) && !line.includes(body.collaborators_name), 'ids only: no personal data in the log'); }
+      assert.deepEqual((await db.from('collaborators').select('*').eq('id', id).single()).data, rowBefore, 'the application is untouched');
     }
   });
-  await ok('FI-5b a pending row created by ANOTHER path (Admin create: code COL-<16 hex>, its own "collaborator.created" audit event) is not proof of a Members creation: an identical submission fails closed and NOTHING is written', async () => {
+  await ok('FI-5b a pending row created by ANOTHER path (Admin create: code COL-<16 hex>, its own "collaborator.created" audit event) is not proof of a Members creation: an identical submission gets the generic 409 and NOTHING is written', async () => {
     const m = member('adminmade'); adminMadeId = randomUUID(); seededIds.add(adminMadeId);
     await must(db.from('collaborators').insert({ id: adminMadeId, merchant_system_id: mid.A, collaborators_code: `COL-${randomBytes(8).toString('hex').toUpperCase()}`, collaborators_name: m.collaborators_name, collaborators_phone: m.collaborators_phone,
       collaborators_email: m.collaborators_email, collaborators_status: 'pending', collaborators_verified: false, collaborators_registered_date: '2020-01-01T00:00:00Z' }));
     await must(db.from('audit_events').insert({ actor_auth_user_id: uid.admin, actor_role: 'admin', action: 'collaborator.created', entity_type: 'collaborator', entity_id: adminMadeId, source: 'v2-admin-api', details: { merchant_id: mid.A } }));
-    const before = await scoped();
-    const r = await api(token.mA, 'POST', '/merchants/members', m); assert.equal(r.status, 500, r.text); assert.equal(r.json?.code, 'MEMBER_AUDIT_MISSING');
-    assert.equal(await auditCount(CREATED, adminMadeId), 0); assert.equal((await db.from('audit_events').select('id', { count: 'exact', head: true }).eq('entity_id', adminMadeId)).count, 1, 'only the Admin\'s own event exists');
-    assert.deepEqual(await scoped(), before);
+    await expectRefused('admin-made row', token.mA, uid.mA, m, 'NO_CREATION_AUDIT', adminMadeId);
+    assert.equal(await auditCount(CREATED, adminMadeId), 0); assert.equal(await anyAuditCount(adminMadeId), 1, 'only the Admin\'s own event exists');
   });
-  await ok('FI-5c EXTERNAL records that merely LOOK like Members applications (API-shaped code COL+7 hex, pending, same Merchant, same details) never earn a success: no event / a different action / another Merchant / another application / a non-merchant actor / the removed reconciliation action -> all fail closed, nothing written', async () => {
-    const ev = (action: string, entity: string, details: Record<string, unknown>, role = 'merchant') => ({ actor_auth_user_id: uid.mA, actor_role: role, action, entity_type: 'collaborator', entity_id: entity, source: 'v2-admin-api', details });
-    const variants: Array<[string, (id: string) => any[]]> = [
-      ['no event at all', () => []],
-      ['an Admin "collaborator.created" event', (id) => [ev('collaborator.created', id, { merchant_id: mid.A }, 'admin')]],
-      ['a creation event naming ANOTHER Merchant', (id) => [ev(CREATED, id, { merchant_id: mid.B, auth_invitation_required: true })]],
-      ['a creation event written by an Admin actor', (id) => [ev(CREATED, id, { merchant_id: mid.A }, 'admin')]],
-      ['a creation event without a Merchant in its details', (id) => [ev(CREATED, id, {})]],
-      ['an event of the removed reconciliation design', (id) => [ev(REMOVED, id, { merchant_id: mid.A, reason: 'creation_audit_missing' })]],
+  await ok('FI-5c REGRESSION finding 1 (Medium): EXTERNAL / FORGED creation events never earn a success - null actor, Admin or Partner user wearing the role "merchant", an actor of ANOTHER Merchant, an actor with no profile, a non-API source, a profile that did not exist yet, another Merchant in the details... -> the generic 409 with the specific reason logged, nothing written', async () => {
+    const ghost = newAuthUser('ghost');
+    const variants: Array<[string, (id: string) => any[], string]> = [
+      ['no event at all', () => [], 'NO_CREATION_AUDIT'],
+      ['an Admin "collaborator.created" event', (id) => [plant(id, { action: 'collaborator.created', actor_role: 'admin', actor_auth_user_id: uid.admin, details: { merchant_id: mid.A } })], 'NO_CREATION_AUDIT'],
+      ['an event of the removed reconciliation design', (id) => [plant(id, { action: REMOVED, details: { merchant_id: mid.A, reason: 'creation_audit_missing' } })], 'NO_CREATION_AUDIT'],
+      ['a creation event naming ANOTHER Merchant', (id) => [plant(id, { details: { merchant_id: mid.B, auth_invitation_required: true } })], 'AUDIT_MERCHANT_MISMATCH'],
+      ['a creation event without a Merchant in its details', (id) => [plant(id, { details: {} })], 'AUDIT_MERCHANT_MISMATCH'],
+      ['a creation event with the role "admin"', (id) => [plant(id, { actor_role: 'admin' })], 'AUDIT_ROLE_NOT_MERCHANT'],
+      ['a creation event with the role "collaborator"', (id) => [plant(id, { actor_role: 'collaborator' })], 'AUDIT_ROLE_NOT_MERCHANT'],
+      ['a NULL actor (role "merchant", this Merchant)', (id) => [plant(id, { actor_auth_user_id: null })], 'AUDIT_ACTOR_MISSING'],
+      ['an ADMIN user wearing the role "merchant"', (id) => [plant(id, { actor_auth_user_id: uid.admin })], 'ACTOR_NOT_A_MERCHANT_USER'],
+      ['a PARTNER user wearing the role "merchant"', (id) => [plant(id, { actor_auth_user_id: uid.partnerH })], 'ACTOR_NOT_A_MERCHANT_USER'],
+      ['an actor that belongs to ANOTHER Merchant (role "merchant", details name this Merchant)', (id) => [plant(id, { actor_auth_user_id: uid.mB })], 'ACTOR_BOUND_TO_OTHER_MERCHANT'],
+      ['an actor that exists in Auth but has NO profile', (id) => [plant(id, { actor_auth_user_id: ghost.id })], 'ACTOR_PROFILE_MISSING'],
+      ['an event whose source is not an API audit writer', (id) => [plant(id, { source: 'v2' })], 'AUDIT_SOURCE_UNEXPECTED'],
+      ['an actor whose profile did not exist yet when the event was written', (id) => [plant(id, { occurred_at: '2020-06-06T00:00:00Z' })], 'ACTOR_PROFILE_POSTDATES_AUDIT'],
     ];
-    for (const [i, [label, mk]] of variants.entries()) {
+    for (const [i, [label, mk, reason]] of variants.entries()) {
       const { body, id } = await seedPartialWrite(`ext-v${i}`, '2020-04-04T00:00:00Z');
-      const events = mk(id); if (events.length) await must(db.from('audit_events').insert(events)); if (events.some((e) => e.action === REMOVED)) plantedRemoved.add(id);
-      const before = await scoped(); const mine = await anyAuditCount(id);
-      const r = await api(token.mA, 'POST', '/merchants/members', body); assert.equal(r.status, 500, `${label}: ${r.text}`); assert.equal(r.json?.code, 'MEMBER_AUDIT_MISSING', label);
-      assert.equal(await anyAuditCount(id), mine, `${label}: no event may be added for it`); assert.deepEqual(await scoped(), before, label);
-      assert.equal((await rowsByEmail(body.collaborators_email)).length, 1, label);
+      const events = mk(id); if (events.length) await insertAudit(events); if (events.some((e) => e.action === REMOVED)) plantedRemoved.add(id);
+      await expectRefused(label, token.mA, uid.mA, body, reason, id);
     }
     // another application's valid creation event never counts for this one: Q has its own valid event, P (same Merchant, API-shaped code) has none
     const P = await seedPartialWrite('ext-p', '2020-05-05T00:00:00Z'); const Q = await seedPartialWrite('ext-q', '2020-05-05T00:00:00Z');
-    await must(db.from('audit_events').insert(ev(CREATED, Q.id, { merchant_id: mid.A, auth_invitation_required: true })));
-    const rp = await api(token.mA, 'POST', '/merchants/members', P.body); assert.equal(rp.status, 500, rp.text); assert.equal(rp.json?.code, 'MEMBER_AUDIT_MISSING'); assert.equal(await anyAuditCount(P.id), 0);
-    const rq = await api(token.mA, 'POST', '/merchants/members', Q.body); assert.equal(rq.status, 201, rq.text); assert.equal(rq.json.idempotent_replay, true); assert.equal(rq.json.id, Q.id); assert.equal(await anyAuditCount(Q.id), 1);
+    await insertAudit([plant(Q.id)]);
+    await expectRefused('P (no event of its own)', token.mA, uid.mA, P.body, 'NO_CREATION_AUDIT', P.id); assert.equal(await anyAuditCount(P.id), 0);
+    await expectReplay('Q (its own valid event)', token.mA, Q.body, Q.id); assert.equal(await anyAuditCount(Q.id), 1);
   });
-  await ok('FI-6 an attempted LATE audit write: the API and the create function both refuse to back-fill; only the creator\'s own late write (the previous API auditing after its insert) makes the NEXT replay succeed, and the API adds no event of its own', async () => {
+  await ok('FI-5d SEVERAL creation events for one application are an integrity anomaly and are refused whatever they say (valid+valid, valid+forged, forged+valid, 25 events): the insertion order never matters; with only the valid event left the replay succeeds again', async () => {
+    const cases: Array<[string, (id: string) => any[], number]> = [      // [label, events, index of the valid one to keep afterwards]
+      ['two identical valid events', (id) => [plant(id), plant(id)], 0],
+      ['a valid event, then a forged one (null actor)', (id) => [plant(id), plant(id, { actor_auth_user_id: null })], 0],
+      ['a forged event (Admin actor), then the valid one', (id) => [plant(id, { actor_auth_user_id: uid.admin }), plant(id)], 1],
+      ['25 creation events, the valid one in the middle', (id) => Array.from({ length: 25 }, (_, i) => (i === 12 ? plant(id) : plant(id, { actor_auth_user_id: uid.mB }))), 12],
+    ];
+    for (const [i, [label, mk, keep]] of cases.entries()) {
+      const { body, id } = await seedPartialWrite(`multi${i}`, '2020-06-06T00:00:00Z'); const ids = await insertAudit(mk(id));
+      await expectRefused(label, token.mA, uid.mA, body, 'MULTIPLE_CREATION_AUDITS', id);
+      await must(db.from('audit_events').delete().in('id', ids.filter((_, k) => k !== keep)));
+      await expectReplay(`${label}: after removing the surplus`, token.mA, body, id); assert.equal(await auditCount(CREATED, id), 1);
+    }
+  });
+  await ok('FI-6 an attempted LATE audit write: neither the API nor the create function back-fills; the creator\'s own late write (the previous API auditing after its insert) makes the NEXT replay succeed, a FORGED late write never does, and the API adds no event of its own', async () => {
     const { body, id } = await seedPartialWrite('late', new Date().toISOString());
     // (a) replays are refused while no matching event exists, and write nothing
-    for (let i = 0; i < 2; i += 1) { const r = await api(token.mA, 'POST', '/merchants/members', body); assert.equal(r.status, 500, r.text); assert.equal(r.json?.code, 'MEMBER_AUDIT_MISSING'); }
+    for (let i = 0; i < 2; i += 1) await expectRefused(`late #${i}`, token.mA, uid.mA, body, 'NO_CREATION_AUDIT', id);
     assert.equal(await anyAuditCount(id), 0);
     // (b) the create function cannot be used to back-fill either: for a held e-mail it answers EMAIL_HELD and writes nothing
     const direct = await db.rpc('create_merchant_member_application', { p_actor_user_id: uid.mA, p_merchant_id: mid.A, p_code: memberCode(), p_name: body.collaborators_name, p_phone: body.collaborators_phone, p_email: body.collaborators_email });
     assert.equal(direct.error, null); assert.deepEqual(direct.data, { outcome: 'EMAIL_HELD' }); assert.equal(await anyAuditCount(id), 0); assert.equal((await rowsByEmail(body.collaborators_email)).length, 1);
     // (c) the creator's own late write arrives (simulated): from then on the replay is a plain success...
-    await must(db.from('audit_events').insert({ actor_auth_user_id: uid.mA, actor_role: 'merchant', action: CREATED, entity_type: 'collaborator', entity_id: id, source: 'v2-admin-api', details: { merchant_id: mid.A, auth_invitation_required: true } }));
-    const before = await scoped();
-    for (let i = 0; i < 3; i += 1) { const r = await api(token.mA, 'POST', '/merchants/members', body); assert.equal(r.status, 201, r.text); assert.equal(r.json.idempotent_replay, true); assert.equal(r.json.id, id); }
-    // ... and the API still added nothing: exactly the one event the creator wrote
-    assert.equal(await anyAuditCount(id), 1); assert.equal(await auditCount(CREATED, id), 1); assert.deepEqual(await scoped(), before);
+    await insertAudit([plant(id)]);
+    for (let i = 0; i < 3; i += 1) await expectReplay(`late write arrived #${i}`, token.mA, body, id);
+    assert.equal(await anyAuditCount(id), 1); assert.equal(await auditCount(CREATED, id), 1);
+    // (d) a FORGED late write (an Admin user wearing the role "merchant") does not unlock a second application
+    const other = await seedPartialWrite('late-forged', new Date().toISOString()); await insertAudit([plant(other.id, { actor_auth_user_id: uid.admin })]);
+    await expectRefused('forged late write', token.mA, uid.mA, other.body, 'ACTOR_NOT_A_MERCHANT_USER', other.id);
   });
   await ok('FI-8 replay of an application that HAS its creation audit event: success, and the API writes no audit event at all (counts identical before and after, three replays)', async () => {
     const before = await scoped(); assert.equal(await auditCount(CREATED, A1id), 1); assert.equal(await anyAuditCount(A1id), 1);
@@ -567,6 +615,65 @@ const VIETNAMESE = /[À-ỹ]/;
     } finally { psql('grant select on public.audit_events to service_role'); }
     assert.deepEqual(await scoped(), before);
     const again = await api(token.mA, 'POST', '/merchants/members', A1); assert.equal(again.status, 201, again.text); assert.equal(again.json.idempotent_replay, true);
+  });
+  await ok('FI-17 cross-actor replay inside ONE Merchant: another active user of the SAME Merchant replaying the creator\'s submission succeeds (both directions, no event written); a user of ANOTHER Merchant gets the ordinary generic 409', async () => {
+    const xa = member('xactor-a'); const xb = member('xactor-b');
+    const ra = await api(token.mA, 'POST', '/merchants/members', xa); assert.equal(ra.status, 201, ra.text); assert.equal(ra.json.idempotent_replay, false);
+    const rb = await api(token.mA2, 'POST', '/merchants/members', xb); assert.equal(rb.status, 201, rb.text); assert.equal(rb.json.idempotent_replay, false);
+    assert.equal((await db.from('audit_events').select('actor_auth_user_id').eq('entity_id', ra.json.id).eq('action', CREATED).single()).data!.actor_auth_user_id, uid.mA);
+    assert.equal((await db.from('audit_events').select('actor_auth_user_id').eq('entity_id', rb.json.id).eq('action', CREATED).single()).data!.actor_auth_user_id, uid.mA2);
+    await expectReplay('mA2 replays what mA created', token.mA2, xa, ra.json.id); await expectReplay('mA replays what mA2 created', token.mA, xb, rb.json.id);
+    flagged.length = 0; const other = await api(token.mB, 'POST', '/merchants/members', xa); assert.equal(other.status, 409, other.text); assert.equal(conflictBody(other), genericConflict);
+    assert.equal(flagged.length, 0, 'another Merchant\'s duplicate is an ordinary conflict, not an integrity anomaly');
+  });
+  await ok('FI-18 historical changes: the creator\'s binding is checked as a NECESSARY condition only - moved to another Merchant / made Admin / profile deleted / re-created later / creation time unknown -> refused (generic 409, reason logged); merely deactivated but still bound -> accepted; restoring makes the evidence consistent again', async () => {
+    const creator = await newMerchantUser('creator', mid.A); const body = member('hist-change');
+    const r = await api(creator.tok, 'POST', '/merchants/members', body); assert.equal(r.status, 201, r.text); const id = r.json.id as string;
+    const setProfile = (patch: Record<string, unknown>) => must(db.from('user_profiles').update(patch).eq('user_id', creator.id));
+    await expectReplay('colleague replays, nothing changed yet', token.mA, body, id);
+    await setProfile({ merchant_id: mid.B }); await expectRefused('the creator was moved to Merchant B', token.mA, uid.mA, body, 'ACTOR_BOUND_TO_OTHER_MERCHANT', id);
+    await setProfile({ merchant_id: mid.A }); await expectReplay('the creator is back in Merchant A', token.mA, body, id);
+    await setProfile({ user_profiles_status: 'inactive' }); await expectReplay('the creator is deactivated but still bound to the Merchant (status is not creation-time evidence)', token.mA, body, id);
+    await setProfile({ user_profiles_status: 'active' });
+    await setProfile({ role: 'admin', merchant_id: null }); await expectRefused('the creator is now an Admin', token.mA, uid.mA, body, 'ACTOR_NOT_A_MERCHANT_USER', id);
+    await setProfile({ role: 'merchant', merchant_id: mid.A }); await expectReplay('the creator is a Merchant user again', token.mA, body, id);
+    const saved = (await db.from('user_profiles').select('created_at').eq('user_id', creator.id).single()).data!;
+    await must(db.from('user_profiles').delete().eq('user_id', creator.id)); await expectRefused('the creator\'s profile was deleted', token.mA, uid.mA, body, 'ACTOR_PROFILE_MISSING', id);
+    await must(db.from('user_profiles').insert({ user_id: creator.id, email: creator.email, role: 'merchant', merchant_id: mid.A, user_profiles_status: 'active' }));
+    await expectRefused('the profile was re-created AFTER the event (today\'s profile cannot prove creation-time authorization)', token.mA, uid.mA, body, 'ACTOR_PROFILE_POSTDATES_AUDIT', id);
+    await setProfile({ created_at: null }); await expectRefused('the profile has no creation time at all (nothing to prove it pre-dates the event)', token.mA, uid.mA, body, 'ACTOR_PROFILE_POSTDATES_AUDIT', id);
+    await setProfile({ created_at: saved.created_at }); await expectReplay('the original creation time is restored', token.mA, body, id);
+    assert.equal(await auditCount(CREATED, id), 1); assert.equal(await anyAuditCount(id), 1);
+  });
+  await ok('FI-19 the ACTOR-PROFILE lookup FAILS: a replay never "assumes" success - generic 500 MEMBER_LOOKUP_FAILED, nothing written; once the lookup works the same replay succeeds', async () => {
+    const body = member('lookup-profile'); const created = await api(token.mA, 'POST', '/merchants/members', body); assert.equal(created.status, 201, created.text);
+    // the real client, except that the SECOND user_profiles read (the one that asks for created_at: the actor check) returns a database error
+    const flaky: any = { getClient: () => new Proxy(db as any, { get: (t, p, rcv) => (p !== 'from' ? Reflect.get(t, p, rcv) : (table: string) => {
+      const builder = (t as any).from(table); if (table !== 'user_profiles') return builder;
+      return new Proxy(builder, { get: (bt, bp) => (bp !== 'select' ? (bt as any)[bp] : (cols: string, ...rest: unknown[]) => String(cols).includes('created_at')
+        ? { eq: () => ({ maybeSingle: async () => ({ data: null, error: { message: 'injected profile lookup failure (test only)' } }) }) } : (bt as any).select(cols, ...rest)) });
+    }) }) };
+    const before = await scoped();
+    await assert.rejects(makeMerchants({}, flaky).createMember(uid.mA, dtoOf(body)), (e: any) => e.getStatus() === 500 && e.getResponse().code === 'MEMBER_LOOKUP_FAILED' && VIETNAMESE.test(e.getResponse().message)
+      && !/injected|user_profiles|audit|permission/i.test(JSON.stringify(e.getResponse())) && e.getResponse().idempotent_replay === undefined);
+    assert.deepEqual(await scoped(), before, 'a failed lookup writes nothing');
+    const again = await makeMerchants({}).createMember(uid.mA, dtoOf(body)); assert.equal(again.idempotent_replay, true); assert.equal(again.id, created.json.id);
+  });
+  await ok('FI-20 the audit query is SELECTIVE and DETERMINISTIC: 40 unrelated events on the same application never hide its creation event, whichever order they were written in', async () => {
+    for (const [label, noiseFirst] of [['noise written before the creation event', true], ['noise written after the creation event', false]] as const) {
+      const { body, id } = await seedPartialWrite(`noise-${noiseFirst ? 'a' : 'b'}`, '2020-07-07T00:00:00Z');
+      const noise = Array.from({ length: 40 }, (_, i) => plant(id, { action: `collaborator.test_noise_${i}`, actor_role: 'admin', actor_auth_user_id: uid.admin, details: {} }));
+      if (noiseFirst) { await insertAudit(noise); await insertAudit([plant(id)]); } else { await insertAudit([plant(id)]); await insertAudit(noise); }
+      assert.equal(await anyAuditCount(id), 41, label); await expectReplay(label, token.mA, body, id);
+    }
+  });
+  await ok('FI-21 REGRESSION finding 2 (Medium): the replay contract - verified creation audit -> 201 idempotent_replay; an existing e-mail WITHOUT a provable creation audit -> the generic 409 MEMBER_EMAIL_UNAVAILABLE (never a 500, never the retired MEMBER_AUDIT_MISSING); a failed lookup -> 500 MEMBER_LOOKUP_FAILED', async () => {
+    const r1 = await api(token.mA, 'POST', '/merchants/members', A1); assert.equal(r1.status, 201, r1.text); assert.equal(r1.json.idempotent_replay, true); assert.equal(r1.json.id, A1id);
+    const { body, id } = await seedPartialWrite('contract', '2020-08-08T00:00:00Z'); await expectRefused('no provable creation audit', token.mA, uid.mA, body, 'NO_CREATION_AUDIT', id);
+    const raw = await api(token.mA, 'POST', '/merchants/members', body); assert.equal(raw.status, 409); assert.doesNotMatch(raw.text, /MEMBER_AUDIT_MISSING/); assert.notEqual(raw.status, 500);
+    psql('revoke select on public.audit_events from service_role');
+    try { const lf = await api(token.mA, 'POST', '/merchants/members', A1); assert.equal(lf.status, 500, lf.text); assert.equal(lf.json?.code, 'MEMBER_LOOKUP_FAILED'); assert.notEqual(lf.json?.idempotent_replay, true); }
+    finally { psql('grant select on public.audit_events to service_role'); }
   });
   await ok('FI-12 rollback drill: the REAL rollback script drops the function and touches no data; the API then FAILS CLOSED to create (500, nothing written) while replays of audited applications still work; re-applying the migration restores everything', async () => {
     const migration = readFileSync(path.join(__dirname, '../../supabase/migrations/20261111000001_vno_merchant_member_atomic_create.sql'), 'utf8');

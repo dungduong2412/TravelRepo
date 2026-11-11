@@ -8,7 +8,7 @@ import { ZodValidationPipe } from '../src/common/pipes/zod-validation.pipe';
 import { describeZodError } from '../src/common/validation/field-errors';
 import { JwtGuard } from '../src/common/auth/jwt.guard';
 import {
-  CreateMerchantMemberSchema, escapeLike, maskEmail, maskPhone, memberLimits, normalizeEmail, normalizePhone, parseCreateMemberRpc, hasMatchingCreationAudit, MEMBER_CREATED_ACTION, sameMemberData, toCreatedMemberView, toMemberListItem,
+  CreateMerchantMemberSchema, escapeLike, maskEmail, maskPhone, memberLimits, normalizeEmail, normalizePhone, parseCreateMemberRpc, selectCreationAudit, checkCreationActor, MEMBER_CREATED_ACTION, MEMBER_AUDIT_SOURCE, sameMemberData, toCreatedMemberView, toMemberListItem,
 } from '../src/modules/merchants/merchant-members';
 import { CollaboratorsController } from '../src/modules/collaborators/collaborators.controller';
 import { MerchantsController } from '../src/modules/merchants/merchants.controller';
@@ -97,21 +97,85 @@ ok('parseCreateMemberRpc: CREATED needs a member with an id; EMAIL_HELD / NOT_AL
     assert.deepEqual(parseCreateMemberRpc(bad), { kind: 'INVALID' }, JSON.stringify(bad));
   }
 });
-ok('hasMatchingCreationAudit: only a creation event for THIS application, by a merchant actor, naming THIS Merchant, counts; nothing else (action, entity, id, role, Merchant, malformed rows) does', () => {
-  const M = '11111111-1111-4111-8111-111111111111'; const X = 'abcdefab-cdef-4bcd-8cde-abcdefabcdef'; const OTHER = '33333333-3333-4333-8333-333333333333';
-  const good = { action: MEMBER_CREATED_ACTION, entity_type: 'collaborator', entity_id: M, actor_role: 'merchant', details: { merchant_id: X, auth_invitation_required: true } };
-  assert.equal(MEMBER_CREATED_ACTION, 'collaborator.member_application_created');
-  assert.equal(hasMatchingCreationAudit([good], M, X), true);
-  assert.equal(hasMatchingCreationAudit([{ ...good, entity_id: OTHER }, good], M, X), true, 'one matching event among others is enough');
-  const rejected: Array<[string, any]> = [          // [label, the event list handed to the check]
-    ['no events', []], ['null list', null], ['undefined list', undefined],
-    ['another application', [{ ...good, entity_id: OTHER }]], ['another Merchant', [{ ...good, details: { merchant_id: OTHER } }]], ['no details', [{ ...good, details: null }]], ['details not an object', [{ ...good, details: 'x' }]],
-    ['a different action (e.g. an Admin creation)', [{ ...good, action: 'collaborator.created' }]], ['the removed reconciliation action', [{ ...good, action: 'collaborator.member_application_audit_reconciled' }]],
-    ['a different entity type', [{ ...good, entity_type: 'merchant' }]], ['an admin actor', [{ ...good, actor_role: 'admin' }]], ['an unknown actor', [{ ...good, actor_role: 'unknown' }]],
-    ['a string instead of an event', ['collaborator.member_application_created']], ['a null event', [null]],
+// ---- replay verification: stage 1 (the creation audit event) and stage 2 (its actor) -----------------------------------------------------------------
+const RM = '11111111-1111-4111-8111-111111111111';          // the application
+const RX = 'abcdefab-cdef-4bcd-8cde-abcdefabcdef';          // the requesting Merchant (hex letters: ids are compared exactly, not case-folded)
+const ROTHER = '33333333-3333-4333-8333-333333333333';      // another application / Merchant
+const RACTOR = 'abcdef01-2345-4678-89ab-cdef01234567';      // the user who created it
+const goodEvent = { id: 7, occurred_at: '2026-11-11T10:00:00+00:00', actor_auth_user_id: RACTOR, actor_role: 'merchant', action: MEMBER_CREATED_ACTION, entity_type: 'collaborator', entity_id: RM,
+  source: 'v2-admin-api', details: { merchant_id: RX, auth_invitation_required: true } };
+const goodProfile = { user_id: RACTOR, role: 'merchant', merchant_id: RX, created_at: '2026-10-01T08:00:00+00:00' };
+/** The matcher of the REJECTED candidate ecefe2c, kept verbatim as evidence: it never looked at actor_auth_user_id, source or the actor's profile, and any one of several events sufficed. */
+const matcherOfRejectedCandidateEcefe2c = (events: any[] | null | undefined, memberId: string, merchantId: string) => (events ?? []).some((e) => {
+  if (!e || typeof e !== 'object') return false;
+  return e.action === MEMBER_CREATED_ACTION && e.entity_type === 'collaborator' && e.entity_id === memberId && e.actor_role === 'merchant' && !!e.details && typeof e.details === 'object' && e.details.merchant_id === merchantId;
+});
+ok('selectCreationAudit: exactly ONE creation event for THIS application, coherent (merchant role, this Merchant, API audit source, a real actor id, a valid time), is accepted', () => {
+  assert.equal(MEMBER_CREATED_ACTION, 'collaborator.member_application_created'); assert.equal(MEMBER_AUDIT_SOURCE, 'v2-admin-api');
+  assert.deepEqual(selectCreationAudit([goodEvent], RM, RX), { ok: true, auditId: 7, actorUserId: RACTOR, occurredAt: goodEvent.occurred_at });
+  assert.equal(selectCreationAudit([{ ...goodEvent, entity_id: ROTHER }, goodEvent], RM, RX).ok, true, 'events of other applications are ignored, not counted');
+  assert.equal(selectCreationAudit([{ ...goodEvent, action: 'collaborator.created' }, goodEvent], RM, RX).ok, true, 'events with another action are ignored, not counted');
+  assert.equal(selectCreationAudit([{ ...goodEvent, details: { merchant_id: RX } }], RM, RX).ok, true, 'the auth_invitation_required flag is not part of the evidence');
+});
+ok('selectCreationAudit: every other shape is refused WITH the specific reason (none, several, role, Merchant, source, actor, time, malformed)', () => {
+  const why = (events: any, expected: string, label: string) => { const r = selectCreationAudit(events, RM, RX); assert.equal(r.ok, false, label); assert.equal((r as any).reason, expected, label); };
+  why([], 'NO_CREATION_AUDIT', 'no events'); why(null, 'NO_CREATION_AUDIT', 'null list'); why(undefined, 'NO_CREATION_AUDIT', 'undefined list');
+  why([{ ...goodEvent, entity_id: ROTHER }], 'NO_CREATION_AUDIT', 'another application\'s event'); why([{ ...goodEvent, action: 'collaborator.created' }], 'NO_CREATION_AUDIT', 'a different action (an Admin creation)');
+  why([{ ...goodEvent, action: 'collaborator.member_application_audit_reconciled' }], 'NO_CREATION_AUDIT', 'the removed reconciliation action'); why([{ ...goodEvent, entity_type: 'merchant' }], 'NO_CREATION_AUDIT', 'a different entity type');
+  why(['collaborator.member_application_created'], 'NO_CREATION_AUDIT', 'a string instead of an event'); why([null], 'NO_CREATION_AUDIT', 'a null event');
+  why([goodEvent, { ...goodEvent, id: 8 }], 'MULTIPLE_CREATION_AUDITS', 'two identical valid events'); why([goodEvent, { ...goodEvent, id: 8, actor_role: 'admin' }], 'MULTIPLE_CREATION_AUDITS', 'one valid + one forged: ambiguous, refused');
+  why([{ ...goodEvent, id: 8, actor_auth_user_id: null }, goodEvent], 'MULTIPLE_CREATION_AUDITS', 'the order of the events never matters (forged first)');
+  why([{ ...goodEvent, actor_role: 'admin' }], 'AUDIT_ROLE_NOT_MERCHANT', 'an Admin role'); why([{ ...goodEvent, actor_role: 'collaborator' }], 'AUDIT_ROLE_NOT_MERCHANT', 'a Partner role'); why([{ ...goodEvent, actor_role: 'unknown' }], 'AUDIT_ROLE_NOT_MERCHANT', 'an unknown role');
+  why([{ ...goodEvent, actor_role: null }], 'AUDIT_ROLE_NOT_MERCHANT', 'a null role'); why([{ ...goodEvent, actor_role: 'Merchant' }], 'AUDIT_ROLE_NOT_MERCHANT', 'the role is compared exactly');
+  why([{ ...goodEvent, details: { merchant_id: ROTHER } }], 'AUDIT_MERCHANT_MISMATCH', 'another Merchant'); why([{ ...goodEvent, details: null }], 'AUDIT_MERCHANT_MISMATCH', 'no details'); why([{ ...goodEvent, details: 'x' }], 'AUDIT_MERCHANT_MISMATCH', 'details not an object');
+  why([{ ...goodEvent, details: {} }], 'AUDIT_MERCHANT_MISMATCH', 'details without a Merchant'); why([{ ...goodEvent, details: { merchant_id: RX.toUpperCase() } }], 'AUDIT_MERCHANT_MISMATCH', 'ids are compared exactly, not case-folded');
+  for (const src of ['v2', 'legacy-import', '', null, undefined]) why([{ ...goodEvent, source: src }], 'AUDIT_SOURCE_UNEXPECTED', `source ${JSON.stringify(src)} is not an API audit writer`);
+  for (const actor of [null, undefined, '', 'not-a-uuid', 123, {}, `${RACTOR} `]) why([{ ...goodEvent, actor_auth_user_id: actor }], 'AUDIT_ACTOR_MISSING', `actor ${JSON.stringify(actor)}`);
+  for (const at of [null, undefined, '', 'yesterday', 1762855200000]) why([{ ...goodEvent, occurred_at: at }], 'AUDIT_TIME_INVALID', `time ${JSON.stringify(at)}`);
+});
+ok('checkCreationActor: the actor must be a Merchant profile bound to THIS Merchant that already existed when the event was written; anything else is refused with its reason', () => {
+  const sel = { actorUserId: RACTOR, occurredAt: goodEvent.occurred_at };
+  assert.deepEqual(checkCreationActor(sel, goodProfile, RX), { ok: true });
+  assert.deepEqual(checkCreationActor(sel, { ...goodProfile, user_profiles_status: 'inactive' } as any, RX), { ok: true }, 'today\'s status is not creation-time evidence: it neither proves nor disproves anything');
+  assert.deepEqual(checkCreationActor(sel, { ...goodProfile, created_at: goodEvent.occurred_at }, RX), { ok: true }, 'a profile created in the same instant is not "later"');
+  // PostgREST returns microsecond timestamps with an offset; they must compare correctly
+  const sel6 = { actorUserId: RACTOR, occurredAt: '2026-11-11T10:00:00.123456+00:00' };
+  assert.deepEqual(checkCreationActor(sel6, { ...goodProfile, created_at: '2026-11-11T09:59:59.999999+00:00' }, RX), { ok: true }, 'microsecond timestamps, profile earlier');
+  assert.deepEqual(checkCreationActor(sel6, { ...goodProfile, created_at: '2026-11-11T17:00:00.000000+07:00' }, RX), { ok: true }, 'a different UTC offset for the same instant');
+  assert.equal(checkCreationActor(sel6, { ...goodProfile, created_at: '2026-11-11T10:00:00.124000+00:00' }, RX).ok, false, 'microsecond timestamps, profile later');
+  const why = (profile: any, expected: string, label: string) => { const r = checkCreationActor(sel, profile, RX); assert.equal(r.ok, false, label); assert.equal((r as any).reason, expected, label); };
+  why(null, 'ACTOR_PROFILE_MISSING', 'no such user'); why(undefined, 'ACTOR_PROFILE_MISSING', 'undefined'); why('x', 'ACTOR_PROFILE_MISSING', 'not an object');
+  why({ ...goodProfile, user_id: ROTHER }, 'ACTOR_PROFILE_MISMATCH', 'a profile of somebody else'); why({ ...goodProfile, user_id: null }, 'ACTOR_PROFILE_MISMATCH', 'a profile without user id');
+  why({ ...goodProfile, role: 'admin', merchant_id: null }, 'ACTOR_NOT_A_MERCHANT_USER', 'an Admin'); why({ ...goodProfile, role: 'collaborator', merchant_id: null }, 'ACTOR_NOT_A_MERCHANT_USER', 'a Partner');
+  why({ ...goodProfile, role: null }, 'ACTOR_NOT_A_MERCHANT_USER', 'no role'); why({ ...goodProfile, role: 'Merchant' }, 'ACTOR_NOT_A_MERCHANT_USER', 'role compared exactly');
+  why({ ...goodProfile, merchant_id: ROTHER }, 'ACTOR_BOUND_TO_OTHER_MERCHANT', 'a user of another Merchant'); why({ ...goodProfile, merchant_id: null }, 'ACTOR_BOUND_TO_OTHER_MERCHANT', 'a user of no Merchant (moved away)');
+  why({ ...goodProfile, merchant_id: RX.toUpperCase() }, 'ACTOR_BOUND_TO_OTHER_MERCHANT', 'Merchant ids are compared exactly');
+  why({ ...goodProfile, created_at: '2026-11-11T10:00:00.001+00:00' }, 'ACTOR_PROFILE_POSTDATES_AUDIT', 'a profile created a millisecond AFTER the event'); why({ ...goodProfile, created_at: '2027-01-01T00:00:00+00:00' }, 'ACTOR_PROFILE_POSTDATES_AUDIT', 'created long after');
+  why({ ...goodProfile, created_at: null }, 'ACTOR_PROFILE_POSTDATES_AUDIT', 'no creation time: not provable'); why({ ...goodProfile, created_at: 'soon' }, 'ACTOR_PROFILE_POSTDATES_AUDIT', 'an unreadable creation time');
+});
+ok('REGRESSION (finding 1, Medium): the matcher of the rejected candidate ecefe2c accepted events whose ACTOR was never checked; the new two-stage check refuses each of them', () => {
+  // events that claim "merchant" + this Merchant but whose actor is wrong, plus the profile the actor really has. ecefe2c accepted ALL of them.
+  const cases: Array<[string, any, any, string]> = [
+    ['a null actor', { ...goodEvent, actor_auth_user_id: null }, null, 'AUDIT_ACTOR_MISSING'],
+    ['an Admin user wearing the role "merchant"', goodEvent, { ...goodProfile, role: 'admin', merchant_id: null }, 'ACTOR_NOT_A_MERCHANT_USER'],
+    ['a Partner user wearing the role "merchant"', goodEvent, { ...goodProfile, role: 'collaborator', merchant_id: null }, 'ACTOR_NOT_A_MERCHANT_USER'],
+    ['a user of ANOTHER Merchant', goodEvent, { ...goodProfile, merchant_id: ROTHER }, 'ACTOR_BOUND_TO_OTHER_MERCHANT'],
+    ['an actor id that is not a user at all', goodEvent, null, 'ACTOR_PROFILE_MISSING'],
+    ['an event from another source (not an API audit writer)', { ...goodEvent, source: 'legacy-import' }, goodProfile, 'AUDIT_SOURCE_UNEXPECTED'],
+    ['a profile created after the event', goodEvent, { ...goodProfile, created_at: '2026-12-01T00:00:00+00:00' }, 'ACTOR_PROFILE_POSTDATES_AUDIT'],
   ];
-  for (const [label, events] of rejected) assert.equal(hasMatchingCreationAudit(events, M, X), false, label);
-  assert.equal(hasMatchingCreationAudit([{ ...good, details: { merchant_id: X.toUpperCase() } }], M, X), false, 'ids are compared exactly, not case-folded');
+  const verdict = (event: any, profile: any) => { const s = selectCreationAudit([event], RM, RX); if (s.ok === false) return s.reason; const c = checkCreationActor(s, profile, RX); return c.ok === false ? c.reason : 'ACCEPTED'; };
+  for (const [label, event, profile, expected] of cases) {
+    assert.equal(matcherOfRejectedCandidateEcefe2c([event], RM, RX), true, `${label}: the old matcher accepted it - that was the finding`);
+    assert.equal(verdict(event, profile), expected, `${label}: the new check refuses it`);
+  }
+  // the old matcher also accepted "one good event among several"; the new check treats several as ambiguous
+  assert.equal(matcherOfRejectedCandidateEcefe2c([goodEvent, { ...goodEvent, id: 8, actor_auth_user_id: null }], RM, RX), true);
+  assert.equal(verdict(goodEvent, goodProfile), 'ACCEPTED', 'the legitimate case is still accepted'); assert.equal(selectCreationAudit([goodEvent, { ...goodEvent, id: 8, actor_auth_user_id: null }], RM, RX).ok, false);
+});
+ok('cross-actor replay: ANOTHER Merchant user of the same Merchant replaying is judged by the CREATOR\'s binding, not by who is asking (the requester is not an input to either stage)', () => {
+  assert.equal(selectCreationAudit.length, 3); assert.equal(checkCreationActor.length, 3);          // (events, application, merchant) / (selection, profile, merchant): no requester parameter exists
+  const s = selectCreationAudit([goodEvent], RM, RX); assert.equal(s.ok, true); assert.deepEqual(checkCreationActor(s as any, goodProfile, RX), { ok: true });
 });
 ok('escapeLike: LIKE wildcards in an e-mail are matched literally', () => { assert.equal(escapeLike('a_b%c\\d@x.vn'), 'a\\_b\\%c\\\\d@x.vn'); });
 

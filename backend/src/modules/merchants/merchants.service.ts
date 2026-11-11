@@ -5,7 +5,7 @@ import { SupabaseService } from '../../infrastructure/supabase/supabase.service'
 import { describeIssue } from '../../common/validation/field-errors';
 import { KeyedLock } from '../../common/concurrency/keyed-lock';
 import { SlidingWindowLimiter } from '../../common/http/rate-limiter';
-import { MEMBER_CREATED_ACTION, MemberRow, escapeLike, hasMatchingCreationAudit, memberLimits, parseCreateMemberRpc, sameMemberData, toCreatedMemberView, toMemberListItem } from './merchant-members';
+import { MEMBER_CREATED_ACTION, MemberRow, ReplayRefusal, checkCreationActor, escapeLike, memberLimits, parseCreateMemberRpc, sameMemberData, selectCreationAudit, toCreatedMemberView, toMemberListItem } from './merchant-members';
 import {
   AdminCreateMerchantDto,
   AdminUpdateMerchantDto,
@@ -522,18 +522,15 @@ export class MerchantsService {
 
   private async createMemberSerialised(userId: string, merchantId: string, dto: CreateMerchantMemberDto) {
     const client = this.supabase.getClient();
-    const verdictFor = (rows: MemberRow[]) => {
-      const mine = rows.find((r) => r.merchant_system_id === merchantId && r.collaborators_status === 'pending' && r.collaborators_verified === false && sameMemberData(r, dto));
-      return mine && rows.length === 1 ? mine : null;
-    };
-
-    // The e-mail is already held. The very same submission is an idempotent replay, answered with success ONLY if the application's creation audit event can be
-    // read (nothing is ever written to make it exist); anything else holding the e-mail is the generic conflict.
+    // The e-mail is already held. The very same submission (same Merchant, still pending, same details) is an idempotent replay, answered with success ONLY if the
+    // application's creation audit event can be read and names a legitimate Merchant user of this Merchant (requireVerifiedCreationAudit; nothing is ever written to
+    // make an event exist). Anything else holding the e-mail - and every replay that cannot be proven - gets the same generic conflict.
     const answerExisting = async (rows: MemberRow[]) => {
-      const replay = verdictFor(rows);
-      if (!replay) throw this.emailUnavailable();
-      await this.requireVerifiedCreationAudit(userId, merchantId, replay.id);
-      return toCreatedMemberView(replay, true);
+      const mine = rows.find((r) => r.merchant_system_id === merchantId && r.collaborators_status === 'pending' && r.collaborators_verified === false && sameMemberData(r, dto));
+      if (!mine) throw this.emailUnavailable();
+      if (rows.length !== 1) { this.flagReplayRefused('EMAIL_HELD_BY_MULTIPLE_ROWS', mine.id, merchantId, userId); throw this.emailUnavailable(); }
+      await this.requireVerifiedCreationAudit(userId, merchantId, mine.id);
+      return toCreatedMemberView(mine, true);
     };
 
     // 1) already there?
@@ -582,20 +579,36 @@ export class MerchantsService {
     throw createFailed();
   }
 
+  /** One log line for a replay that could not be proven: identifiers only (no name, phone, e-mail or bank data), so it can be searched and investigated. */
+  private flagReplayRefused(reason: ReplayRefusal, memberId: string, merchantId: string, requesterId: string, audit?: { auditId: unknown; actorUserId: string }) {
+    this.logger.error(`MEMBER_REPLAY_REFUSED reason=${reason} application=${memberId} merchant=${merchantId} requester=${requesterId}${audit ? ` auditEvent=${String(audit.auditId)} auditActor=${audit.actorUserId}` : ''}; manual investigation may be required`);
+  }
+
   /**
-   * A replay answers 2xx ONLY when the application's matching creation audit event can be READ. This is a read-only check: it never writes, back-fills or
-   * infers an audit event, and nothing about the application (its code shape, its age, its state) is accepted in place of one. If the event is not there - an
-   * application left behind by the previous API's non-atomic write, or any row created by a path that audits differently - the request fails closed with a
-   * controlled error, and one log line (ids only, no personal data) flags the application for manual investigation.
+   * A replay answers 2xx ONLY when (1) exactly one creation audit event for the application can be READ and is coherent, and (2) its actor is a Merchant user of THIS
+   * Merchant who already existed when it was written (merchant-members.ts explains what that does and does not prove). It is read-only: it never writes, back-fills or
+   * infers an event. Anything unproven - no event, several, a forged role / Merchant / source / actor, an actor of another Merchant or role, a vanished profile - is
+   * refused with the generic 409 MEMBER_EMAIL_UNAVAILABLE (so the answer reveals nothing about the cause) and one log line. A lookup that FAILS is a 500
+   * MEMBER_LOOKUP_FAILED: a failure is never read as "verified".
+   *
+   * Audit query: keyed by (action, entity_type, entity_id), which is the shape of the existing index audit_events_entity_idx, so it returns the events of THIS application
+   * only. It asks for TWO rows in a fixed order because the question is "is there exactly one": a second row is the whole answer, so what an unordered larger cut would
+   * have returned (the previous `limit(20)` could cut the valid event away) can never change the verdict.
    */
   private async requireVerifiedCreationAudit(userId: string, merchantId: string, memberId: string) {
-    const { data, error } = await this.supabase.getClient().from('audit_events')
-      .select('action,entity_type,entity_id,actor_role,details')
-      .eq('action', MEMBER_CREATED_ACTION).eq('entity_type', 'collaborator').eq('entity_id', memberId).limit(20);
-    if (error) throw this.memberFail(HttpStatus.INTERNAL_SERVER_ERROR, 'MEMBER_LOOKUP_FAILED', 'Chưa thể kiểm tra hồ sơ lúc này. Vui lòng thử lại sau.');
-    if (hasMatchingCreationAudit(data, memberId, merchantId)) return;
-    this.logger.error(`MEMBER_AUDIT_MISSING: application ${memberId} (merchant ${merchantId}, requested by ${userId}) exists without a matching creation audit event; replay refused, manual investigation required`);
-    throw this.memberFail(HttpStatus.INTERNAL_SERVER_ERROR, 'MEMBER_AUDIT_MISSING', 'Hồ sơ này đã tồn tại nhưng chưa thể xác nhận nhật ký tạo hồ sơ. Vui lòng liên hệ Admin VNO để được kiểm tra.');
+    const lookupFailed = () => this.memberFail(HttpStatus.INTERNAL_SERVER_ERROR, 'MEMBER_LOOKUP_FAILED', 'Chưa thể kiểm tra hồ sơ lúc này. Vui lòng thử lại sau.');
+    const client = this.supabase.getClient();
+    const events = await client.from('audit_events')
+      .select('id,occurred_at,actor_auth_user_id,actor_role,action,entity_type,entity_id,source,details')
+      .eq('action', MEMBER_CREATED_ACTION).eq('entity_type', 'collaborator').eq('entity_id', memberId)
+      .order('id', { ascending: true }).limit(2);
+    if (events.error) throw lookupFailed();
+    const selected = selectCreationAudit(events.data, memberId, merchantId);
+    if (selected.ok === false) { this.flagReplayRefused(selected.reason, memberId, merchantId, userId); throw this.emailUnavailable(); }
+    const profile = await client.from('user_profiles').select('user_id,role,merchant_id,created_at').eq('user_id', selected.actorUserId).maybeSingle();
+    if (profile.error) throw lookupFailed();
+    const actor = checkCreationActor(selected, profile.data, merchantId);
+    if (actor.ok === false) { this.flagReplayRefused(actor.reason, memberId, merchantId, userId, selected); throw this.emailUnavailable(); }
   }
 
   async deactivate(actor: AuditActor, id: string) {

@@ -95,22 +95,69 @@ export function parseCreateMemberRpc(data: unknown): CreateMemberRpcResult {
 }
 
 // ---- replay verification ---------------------------------------------------------------------------------------------------------------------------------
+/**
+ * An idempotent replay is answered with success ONLY when the application's creation audit event can be read AND names a legitimate Merchant user of the
+ * requesting Merchant as its actor. Two pure stages, with one read-only lookup between them (the actor's profile):
+ *   1. selectCreationAudit  - exactly ONE creation event exists for the application, and its own claims are coherent (merchant actor role, this Merchant, the
+ *                             API's audit source, a real actor id);
+ *   2. checkCreationActor   - that actor id belongs to a Merchant profile bound to THIS Merchant that already existed when the event was written.
+ * Nothing is ever written to make an event exist, and the shape of the application's code, its age or its state prove nothing here.
+ *
+ * WHAT STAGE 2 DOES AND DOES NOT PROVE. The event is the creation-time evidence: it is written in the same transaction as the application row, after that
+ * transaction has checked the actor's profile, and nothing else in the product writes this action. Today's profile is NOT creation-time evidence (profiles can be
+ * moved, re-roled, deactivated or deleted and re-created, and there is no history table); it is used only as a NECESSARY consistency condition, never as a
+ * sufficient one: a claim ("a Merchant user of M created this") that today's profile contradicts - another Merchant, another role, no such user, a profile that
+ * did not exist yet when the event was written - is refused. The price is conservative: if the original creator has since been moved or removed, the replay is
+ * refused (generic 409 plus a log line) instead of guessed; a human decides. A different Merchant user of the SAME Merchant replaying the creator's submission is
+ * accepted: what is checked is the creator's binding to the Merchant, not that the requester is the creator.
+ */
 /** The audit action written, in the same transaction as the application row, by create_merchant_member_application. */
 export const MEMBER_CREATED_ACTION = 'collaborator.member_application_created';
-export type AuditEventRow = { action?: unknown; entity_type?: unknown; entity_id?: unknown; actor_role?: unknown; details?: unknown };
+/** The `source` stamped by every API-side audit writer (AuditService and create_merchant_member_application). An event with another source did not come from them. */
+export const MEMBER_AUDIT_SOURCE = 'v2-admin-api';
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export type AuditEventRow = { id?: unknown; occurred_at?: unknown; actor_auth_user_id?: unknown; actor_role?: unknown; action?: unknown; entity_type?: unknown; entity_id?: unknown; source?: unknown; details?: unknown };
+export type ActorProfileRow = { user_id?: unknown; role?: unknown; merchant_id?: unknown; created_at?: unknown };
+
+/** Why a replay was refused. Logged (with identifiers only) and never shown to the caller, who gets the generic e-mail-unavailable answer. */
+export type ReplayRefusal =
+  | 'NO_CREATION_AUDIT' | 'MULTIPLE_CREATION_AUDITS' | 'AUDIT_ROLE_NOT_MERCHANT' | 'AUDIT_MERCHANT_MISMATCH' | 'AUDIT_SOURCE_UNEXPECTED' | 'AUDIT_ACTOR_MISSING' | 'AUDIT_TIME_INVALID'
+  | 'ACTOR_PROFILE_MISSING' | 'ACTOR_PROFILE_MISMATCH' | 'ACTOR_NOT_A_MERCHANT_USER' | 'ACTOR_BOUND_TO_OTHER_MERCHANT' | 'ACTOR_PROFILE_POSTDATES_AUDIT'
+  | 'EMAIL_HELD_BY_MULTIPLE_ROWS';
+
+export type CreationAuditSelection = { ok: true; auditId: unknown; actorUserId: string; occurredAt: string } | { ok: false; reason: ReplayRefusal };
+export type CreationActorCheck = { ok: true } | { ok: false; reason: ReplayRefusal };
+
 /**
- * Does the audit trail contain a creation event that MATCHES this application? An idempotent replay may be answered with success only when it does.
- * Matching means all of: the creation action, entity type 'collaborator', THIS application's id, actor role 'merchant', and details.merchant_id equal to the
- * Merchant making the request. The shape of the application's code, its age or its state prove nothing here: only an audit event that really exists counts, and
- * nothing is ever written to make one exist.
+ * Stage 1. `events` are the audit rows the caller read for THIS application; this function re-filters them (action, entity type, entity id) so it does not rely on the
+ * query alone. More than one creation event for one application is an integrity anomaly and is refused whatever the events say: which of them is "the real one"
+ * cannot be decided here, and the answer must not depend on which rows a query happened to return.
  */
-export function hasMatchingCreationAudit(events: readonly AuditEventRow[] | null | undefined, memberId: string, merchantId: string): boolean {
-  return (events ?? []).some((e) => {
-    if (!e || typeof e !== 'object') return false;
-    const details = e.details as { merchant_id?: unknown } | null | undefined;
-    return e.action === MEMBER_CREATED_ACTION && e.entity_type === 'collaborator' && e.entity_id === memberId && e.actor_role === 'merchant'
-      && !!details && typeof details === 'object' && details.merchant_id === merchantId;
-  });
+export function selectCreationAudit(events: readonly AuditEventRow[] | null | undefined, memberId: string, merchantId: string): CreationAuditSelection {
+  const mine = (events ?? []).filter((e): e is AuditEventRow => !!e && typeof e === 'object' && e.action === MEMBER_CREATED_ACTION && e.entity_type === 'collaborator' && e.entity_id === memberId);
+  if (mine.length === 0) return { ok: false, reason: 'NO_CREATION_AUDIT' };
+  if (mine.length > 1) return { ok: false, reason: 'MULTIPLE_CREATION_AUDITS' };
+  const e = mine[0];
+  const details = e.details as { merchant_id?: unknown } | null | undefined;
+  if (e.actor_role !== 'merchant') return { ok: false, reason: 'AUDIT_ROLE_NOT_MERCHANT' };
+  if (!details || typeof details !== 'object' || details.merchant_id !== merchantId) return { ok: false, reason: 'AUDIT_MERCHANT_MISMATCH' };
+  if (e.source !== MEMBER_AUDIT_SOURCE) return { ok: false, reason: 'AUDIT_SOURCE_UNEXPECTED' };
+  if (typeof e.actor_auth_user_id !== 'string' || !UUID_RE.test(e.actor_auth_user_id)) return { ok: false, reason: 'AUDIT_ACTOR_MISSING' };
+  if (typeof e.occurred_at !== 'string' || Number.isNaN(Date.parse(e.occurred_at))) return { ok: false, reason: 'AUDIT_TIME_INVALID' };
+  return { ok: true, auditId: e.id, actorUserId: e.actor_auth_user_id, occurredAt: e.occurred_at };
+}
+
+/** Stage 2. `profile` is the row read for `selection.actorUserId` (or null when there is none). */
+export function checkCreationActor(selection: { actorUserId: string; occurredAt: string }, profile: ActorProfileRow | null | undefined, merchantId: string): CreationActorCheck {
+  if (!profile || typeof profile !== 'object') return { ok: false, reason: 'ACTOR_PROFILE_MISSING' };
+  if (profile.user_id !== selection.actorUserId) return { ok: false, reason: 'ACTOR_PROFILE_MISMATCH' };
+  if (profile.role !== 'merchant') return { ok: false, reason: 'ACTOR_NOT_A_MERCHANT_USER' };
+  if (profile.merchant_id !== merchantId) return { ok: false, reason: 'ACTOR_BOUND_TO_OTHER_MERCHANT' };
+  // a profile created AFTER the event was written cannot be the user who wrote it (a deleted-and-recreated profile, or a forged actor that joined later)
+  const created = typeof profile.created_at === 'string' ? Date.parse(profile.created_at) : Number.NaN;
+  if (Number.isNaN(created) || created > Date.parse(selection.occurredAt)) return { ok: false, reason: 'ACTOR_PROFILE_POSTDATES_AUDIT' };
+  return { ok: true };
 }
 
 /** Escapes LIKE wildcards so an e-mail such as a_b@x.vn is matched literally by ILIKE. */
