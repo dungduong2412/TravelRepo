@@ -26,11 +26,11 @@ The tool prints every **gate** (PASS / FAIL) and a handful of key inventory line
 * The password reaches `psql` only through `PGPASSWORD`; any appearance of it in `psql`'s error text is replaced by `<redacted>` before printing; the evidence file contains no credentials. (The word *password* appears in the evidence only as the **column name** `collaborators_password`.)
 
 ## 4. Expected result and how to read it
-**Expected:** `All gates passed. Nothing was changed.` and `N gates passed, 0 failed` (N depends on the hosted columns/sequences; 54 on the rehearsal).
+**Expected:** `All gates passed. Nothing was changed.` and `N gates passed, 0 failed` (N depends on the hosted columns/sequences; 57 on the rehearsal).
 
 | Gate (what a FAIL means) | If it FAILs |
 |---|---|
-| a table or a needed column is missing, has another type family, or a bounded `varchar` is shorter than the longest value the API can send (code 10 · name 120 · phone 16 · e-mail 254 · bank name 100 · account 20 · role 8 · action 38 · entity type 12 · entity id 36 · source 12) | the function would fail (22xxx / 42703) — stop, review |
+| a table or a needed column is missing, has another type family, or a bounded `varchar` is shorter than the longest value the API can send (code 10 · name 120 · phone 16 · e-mail 254 · bank name 100 · account 20 · role 8 · action 38 · entity type 12 · entity id 36 · source 12). Revision 3 also gates the columns the API now **reads** when it verifies a replay: `audit_events.id` (bigint), `audit_events.occurred_at` and `user_profiles.created_at` (timestamptz) | the function would fail (22xxx / 42703) — stop, review |
 | a `NOT NULL` column **without a default** that the function does not write | every insert would fail (23502) — stop |
 | a `CHECK` constraint on `audit_events` mentions `action` / `entity_type` / `actor_role` / `source` | the new audit action could be rejected — read the constraint, then decide |
 | a `UNIQUE` index/constraint covers `collaborators_email` | contradicts the recorded analysis (3 duplicate groups exist) — stop and re-check |
@@ -40,6 +40,8 @@ The tool prints every **gate** (PASS / FAIL) and a handful of key inventory line
 | the advisory-lock prefix `vno:merchant-member-email:` is used by another function body | lock keys would collide — stop |
 | duplicate `collaborators_code` values | the code-collision retry would misbehave — review |
 | `20261111000001` already registered · prerequisite `20261109000001` not registered · a later version registered | wrong order / wrong database — stop |
+
+The informational row `INFO audit_events: an index whose leading columns are (entity_type, entity_id)` should name an index (the access path of the API's replay lookup; the repository's own schema has `audit_events_entity_idx`). `NONE` is not a failure — the lookup still works, by scanning — but is worth a note.
 
 **A FAIL is a stop-and-review, never an instruction to change anything.** Send `preflight.json` for review.
 
@@ -60,9 +62,9 @@ The tool prints every **gate** (PASS / FAIL) and a handful of key inventory line
 * After applying, the privilege check is `node migration/v2/check-function-privileges.mjs --members` (read-only) and must show **11 passed, 0 failed**.
 
 ## 6. What is already known without the password (partial, GET-only)
-`migration/v2/rest-schema-probe.mjs` sends **one GET** to the project's REST root and reads PostgREST's published schema. Result at 2026-11-11 (evidence: `migration/v2/evidence/members-audit-atomicity-20261111-rev2/hosted-rest-schema-probe/`, schema metadata only):
+`migration/v2/rest-schema-probe.mjs` sends **one GET** to the project's REST root and reads PostgREST's published schema. Result at 2026-11-11 (evidence: `migration/v2/evidence/members-audit-atomicity-20261111-rev3/hosted-rest-schema-probe/`, schema metadata only):
 
-* **33 PASS, 0 FAIL, 1 UNRESOLVED.** All four tables are exposed; every column the function writes or reads exists with the right type family; every bounded length is large enough; `collaborators` has **no** NOT NULL column without a default beyond the ones the function writes (`id` defaults to `gen_random_uuid()`); `audit_events` `occurred_at` defaults to `now()` and `source` to `v2`.
+* **36 PASS, 0 FAIL, 1 UNRESOLVED** (revision 3; revision 2 had 33 — the three new PASSes are `audit_events.occurred_at`, `audit_events.id` and `user_profiles.created_at`, the columns the API reads when it verifies a replay). All four tables are exposed; every column the function writes or reads exists with the right type family; every bounded length is large enough; `collaborators` has **no** NOT NULL column without a default beyond the ones the function writes (`id` defaults to `gen_random_uuid()`); `audit_events` `occurred_at` defaults to `now()` and `source` to `v2`.
 * `create_merchant_member_application` is **not** callable (migration not applied) and there is no other `*merchant_member*` function. The 9 callable functions are the existing transaction/media/category ones.
 * **UNRESOLVED:** `audit_events.id` is a `bigint NOT NULL` with no default visible over REST — what an identity column looks like (PostgREST does not publish identity defaults). The deployed `AuditService` inserts without it and the table holds many rows, so it is very likely an identity column; only the catalog preflight proves it.
 * **Not visible over REST at all, therefore still open until this preflight runs:** constraints, indexes, triggers, RLS and policies, privileges and role attributes, functions outside the exposed schema, event triggers, the migration history.
@@ -70,7 +72,7 @@ The tool prints every **gate** (PASS / FAIL) and a handful of key inventory line
 ## 7. Integrity of the tool
 ```
 shasum -a 256 migration/v2/preflight-members-catalog.sql migration/v2/preflight-members-catalog.mjs migration/v2/rest-schema-probe.mjs
-da40ead7545d17fe07c7b0166834fabbe4a7a4f058dbc75791052af7b6c03e75  migration/v2/preflight-members-catalog.sql
-32c5acb48a6e6ae8adb621689c6e6f78692b859f5f083e98179b2eba264fcdf8  migration/v2/preflight-members-catalog.mjs
-f5c8e461b222c05b66809a72e2863c3145b74cc168b0a6b8d3b68d2e45501e70  migration/v2/rest-schema-probe.mjs
+2dde6ee3c8fe01f833a97a2985db0b6491a50bbb8e9dc28b869b85cb20d0eeb6  migration/v2/preflight-members-catalog.sql
+3747bd00dc437091047f9987b06789702e1ddea828886d7a30bbc166b726129e  migration/v2/preflight-members-catalog.mjs
+be9be7f5c75cc08a55dc149d9a2a9f8adeb66ac0fc26937f8adb54461e9a90fe  migration/v2/rest-schema-probe.mjs
 ```

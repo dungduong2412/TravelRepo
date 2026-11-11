@@ -1,257 +1,285 @@
-# VNO V2 — Members audit-atomicity remediation, revision 2 (2026-11-11)
+# VNO V2 — Members audit-atomicity remediation, revision 3 (2026-11-11)
 
 **Status: IMPLEMENTED AND VERIFIED LOCALLY ONLY. Not pushed, no migration applied, nothing deployed.** The live environment (Railway `vno-v2-uat` / Supabase `hsezyogfxgnkpweoqqny`) still runs release `a384f48` (API `77d16db1-7620-4ce6-a0af-9cc55a5a3675`, Web `b3d59b0c-7712-45e2-b38e-d3246328243a`); both rollback references are intact. The only contact with the live system was **GET-only reads** (§5, §6). **This is not "FULL SYNC".**
 
-Workflow: Claude fixes → **Codex independently verifies** → Owner approves migration/deploy → Claude deploys → Codex verifies Production. This revision answers Codex's **NO-GO for `757af5e`** ("keep the transactional creation; remove the automatic reconciliation complexity").
+Workflow: Claude fixes → **Codex independently verifies** → Owner approves migration/deploy → Claude deploys → Codex verifies Production. This revision answers Codex's **NO-GO for `ecefe2c`** (two Medium findings, one Low finding in the replay verification). The transactional core accepted in the previous review is **unchanged** (§0, item 5).
 
 | | |
 |---|---|
 | Production baseline (deployed) | `a384f48d072d903afdd97c52946f39b764444cb6` |
-| Previous candidate (NO-GO) | `757af5edacc0051cf41298efb6c94325b64c1d9f` |
-| **Candidate — runtime code** | `f58115481ef95bb6c7a73034db4729cd49ebc103` (`f581154`): 2 source files, 1 migration, rollback, privilege checker, tests |
-| Candidate — tooling | `b0f6149e3c6b1bd75d568857b75f9f6392a35827` (`b0f6149`) read-only hosted catalog preflight + REST schema probe; later commits add output-only tweaks and this document (no runtime change — see the hand-off message for the exact HEAD) |
-| Schema change | **Yes — additive, ONE function, no table / column / index / constraint / data change.** Needs the owner's separate approval. |
+| Rejected candidates | `ecefe2c58a6ab2419a982b42aa38d2f17b7a5a19` (revision 2, NO-GO) · `757af5edacc0051cf41298efb6c94325b64c1d9f` (revision 1, NO-GO) |
+| **Candidate — runtime code** | `e353f9e316cd237a2eca04f0863d53193fdb634e` (`e353f9e`) — 2 source files + 2 test scripts. **Migration, rollback script and privilege checker are byte-identical to `ecefe2c`** (`git diff ecefe2c HEAD -- supabase migration/v2/rollback migration/v2/check-member-function-privileges.sql` is empty) |
+| Candidate — HEAD for review | **the commit that contains this document** (its SHA is in the hand-off message; `git log -1 --format=%H -- docs/VNO_V2_MEMBERS_AUDIT_ATOMICITY_REMEDIATION_20261111.md`). It adds only the extended read-only preflight tooling and documents on top of `e353f9e`: **no runtime change** (`git diff e353f9e HEAD -- backend supabase` is empty) |
+| Schema change | **Yes — additive, ONE function (unchanged since `ecefe2c`), no table / column / index / constraint / data change.** Needs the owner's separate approval. |
 
 ## 0. Reviewer decision → what was done
 
-| # | Required change | Done | Where verified |
+| # | Required change (Rev3 brief) | Done | Where verified |
 |---|---|---|---|
-| 1 | Remove `reconcile_merchant_member_audit` and its call path; remove tests that assume it | Function removed from the migration; the service makes **no** call other than `create_merchant_member_application`; `parseReconcileRpc`, `ensureCreationAudit`, `MEMBER_AUDIT_PENDING`, `MEMBER_AUDIT_FAILED` deleted; reconciliation controls deleted | `git grep` of `backend/src`, `supabase`, rollback, checker: no `reconcil*` / `IN_FLIGHT` / 30 s logic (the only hits are unrelated media / transactions code and older migrations) |
-| 2 | Keep `create_merchant_member_application`, row + creation audit atomic | Unchanged core: one function = one transaction, `INSERT … RETURNING … INTO STRICT`, per-e-mail advisory lock | FI-1, FI-1b, FI-2, FI-14; mutants S1, S2, S11 |
-| 3 | Replay succeeds only with a **verifiable matching** creation audit; otherwise fail closed, flag, never fabricate | `requireVerifiedCreationAudit`: a read-only lookup; success only if an event matches on **action, entity type, this application's id, merchant actor role and `details.merchant_id` = the requesting Merchant**; otherwise `500 MEMBER_AUDIT_MISSING`, one log line with ids only, **no write of any kind**; a failing lookup is `500 MEMBER_LOOKUP_FAILED` (never an assumed success) | FI-5, FI-5b, FI-5c, FI-6, FI-8, FI-16; unit `hasMatchingCreationAudit`; mutants T1–T7, T10 |
-| 4 | Concurrent requests through the function: no multiple rows, no multiple creation events; keep the external-writer limitation | Proven with 1, 2 and 3 API instances; limitation kept and re-stated (§7.1) | section-3 parallel control, FI-2, FI-3 (exactly **+1 row, +1 event**), FI-4, race controls, FI-13 |
-| 5 | Remove the 30-second heuristic and all eligibility / provenance logic | Gone. A row's age, state and **code shape grant nothing** | FI-5 (old and young rows both refused), FI-5c (API-shaped external records refused); mutant T5 |
-| 6 | Update migration, rollback script, privilege checker, tests, docs; **recalculate** the privilege count | Done. Checker now covers one function plus "no other `*merchant_member*` function": **11 rows = 10 security assertions + 1 informational owner row, 11 / 11 PASS** (the old 20 is obsolete) | §3, §4.3 (7 negative controls) |
-| 7 | Adversarial tests | All eight listed scenarios have controls | §4.2 |
-| 8 | Correct the remaining audit call-site count to 30 | Counted: **31 at `a384f48`, 30 at the candidate** (the Members create is no longer a separate write-then-audit site); they stay outside this release | §8.1 |
-| 9 | Preserve production data; no unique index | Nothing written anywhere; GET-only re-analysis at 2026-11-11T08:49Z: 384 rows, the 3 duplicate-e-mail groups (6 rows) and `COL-05C60E056C3D4B5B` all present, 0 creation events | §5 |
-| P | Production database preflight | Read-only catalog queries + runner + precise procedure **prepared**; **hosted catalog result: UNRESOLVED BLOCKER** (needs the database password); a GET-only partial result exists | §6 and `docs/VNO_V2_MEMBERS_HOSTED_CATALOG_PREFLIGHT_PROCEDURE_20261111.md` |
+| 1 | Verify `actor_auth_user_id` of the original creation audit: a legitimate Merchant user of the application's Merchant; keep valid cross-actor replay inside one Merchant; reject forged roles and other Merchants' actors; consider historical role / Merchant changes | Replay verification is now **two pure stages** around one read-only profile lookup (§2.1): exactly one coherent creation event, **and** its actor is a Merchant profile bound to **this** Merchant that already existed when the event was written. The *requester* is not an input, so another user of the same Merchant may replay. Today's profile is used as a **necessary** consistency condition only — never as proof of creation-time authorization (§2.2) | FI-5c (14 forged shapes), FI-17 (cross-actor), FI-18 (historical changes); unit `selectCreationAudit` / `checkCreationActor`; mutants M1–M8, A1–A8, T18, T19 |
+| 2 | Replay contract: verified ⇒ `201 idempotent_replay`; existing e-mail without a provable audit ⇒ generic `409 MEMBER_EMAIL_UNAVAILABLE`; lookup failure ⇒ `500 MEMBER_LOOKUP_FAILED`; log suspected anomalies with identifiers only | Implemented exactly so. `500 MEMBER_AUDIT_MISSING` is **retired**; every unprovable replay is byte-identical to any other conflict (asserted) and produces one `MEMBER_REPLAY_REFUSED reason=… application=… merchant=… requester=…` log line (ids only; asserted free of name / phone / e-mail) | FI-5, FI-5b, FI-5c, FI-5d, FI-6, FI-19, **FI-21 (regression, finding 2)**; mutants T11, T12 |
+| 3 | Remove the unordered `.limit(20)`; deterministic, sufficiently selective audit query | The query is keyed by `(action, entity_type, entity_id)` (the shape of the existing index `audit_events_entity_idx`), ordered by `id`, and asks for **two** rows: the question is "is there exactly one?", so a second row is itself the answer and the verdict cannot depend on which rows a larger cut would return (§2.3) | FI-5d (insertion order never matters), FI-20 (40 unrelated events on the same application cannot hide the real one); mutants T13–T17 |
+| 4 | Negative tests: wrong Merchant actor, forged Merchant role, Admin / Partner actor, null actor, multiple matching audits, external-origin records, cross-actor same-Merchant replay | All seven have controls, plus: actor without a profile, non-API `source`, profile newer than the event, moved / re-roled / deleted / re-created creator, failed profile lookup | §4.2 |
+| 5 | Preserve the proven atomic-create transaction and fail-closed behaviour; do **not** restore automatic reconciliation | Function, grants, rollback and privilege checker are unchanged byte for byte; no write path other than `create_merchant_member_application` exists; reconciliation not restored | `git diff` above; FI-1 … FI-4, FI-9, FI-10, FI-12 … FI-15 unchanged and green; the integration suite asserts the API never writes an audit event for an application it did not create |
+| 6 | Rerun the complete unit / integration / fault-injection / privilege / concurrency / rollback suites; regression tests proving **both Medium findings** are resolved | Rerun on a clean export of the code commit (§4.1). **Regression tests:** unit `REGRESSION (finding 1)` and integration FI-5c; integration **FI-21** (finding 2). The integration controls were also run against the rejected `ecefe2c` source, where they **fail**; the unit regression embeds the `ecefe2c` matcher verbatim and shows it accepting every forged shape (§4.5) | §4 |
+| 7 | New exact SHA, documentation, explicit request for Codex GO / NO-GO | This document and the hand-off message | §9 |
+| R | Release constraints: no push / migration / deploy / Production data change; keep the 3 duplicate groups and `COL-05C60E056C3D4B5B`; 30 remaining audit sites stay out; no QR / Payment changes; hosted catalog preflight before migration approval; never expose credentials | Nothing pushed, applied or deployed; data re-read GET-only (§5); 30 sites untouched (§8.1); `frontend/` and QR / Payment untouched; **hosted catalog preflight: UNRESOLVED BLOCKER** (needs the database password — §6); no credential requested or held | §5, §6, §8 |
 
-## 1. Finding and root cause (unchanged)
+## 1. The review findings and their root causes
 
-`POST /merchants/members` at `a384f48` wrote in three separate steps, each its own transaction: (1) `INSERT` of the application row over REST — **committed**; (2) a re-read and, if another instance won a race, a `DELETE` of the just-inserted row; (3) `AuditService.record()` — a **second** REST `INSERT` into `audit_events`. If step 3 failed the application stayed committed without a creation audit event, the client got a 500, and its retry found the row and was answered `201 idempotent_replay: true` — **the event was never written** and the 2xx hid the gap.
+**Finding 1 (Medium).** `hasMatchingCreationAudit` (revision 2) accepted an event when `action`, `entity_type`, `entity_id`, `actor_role = 'merchant'` and `details.merchant_id` matched. It never looked at `actor_auth_user_id`, `source` or the actor's profile. Every one of those five fields is *claimed text*: an event with a **null actor**, an **Admin or Partner user wearing the role `merchant`**, or a user of **another Merchant** passed. It also accepted "one good event among several". *Reproduced:* the unit test `REGRESSION (finding 1)` keeps the `ecefe2c` matcher verbatim and shows it returning `true` for each forged shape.
 
-**Reproduced on the deployed code** (not just reasoned): §4.5.
+**Finding 2 (Medium).** An existing row with no verifiable creation audit answered `500 MEMBER_AUDIT_MISSING`. That is a distinct, cacheable-looking server error for what is a *conflict*; it told a caller something the generic 409 deliberately does not, and it turned an Admin-created row identical to a Merchant's submission (the contract before revision 2) into a 5xx.
 
-## 2. Design (simplified)
+**Low.** `.limit(20)` without an `ORDER BY` on the audit lookup: if more than twenty events matched, which twenty came back was arbitrary, and the valid one could be cut away.
 
-### 2.1 Database — migration `20261111000001_vno_merchant_member_atomic_create.sql`
-**One** function, `public.create_merchant_member_application(actor, merchant, code, name, phone, email, bank_name, bank_acc) → jsonb`, `SECURITY INVOKER`, `search_path = pg_catalog, public`, `EXECUTE` for `service_role` only. In **one transaction** it: re-checks the caller is an *active Merchant profile bound to this Merchant* and the Merchant is *active + verified*; takes `pg_advisory_xact_lock` on the lower-cased e-mail (serialises concurrent **calls of this function**, across API instances); re-checks the e-mail under the lock; inserts the `collaborators` row (`… RETURNING … INTO STRICT`: an insert that yields no row aborts everything); inserts the `collaborator.member_application_created` audit event (`{merchant_id, auth_invitation_required: true}`, no personal data). Any failure of either insert aborts both. Returns `CREATED{member}` · `EMAIL_HELD` · `NOT_ALLOWED`.
+## 2. Design (the part that changed)
 
-There is deliberately **no function that writes an audit event for an application that already exists.**
+### 2.1 Replay verification — `merchant-members.ts`, `merchants.service.ts`
+An idempotent replay is "the same Merchant, still pending, same normalised details, and the e-mail is held by exactly one row". It is answered with success **only** after both stages pass:
 
-### 2.2 Application — `merchants.service.ts`, `merchant-members.ts`
-Validation, limits (10 / h, 40 / day), the pending cap (50), the identity check, masking and the answer shapes are **unchanged**.
+| Stage | Input | Passes when | Refusal reasons (logged) |
+|---|---|---|---|
+| 1 `selectCreationAudit(events, application, merchant)` | the audit rows read for this application (re-filtered inside the function, so it does not rely on the query alone) | **exactly one** event with action `collaborator.member_application_created`, entity `collaborator`, entity id = this application; its `actor_role` is `merchant`; `details.merchant_id` is the requesting Merchant; `source` is `v2-admin-api` (the value every API-side audit writer stamps); `actor_auth_user_id` is a UUID; `occurred_at` is a valid time | `NO_CREATION_AUDIT` · `MULTIPLE_CREATION_AUDITS` · `AUDIT_ROLE_NOT_MERCHANT` · `AUDIT_MERCHANT_MISMATCH` · `AUDIT_SOURCE_UNEXPECTED` · `AUDIT_ACTOR_MISSING` · `AUDIT_TIME_INVALID` |
+| — | one read-only `select user_id, role, merchant_id, created_at from user_profiles where user_id = <event actor>` | — | a failing lookup ⇒ `500 MEMBER_LOOKUP_FAILED` |
+| 2 `checkCreationActor(event, profile, merchant)` | that profile row | the profile exists and is the actor's; `role = 'merchant'`; `merchant_id` is **this** Merchant; `created_at` is **not later than** the event's `occurred_at` | `ACTOR_PROFILE_MISSING` · `ACTOR_PROFILE_MISMATCH` · `ACTOR_NOT_A_MERCHANT_USER` · `ACTOR_BOUND_TO_OTHER_MERCHANT` · `ACTOR_PROFILE_POSTDATES_AUDIT` |
 
-| Situation | Behaviour |
+Also logged (no audit lookup at all): `EMAIL_HELD_BY_MULTIPLE_ROWS` — the caller's identical pending submission exists **and** another row holds the same e-mail (the duplicate-e-mail anomaly already present in production data).
+
+The requester is deliberately **not** a parameter of either stage (asserted in the unit tests): what is verified is the *creator's* binding to the Merchant, so a colleague of the same Merchant can replay the creator's submission, and a user of another Merchant never gets that far (the row is not theirs, so they receive the ordinary conflict, without a log line).
+
+### 2.2 What the actor check does — and does not — prove
+There is no history table for profiles in the database (`user_profiles` has a current `merchant_id` / `role`, `created_at`, `updated_at`; nothing records who was bound to which Merchant *when*). Therefore **no profile-based check can prove authorization at a past instant**, and this design does not pretend otherwise:
+
+* **The creation-time evidence is the event itself.** It is written in the same transaction as the application row, after that transaction has checked the actor's profile, Merchant and Merchant state, and by nothing else in the product (the same shape is written by the previous API after its own check, which is why events from a rolling-deploy window are accepted too).
+* **Today's profile is a necessary condition, never a sufficient one.** It refuses a claim ("a Merchant user of M created this") that the user directory contradicts. The `created_at ≤ occurred_at` condition adds the one historical fact that *is* recorded: a profile that did not exist yet when the event was written cannot be the user who wrote it (a deleted-and-recreated profile, or a forged actor that joined later).
+* **Conservative on change, never guessing.** If the creator has since been moved to another Merchant, made an Admin / Partner, deleted or re-created, the replay is refused (generic 409 + log line) and a human decides. Status alone (`inactive`) is *not* creation-time evidence and neither proves nor disproves anything, so a deactivated-but-still-bound creator does not block the replay.
+
+| What happened to the creator after the application was created | Replay by a colleague of the same Merchant | Reason logged |
+|---|---|---|
+| nothing | `201 idempotent_replay` | — |
+| deactivated, still bound to the Merchant | `201 idempotent_replay` | — |
+| moved to another Merchant | `409` | `ACTOR_BOUND_TO_OTHER_MERCHANT` |
+| became an Admin / Partner | `409` | `ACTOR_NOT_A_MERCHANT_USER` |
+| profile deleted | `409` | `ACTOR_PROFILE_MISSING` |
+| profile deleted and re-created | `409` | `ACTOR_PROFILE_POSTDATES_AUDIT` |
+| moved away and back (binding is as at creation again) | `201 idempotent_replay` | — |
+
+**Residual, stated plainly.** A forged event that names a user who *today* belongs to the same Merchant, whose profile pre-dates the forged event's timestamp, is indistinguishable from a real one by any check on these tables. Forging it needs `service_role` write access to `audit_events` — the same trust level as the API itself — so it is outside what this control defends. What it defends against is the *internally inconsistent* and *foreign* shapes the review listed, and accidents (a code path writing the wrong actor).
+
+### 2.3 The audit query
+```
+audit_events: select id, occurred_at, actor_auth_user_id, actor_role, action, entity_type, entity_id, source, details
+  where action = 'collaborator.member_application_created' and entity_type = 'collaborator' and entity_id = <application>
+  order by id asc limit 2
+```
+* *Selective:* `(entity_type, entity_id, …)` is the existing index `audit_events_entity_idx`; the result is the events of **this application only** (normally one row).
+* *Deterministic:* two rows are requested because the only question is "exactly one?". With two or more rows the answer is "no" whichever two come back; with one row it is that row. `ORDER BY id` additionally makes the log and any investigation reproducible. The previous `limit(20)` could cut away the valid event; this cannot (mutants T14 — unordered — is *equivalent by design* and T13 / T15 / T16 / T17 are caught).
+* *Several events for one application is an integrity anomaly* and is refused whatever they say (valid + valid, valid + forged, forged + valid, 25 events). A forged extra event can therefore make a genuine replay fail closed (a 409, never a success) — accepted, because the alternative is to guess which event is "the real one".
+
+### 2.4 The contract after revision 3
+| Situation | Answer |
 |---|---|
-| New e-mail | `rpc('create_merchant_member_application')`; `CREATED` ⇒ `201`, `idempotent_replay:false` |
-| Lost a race / e-mail already held | function returns `EMAIL_HELD` (nothing inserted) ⇒ re-read ⇒ the generic 409, or a **verified** replay |
-| Same submission again (same Merchant, still pending, same details) | read-only lookup of the creation audit: **match found ⇒ `201 idempotent_replay:true`**; **no match ⇒ `500 MEMBER_AUDIT_MISSING`** (Vietnamese message, only `code` + `message`), log line `MEMBER_AUDIT_MISSING: application <id> (merchant <id>, requested by <user id>) … manual investigation required`, **nothing written**; lookup error ⇒ `500 MEMBER_LOOKUP_FAILED` |
-| Function missing / not executable / unexpected answer | `500 MEMBER_CREATE_FAILED`, nothing persisted, no database text returned |
-| Replay when the function is missing | still works (it only reads) — an application-only rollback needs no database change |
+| New e-mail | `rpc('create_merchant_member_application')`; `CREATED` ⇒ `201`, `idempotent_replay:false` (unchanged) |
+| Same submission again, creation audit **verified** (both stages) | **`201`, `idempotent_replay:true`**, same id; the API writes nothing |
+| E-mail held by anything else, or by the caller's own identical submission that **cannot be proven** | **generic `409 MEMBER_EMAIL_UNAVAILABLE`** (only `code` + `message`; byte-identical to every other conflict); one log line `MEMBER_REPLAY_REFUSED reason=… application=<id> merchant=<id> requester=<id> [auditEvent=<id> auditActor=<id>]`; nothing written |
+| An audit or profile lookup fails | `500 MEMBER_LOOKUP_FAILED` (Vietnamese message, no internals) — never read as "verified" |
+| Function missing / not executable / unexpected answer | `500 MEMBER_CREATE_FAILED`, nothing persisted (unchanged) |
+| Replay when the function is missing | still works (it only reads) |
 
-A "matching" event means all of: `action = collaborator.member_application_created`, `entity_type = collaborator`, `entity_id` = this application, `actor_role = merchant`, `details.merchant_id` = the requesting Merchant (`hasMatchingCreationAudit`, pure and unit-tested; the query also filters on action / type / id).
+### 2.5 Consequences worth knowing
+1. **Rolling deploy.** The previous API can still create a row and write its audit a moment later. A replay in that window gets the generic 409 (and a log line that is then a false positive); once the creator's own event exists the next replay succeeds. No grace period, no guessing.
+2. **Admin-created pending row identical to a Merchant's submission** (same Merchant, same details): generic 409 — as it was before revision 2 (FI-5b).
+3. **A creator who has been moved / removed:** replays of that creator's applications by colleagues are refused until a human decides (§2.2). This is rare and the failure is a 409, not a wrong success.
+4. **Monitoring.** The old token `MEMBER_AUDIT_MISSING` is gone; search for `MEMBER_REPLAY_REFUSED`. `migration/v2/analyze-member-audit-gaps.mjs` (GET-only) still lists applications that have no creation event.
+5. A row left by the previous API's partial write stays refused **until a human decides** (nothing repairs it). Production has none (§5).
 
-### 2.3 Consequences worth knowing (deliberate, small)
-1. **Rolling deploy.** The previous API can still create a row and write its audit a few milliseconds later. A replay in that window gets `MEMBER_AUDIT_MISSING` (and a log line that is then a false positive); the next replay succeeds once the creator's own event exists (FI-6). No grace period, no guessing.
-2. **Admin-created pending row identical to a Merchant's submission** (same Merchant, same details): previously a generic 409 through the provenance filter, now `500 MEMBER_AUDIT_MISSING` — still fail-closed, nothing written (FI-5b). Extremely rare; the message sends the Merchant to the Admin.
-3. A row left by the previous API's partial write stays refused **until a human decides** (nothing repairs it automatically). Production has none (§5); the read-only tool for finding any future ones is `migration/v2/analyze-member-audit-gaps.mjs` plus the log token `MEMBER_AUDIT_MISSING`.
+## 3. Migration impact and rollback assessment (unchanged from revision 2)
 
-## 3. Migration impact and rollback assessment
-
-**Impact.** One `CREATE OR REPLACE FUNCTION` and its grants in one short transaction. No table, column, index, constraint, policy, trigger or row is created, altered or removed; no table lock; milliseconds. It touches exactly the columns the deployed code already writes.
+**Impact.** One `CREATE OR REPLACE FUNCTION` and its grants in one short transaction. No table, column, index, constraint, policy, trigger or row is created, altered or removed; no table lock; milliseconds.
 
 | Database | API | Result |
 |---|---|---|
 | without the function | `a384f48` (old) | works as today |
 | with the function | `a384f48` (old) | works as today — the old code never calls it |
-| with the function | candidate | atomic path (§4) |
+| with the function | candidate | atomic path |
 | without the function | candidate | **create fails closed** (500 `MEMBER_CREATE_FAILED`, nothing written); replays of audited applications still work (FI-12) |
 
-**Order:** catalog preflight → migration → `--members` check → API. **Rollback:** re-stage the API to `a384f48` **first**, then `migration/v2/rollback/20261111000001_vno_merchant_member_atomic_create_rollback.sql` (drops the one function; touches no data; audit is append-only). Application-only rollback is sufficient by itself and leaves the function harmlessly in place. The real rollback script is executed in FI-12 (row / audit counts unchanged; create fails closed; re-apply restores; applying twice is harmless).
+**Order:** catalog preflight → migration → `--members` check → API. **Rollback:** re-stage the API to `a384f48` **first**, then `migration/v2/rollback/20261111000001_vno_merchant_member_atomic_create_rollback.sql` (drops the one function; touches no data). Application-only rollback is sufficient by itself and leaves the function harmlessly in place. The real rollback script is executed in FI-12 (row / audit counts unchanged; create fails closed; re-apply restores; applying twice is harmless).
 
 **Proposed apply runbook (owner's host terminal — NOT executed):**
-1. `node migration/v2/preflight-members-catalog.mjs` (procedure document) ⇒ **all gates PASS**; keep the two digest lines.
+1. `node migration/v2/preflight-members-catalog.mjs` (procedure document) ⇒ **all gates PASS** (57 on the rehearsal); keep the two digest lines.
 2. Apply the single file (it carries its own `begin … commit`): `psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261111000001_vno_merchant_member_atomic_create.sql`. **Never `supabase db push`.**
 3. Register: `insert into supabase_migrations.schema_migrations (version, name, statements) values ('20261111000001','vno_merchant_member_atomic_create', array['…applied by owner, sha256 …'])`.
 4. `node migration/v2/check-function-privileges.mjs --members` ⇒ expect **11 passed, 0 failed** (read-only).
-5. Write-free smoke test **inside `begin read only; … rollback;`** (the session itself proves nothing can be written): `select public.create_merchant_member_application(gen_random_uuid(), gen_random_uuid(), 'X','n','p','e@x.vn');` ⇒ `{"outcome":"NOT_ALLOWED"}` (an unknown actor is refused before any write). Verified in exactly that form on the rehearsal database: the call returns `{"outcome": "NOT_ALLOWED"}`, a write attempted in the same session is refused (`cannot execute INSERT in a read-only transaction`), and the row counts are unchanged (`08-smoke-test.log`).
+5. Write-free smoke test **inside `begin read only; … rollback;`**: `select public.create_merchant_member_application(gen_random_uuid(), gen_random_uuid(), 'X','n','p','e@x.vn');` ⇒ `{"outcome":"NOT_ALLOWED"}` (an unknown actor is refused before any write).
 6. Preflight again: only the expected differences (§5 of the procedure document).
 
-**Residual risk, stated plainly.** The function body has run against a faithful rehearsal (Postgres 17 + PostgREST v14.5, every repo migration) but never on the hosted database. The catalog preflight exists to close exactly that gap; its hosted run is the open blocker (§6). The first real Merchant creation will be the first hosted execution of the insert path; it fails closed (nothing persisted, 500) if anything differs.
+**Residual risk.** The function body has run against a faithful rehearsal (Postgres 17 + PostgREST v14.5, every repo migration) but never on the hosted database; the hosted catalog preflight exists to close that gap and is the open blocker (§6). The API's new **reads** (`user_profiles.created_at`, `audit_events.occurred_at / id / source`) are now also covered by the preflight gates. The first real Merchant creation will be the first hosted execution of the insert path; it fails closed.
 
 ## 4. Local test evidence
 
-Everything below ran on a **clean `git archive` export of the candidate commit** with a **freshly rebuilt** rehearsal stack (disposable Postgres 17 + PostgREST v14.5, loopback only; the integration test refuses any non-loopback target). Logs: `migration/v2/evidence/members-audit-atomicity-20261111-rev2/` (uncommitted, like earlier evidence).
+Everything below ran on a **clean `git archive` export of the code commit** `e353f9e` with a **freshly rebuilt** rehearsal stack (disposable Postgres 17 + PostgREST v14.5, loopback only; the integration test refuses any non-loopback target). Logs: `migration/v2/evidence/members-audit-atomicity-20261111-rev3/` (uncommitted, like earlier evidence).
 
 ### 4.1 Results
 | Check | Result |
 |---|---|
 | `tsc --noEmit`, `npm run build` (the Dockerfile step), `eslint` on the two changed source files | clean |
-| Unit `test:merchant-members` | **34 / 34 PASS** (includes `hasMatchingCreationAudit`: 14 rejection cases + the accepted one) |
-| **Integration `test:rehearsal-merchant-members`** | **36 / 36 PASS**, 3 consecutive runs on the export |
+| Unit `test:merchant-members` | **38 / 38 PASS** (revision 2: 34) |
+| **Integration `test:rehearsal-merchant-members`** | **42 / 42 PASS**, 3 consecutive runs on the export (revision 2: 36) |
 | Other backend scripts | `d6-contracts` 28 · `invitation-guards` 3 · `merchant-profile-update` 10 · `merchant-qr-flow` 23 · `partner-single-step` 29 · `approve-unclaimed` 7 · `main-media` 13 · `public-catalog` 14 · `anonymous-privacy` 3 · `auth-email-hook` 15 · `media-lifecycle` PASS |
 | `test:rehearsal-global-network` (same database) | 9 / 9 PASS |
 | `check-function-privileges.mjs --rehearsal --members` | **11 passed, 0 failed** (§4.3) |
-| Known failures that are **not** caused by this change | `test:d13a-contracts` and `test:email-delivery` (37 passed, 2 failed) fail identically on the deployed baseline `a384f48`; unchanged, not hidden |
-| `frontend/` | not touched |
+| Known failures that are **not** caused by this change | `test:d13a-contracts` and `test:email-delivery` (37 passed, 2 failed) fail identically on the deployed baseline `a384f48` (re-verified in this revision, §4.5); unchanged, not hidden |
+| `frontend/` | not touched (`MEMBER_AUDIT_MISSING` was never referenced there) |
 
-### 4.2 The adversarial controls (reviewer item 7)
-| Required scenario | Controls | Proves |
+### 4.2 The adversarial controls
+| Scenario (Rev3 brief item 4, plus the earlier eight) | Controls | Proves |
 |---|---|---|
-| **Audit insertion failure and atomic rollback** | FI-1 · FI-1b · FI-2 · FI-14 | a trigger makes the audit insert fail ⇒ 500, **no application row, no audit row**, no internals in the body; the retry after recovery creates exactly one row + one event (not a replay); 6 parallel requests under the fault all fail and persist nothing; an insert that yields **no row** (a hosted `BEFORE INSERT` trigger) aborts the whole call — no orphan audit event |
-| **Concurrent identical creation requests** | section-3 control (8 parallel) · FI-2 (recovery phase) · **FI-3 (3 API instances × 15 calls: exactly +1 row, +1 audit event, 14 replays)** · FI-4 (different details) · the race controls · **FI-13 (lock contract)** | one row, one creation event; the database lock — not the in-process one — serialises; with another session holding the lock and an uncommitted competing row the call **waits** (≥ 0.8 s measured) and then answers the generic 409 |
-| **Idempotent replay with a valid creation audit** | section-3 replay · **FI-8** (3 replays: counts of rows **and** audit events identical before / after) · race control (b) (a competing instance runs the real function) | `201 idempotent_replay:true`, same id, the API writes nothing |
-| **Replay of a record with no creation audit** | **FI-5** (an old row *and* a just-created row) · race control (c) | `500 MEMBER_AUDIT_MISSING`, Vietnamese message, only `code` + `message`, no id / e-mail in the body; the log line carries ids only (asserted: no e-mail / phone / name); row unchanged; **zero** audit events written; refused every time |
-| **External records using an API-shaped code** | **FI-5c** (7 variants + P / Q) · FI-5b | pending, same Merchant, same details, code `COL`+7 hex, but: no event · an Admin `collaborator.created` event · a creation event naming **another Merchant** · written by an **admin** actor · **without a Merchant** in its details · the **removed** reconciliation action · *another application's* valid event ⇒ **all refused**, nothing written (the neighbour with its own valid event succeeds). FI-5b: the Admin-path row (`COL-`+16 hex, own audit) is refused too |
-| **An attempted late audit write** | **FI-6** | (a) replays refused while no matching event exists, nothing written; (b) calling the create function for the held e-mail answers `EMAIL_HELD` and writes **no** event — it cannot back-fill; (c) only the creator's own late write (simulating the previous API auditing after its insert) makes the *next* replay succeed, and the API adds **no** event of its own (exactly one in total). *Interpretation, stated so Codex can correct it:* "late audit write" = an audit event arriving after the row is committed, whether from the creator or from the system trying to repair it |
-| **API behaviour when the function is unavailable** | **FI-15** (EXECUTE revoked from `service_role`) · **FI-12** (function dropped by the real rollback script) · **FI-16** (the audit lookup itself fails: SELECT revoked) | create ⇒ generic 500 `MEMBER_CREATE_FAILED`, nothing written, no `permission` / `42501` / `PGRST` text; replays of audited applications still work; a failing lookup ⇒ 500 `MEMBER_LOOKUP_FAILED`, **never** a success; everything recovers after the grant / re-apply |
-| **Migration rollback and re-application** | **FI-12** | rollback script ⇒ function gone, row / audit counts untouched; re-apply ⇒ full function; **applying a second time is harmless** (still one function, API unaffected); waits for PostgREST's schema cache to really settle (`PGRST202`; 5 consecutive successes) |
+| **Wrong Merchant actor** | FI-5c (actor = a user of Merchant B, role `merchant`, details name Merchant A) · FI-18 (creator moved to B) · unit | `409`, `ACTOR_BOUND_TO_OTHER_MERCHANT`, nothing written; moved back ⇒ `201` again |
+| **Forged Merchant role** | FI-5c: role `admin` / `collaborator` on the event ⇒ `AUDIT_ROLE_NOT_MERCHANT`; an Admin user / a Partner user *wearing* the role `merchant` ⇒ `ACTOR_NOT_A_MERCHANT_USER` | refused each time |
+| **Admin / Partner actor** | FI-5c (above) · FI-18 (creator made an Admin) · FI-6 (a forged *late* write by an Admin actor never unlocks a replay) | refused |
+| **Null actor** | FI-5c (`actor_auth_user_id` null) ⇒ `AUDIT_ACTOR_MISSING`; an actor that exists in Auth but has no profile ⇒ `ACTOR_PROFILE_MISSING` | refused |
+| **Multiple matching audits** | **FI-5d**: valid + valid · valid + forged · forged + valid · 25 events with the valid one in the middle ⇒ `MULTIPLE_CREATION_AUDITS`, insertion order irrelevant; with only the valid event left the replay succeeds | refused; verdict follows the evidence |
+| **External-origin records** | FI-5, FI-5b, FI-5c: API-shaped code `COL`+7 hex, pending, same Merchant, same details, but: no event · an Admin `collaborator.created` event · the removed reconciliation action · another Merchant in the details · no Merchant in the details · a **non-API `source`** · a profile that **post-dates** the event · *another application's* valid event ⇒ all refused; the neighbour with its own valid event succeeds | refused, nothing written |
+| **Cross-actor same-Merchant replay** | **FI-17**: Merchant A's user A replays user A2's creation and vice versa ⇒ `201 idempotent_replay`, no event written; a user of Merchant B gets the ordinary conflict *without* a log line | accepted / ordinary conflict |
+| **Historical changes** | **FI-18**: moved · made Admin · profile deleted · profile re-created later ⇒ refused with the specific reason; deactivated-but-bound ⇒ accepted; restoring the binding / original creation time ⇒ accepted again | §2.2 |
+| **Lookup failures** | FI-16 (audit `SELECT` revoked) · **FI-19** (the actor-profile lookup returns a database error, injected below the service) · FI-21 | `500 MEMBER_LOOKUP_FAILED`, Vietnamese message, no internals, nothing written, never a success; recovers |
+| **Query selectivity / determinism** | **FI-20**: 40 unrelated events on the same application, written before or after the creation event ⇒ replay still succeeds | the old `limit(20)` class of defect cannot recur |
+| **Regression, finding 1** | unit `REGRESSION (finding 1)` (old matcher accepts 7 forged shapes, new check refuses each with its reason) · FI-5c | fails on `ecefe2c` (§4.5) |
+| **Regression, finding 2** | **FI-21** (verified ⇒ 201; unprovable ⇒ the generic 409, never a 500, never `MEMBER_AUDIT_MISSING`; failed lookup ⇒ 500 `MEMBER_LOOKUP_FAILED`) | fails on `ecefe2c` (§4.5) |
+| **Audit insertion failure and atomic rollback** | FI-1 · FI-1b · FI-2 · FI-14 | unchanged and green |
+| **Concurrent identical creation requests** | section-3 control (8 parallel) · FI-2 · **FI-3 (3 API instances × 15 calls: exactly +1 row, +1 event)** · FI-4 · race controls · **FI-13 (lock contract)** | unchanged and green |
+| **Idempotent replay with a valid audit** | section-3 replay · FI-8 (rows **and** events identical before / after) · race control (b) | unchanged and green |
+| **An attempted late audit write** | FI-6: refused while no event exists (nothing written) · the create function cannot back-fill (`EMAIL_HELD`) · only the creator's own late write unlocks the next replay · **a forged late write does not** | *Interpretation, stated so Codex can correct it:* "late audit write" = an audit event arriving after the row is committed, whether from the creator or from the system trying to repair it |
+| **Function unavailable** | FI-15 (EXECUTE revoked) · FI-12 (function dropped by the real rollback script) | create ⇒ generic 500 `MEMBER_CREATE_FAILED`, nothing written; replays of audited applications still work |
+| **Migration rollback and re-application** | FI-12 | unchanged and green; applying twice is harmless |
 
-Other controls kept from the first revision: FI-9 (the function's own guards: wrong actor / Merchant / state, **each half of "active and verified" tested separately**, blank arguments, e-mail normalised inside the function), FI-10 (anon / authenticated get SQLSTATE `42501`, ACL read from the catalog: `service_role` only, `SECURITY INVOKER`, `search_path` pinned), FI-11 (invariants after everything: every API-created application has exactly one creation event; the removed reconciliation action appears only where a control planted it; no event points at a missing application), plus the retired Partner route (410), validation, limits, authorization, privacy, isolation.
+Also kept: FI-9 (the function's own guards, each half of "active and verified"), FI-10 (anon / authenticated get `42501`; catalog ACL), FI-11 (invariants after everything), plus the retired Partner route (410), validation, limits, authorization, privacy, isolation. Fault injection is a trigger / privilege change / client wrapper that exists only while a control runs. Counts are scoped to the run's own random Merchants.
 
-Fault injection is a trigger / privilege change that exists only while a control runs and is always removed (`finally`). Counts are scoped to the run's own random Merchants.
-
-### 4.3 Privilege checker (recalculated)
-`migration/v2/check-member-function-privileges.sql` + `check-function-privileges.mjs --members`: one function, so **9 assertions + 1 new assertion (no other `*merchant_member*` function) + 1 informational owner row = 11 rows; expected `SUMMARY 11 passed, 0 failed`.** Rehearsal: 11 / 11. **Seven negative controls each fail the right assertion** (grant to PUBLIC ⇒ 4 FAIL; grant to anon ⇒ 2; `SECURITY DEFINER` ⇒ 1; `search_path` reset ⇒ 1; a leftover `reconcile_merchant_member_audit` ⇒ 1; a second overload ⇒ 1; function absent ⇒ 9) and the restored state is 11 / 11 (`02-privilege-checker-negative-controls.log`).
+### 4.3 Privilege checker (recalculated for revision 3)
+The function, its grants and the checker are unchanged, so the recalculation gives the same figures; they were **re-derived, not carried over**: `migration/v2/check-member-function-privileges.sql` + `check-function-privileges.mjs --members` = 9 assertions + 1 "no other `*merchant_member*` function" assertion + 1 informational owner row = **11 rows; `SUMMARY 11 passed, 0 failed`** on the fresh export. Seven negative controls each fail the right assertion and the restored state is 11 / 11 (`02-privilege-checker-negative-controls.log`).
 
 ### 4.4 Planted regressions (mutation testing)
-Each regression is planted alone — SQL in the disposable rehearsal database (restored by re-applying the migration), TypeScript in a scratch copy — the integration suite is run, the original restored. A mutant that does not compile or that Postgres rejects counts as *bad*, not as caught.
+Each regression is planted alone — SQL in the disposable rehearsal database (restored by re-applying the migration), TypeScript in a scratch copy — the integration suite is run, the original restored. A mutant that does not compile or that Postgres rejects counts as *bad*, not as caught. Rerun in full for this revision (the SQL set also covers the new coupling between the function's audit row and the verifier: S19 null actor, S20 other source).
 
-| # | Planted regression | Caught by |
+| Group | Planted regressions | Result |
 |---|---|---|
-| S1 | audit insert removed from the function (row committed without audit) | "audit row" control (section 2) |
-| S2 | audit failure swallowed (`exception when others then null`) | FI-1 |
-| S3 | advisory lock removed | FI-3 |
-| S4 | lock key differs per call (no mutual exclusion) | FI-13 |
-| S5 | e-mail re-check under the lock removed | competing-row control |
-| S6 | actor / Merchant guard removed | FI-9 |
-| **S7** | "Merchant verified" half of the guard dropped | **FI-9 — this one was MISSED on the first run of this revision** (no test had an active-but-unverified Merchant); FI-9 now tests each half separately and S7 is caught |
-| S8 / S9 / S10 | `EXECUTE` also granted to `anon` · `SECURITY DEFINER` · `search_path` unpinned | FI-10 (catalog assertions) |
-| S11 | insert not `STRICT` (a swallowed insert leaves an orphan audit event) | FI-14 |
-| S12 | personal data (name) written into the audit details | "audit row" control |
-| S13 / S14 / S15 | audit written with actor role `admin` · details without `merchant_id` · `entity_id` = code instead of id | "audit row" control |
-| S16 | e-mail not normalised inside the function | FI-9 |
-| S17 / S18 | application created `active` · `verified` | first create control |
-| T1 | replay answered with success without checking the audit | race control (c) |
-| T2 / T3 | matcher ignores `details.merchant_id` · ignores `actor_role` | unit test **and**, with unit tests switched off, FI-5c |
-| T4 | matcher ignores `entity_id` | unit test (see below) |
-| T5 | code shape `COL`+7 hex skips verification (provenance by pattern) | race control (c) |
-| T6 | audit-lookup error treated as success | FI-16 |
-| T7 | the API back-fills the missing creation audit (fabricates an event) | race control (c) |
-| T8 | refused replay no longer flagged in the log | FI-5 |
-| T9 | create reports success when the function call fails | FI-1 |
-| T10 | matcher accepts the removed reconciliation action | unit test (see below) |
-| T4b | `entity_id` ignored in **both** the query filter and the matcher | integration suite alone |
-| T10b | removed reconciliation action accepted in **both** the query filter and the matcher | integration suite alone (FI-5c) |
-| T2b | `merchant_id` **and** `actor_role` ignored in the matcher | integration suite alone (FI-5c) |
+| **SQL, the unchanged function** (S1–S18) | audit insert removed · audit failure swallowed · advisory lock removed / per-call key · e-mail re-check removed · actor / Merchant guard removed · *Merchant-verified* half dropped · `EXECUTE` to `anon` · `SECURITY DEFINER` · `search_path` unpinned · insert not `STRICT` · name in the audit details · role `admin` / no `merchant_id` / `entity_id` = code in the audit row · e-mail not normalised · application created `active` / `verified` | all caught (as in revision 2; S7 stays caught by FI-9's per-half controls) |
+| **SQL, new coupling with the verifier** (S19, S20) | audit row written with a **NULL actor** · with **another `source`** — the function would then write events its own API refuses | caught: the "audit row" control · the first replay control |
+| **Replay path in the service** (T1, T5–T9, T11–T13, T15, T16, T18, T19) | replay answered without checking the audit · "provenance by code shape" (`COL`+7 hex skips verification) · audit-lookup error read as success · **actor-profile lookup error read as success** · the API back-fills the missing audit · refused replay not logged · create reports success when the function fails · refusal answers the retired `500 MEMBER_AUDIT_MISSING` / an actor refusal answers 500 · query asks for ONE row · query without the `entity_id` / `action` filter · profile looked up by the *requester* · actor stage skipped | all caught: race control (c) · FI-16 · **FI-19** · FI-5 · FI-1 · **FI-5c** · **FI-5d** · section-3 replay · **FI-20** |
+| **Verdict-equivalent by design** (T14, T17) | query not ordered · `limit(20)` unordered (the rejected candidate's query) | **not caught, and not a gap:** with the *exactly-one* rule the verdict cannot depend on which rows a larger or unordered cut returns (two or more rows ⇒ refused whichever come back). They are recorded to show that the Low finding's defect class is removed by the rule, not by tuning |
+| **The two pure functions** (T20, M1–M8, A1–A8) | several events tolerated · stage 1 ignores `details.merchant_id` / `actor_role` / `source` / actor id / event time / re-filter by `entity_id` / re-filter by `action` / accepts the removed reconciliation action · stage 2 accepts a missing profile / ignores role / ignores the Merchant binding / ignores the profile's creation time / skips the profile-vs-actor comparison / accepts an unreadable creation time / flips the time comparison / additionally demands `active` | **all caught by the unit tests.** With the unit tests switched off, the **integration suite alone** catches 12 of these 17 (T20, M1–M4, A1–A4, A6–A8: FI-5c, FI-5d, FI-18, the replay controls). The other five are second layers behind a filter that the service already applies — M6 / M7 / M8 (the query filters by entity and action) and A5 (the lookup filters by actor) — or unreachable through the database (M5: `occurred_at` is `timestamptz NOT NULL`, so an unparseable event time cannot be produced) |
+| **Two-layer** (B1–B4) | `entity_id` ignored in **both** the query and stage 1 · `action` ignored in both (any event of the application counts) · profile looked up by the requester **and** not compared with the actor · single-event rule **and** row limit removed | **all caught by the integration suite alone** (replay controls · FI-5c · FI-5d) |
 
-**31 planted regressions, 31 caught, 0 missed** (the 28 above in one run — SQL S1–S18, TypeScript T1–T10 — plus the three two-layer mutants). T4 and T10 are *equivalent at the integration level on purpose*: the query itself already filters on `action` and `entity_id`, so the matcher is a second, independent layer; the unit tests pin the matcher and T4b / T10b prove the integration suite catches the failure when **both** layers are weakened. S8 / S9 are not exploitable behaviourally (the function is `SECURITY INVOKER` and those roles have no table privileges), which is why the control reads the catalog ACL and why the read-only `--members` check is the guarantee for the live database. Log: `06-mutation-matrix.log`.
+**57 planted regressions: 55 caught, 2 verdict-equivalent by design (T14, T17), 0 missed, 0 bad mutants.** (53 in the main matrix — SQL S1–S20, TypeScript T / M / A — plus the four two-layer mutants.) Log: `06-mutation-matrix.log`.
 
-### 4.5 Reproduction on the deployed code
-The new integration suite was run against the **deployed application code** (`backend/src` of `a384f48`; the two files that differ from the candidate are the only source differences — `git diff --stat a384f48 f581154 -- backend/src`) on a database that already has the function (the old code never calls it), with `VNO_CONTINUE_ON_FAIL=1`: **23 PASS, 13 FAIL**. The failures that show the *defect*:
+### 4.5 Reproduction on the earlier sources
+The **new integration suite** (42 controls) was run with `VNO_CONTINUE_ON_FAIL=1` against the application code of two earlier commits (the database already has the function; neither earlier code path can be hurt by that).
 
-| Failing control on `a384f48` | What the deployed code does |
-|---|---|
-| FI-1 | audit write fails ⇒ **the request fails and the application row persists** |
-| FI-1b | the retry is a replay, not a creation: the row has no audit event |
-| FI-2 | 6 parallel requests under the fault: statuses `[201,201,201,201,500,201]` — five "successes" for a row with no audit trail |
-| FI-5 · FI-5c · FI-6 · race control (c) | a replay of an application **with no creation audit** (old row, young row, API-shaped code, late audit) is answered `201 idempotent_replay` — no check, no flag |
-| FI-5b | an Admin-created pending row is returned to the Merchant as an idempotent replay |
-| FI-13 | the call does **not wait** for the lock holder (answered in ~39 ms) — no database-level serialisation |
-| FI-11 | invariant broken: applications with no creation event |
+| Control of the new suite | `ecefe2c` (rejected) | `a384f48` (deployed) |
+|---|---|---|
+| Result | **32 PASS, 10 FAIL** | **24 PASS, 18 FAIL** |
+| Replay of an application with no creation audit (FI-5, FI-5b, FI-6, race control (c), FI-21) | `500 MEMBER_AUDIT_MISSING` — **finding 2** | answered `201 idempotent_replay` with no check (the original defect) |
+| Forged / foreign creation events (FI-5c) | **accepted** as `201 idempotent_replay` — null actor, Admin / Partner user wearing the role `merchant`, an actor of another Merchant, an actor with no profile, a non-API source, a profile newer than the event — **finding 1** | accepted |
+| Several creation events (FI-5d) | **accepted** (first / any matching one wins) | accepted |
+| Moved / re-roled / deleted / re-created creator (FI-18) | **accepted** — today's profile never consulted | accepted |
+| Actor-profile lookup fails (FI-19) | no such lookup: replay succeeds | no such lookup |
+| Audit failure leaves the row (FI-1, FI-1b, FI-2, FI-3), lock not honoured (FI-13), no function-unavailable behaviour (FI-12, FI-15, FI-16) | pass (the atomic create is intact) | fail — the original defect and the *design* difference that the candidate fails closed |
+| FI-11 (invariants) | fails by cascade: FI-5d's surplus events were never cleaned up because that control failed first | fails by cascade |
 
-FI-12, FI-15 and FI-16 also fail on the baseline, but that is a **design difference, not a defect**: they assert that the *candidate* fails closed without the function and verifies the audit before a replay; the deployed code does neither (and keeps working with or without the function — the desired rollback compatibility). Log: `07-baseline-a384f48-reproduction.log`.
+The side-by-side probe makes finding 1 and finding 2 concrete: the **same 35 requests** (the applications and planted events of the new suite) were sent to both builds and only the HTTP answer recorded. **`ecefe2c`: 17 × `201 idempotent_replay` (every forged / multiple / moved-creator case) and 18 × `500 MEMBER_AUDIT_MISSING`; candidate: 35 × `409`, none accepted** (`07d-finding1-and-2-probe-ecefe2c-vs-candidate.log`). Logs: `07a` (`ecefe2c`), `07b` (`a384f48`).
+
+**The two failures that are not caused by this change** (`test:d13a-contracts` — `QR payload remains collaborator code only`; `test:email-delivery` — 37 passed, 2 failed: the signup-confirmation and password-recovery hook messages) were re-run on an export of `a384f48` and of the candidate, both with `frontend/lib` present: **identical on both** (`07c`).
 
 ## 5. Existing production data — read-only (GET-only), unchanged
-Re-run at **2026-11-11T08:49Z** with the edited `analyze-member-audit-gaps.mjs` (GET-only by construction, pinned to the live host, reads no name / phone / bank field, hashes e-mails in memory). Evidence: `…-rev2/hosted-data-analysis/summary.json` (identifiers and counts only; contains no `@`).
+Re-run at **2026-11-11T16:35Z** with `analyze-member-audit-gaps.mjs` (GET-only by construction, pinned to the live host, reads no name / phone / bank field, hashes e-mails in memory). Evidence: `…-rev3/hosted-data-analysis/summary.json` (identifiers and counts only; contains no `@`).
 
 | Question | Result |
 |---|---|
-| `collaborators` rows | 384 (same as the first analysis at 02:31Z); 4 carry a `merchant_system_id` |
+| `collaborators` rows | **384** (unchanged since the first analysis); 4 carry a `merchant_system_id` |
 | Any application created through the Members API? | **No.** 0 rows with the code shape; **0** `collaborator.member_application_created` events; no reconciliation events exist or ever did |
 | Applications needing repair | **0** |
 | Orphan audit events / entities with > 1 creation event | 0 / 0 |
-| Pending rows per Merchant | max **1** (cap 50) |
-| Duplicate e-mails (case-insensitive) | **3 groups of 2 rows** — preserved, untouched (`COL-F003CC3F02C48BC8`/`COL-4753E20CBA4FE801`, `COL-D600ABC8D5C2C528`/`COL-05C60E056C3D4B5B`, `COL-8C79BF554AA24BD5`/`COL-80BFCB2967EDD04C`) |
-| `COL-05C60E056C3D4B5B` (id `a71ce95a-f99c-4195-b5a5-df90ab47171f`) | **present and unchanged**: pending, unverified, tagged to a Merchant, no login, registered 2026-10-31T16:30Z, same e-mail as the active Partner `COL-D600ABC8D5C2C528`, no audit event. Not a Members-API row (code shape `COL-`+16 hex). Still awaiting an owner decision; **nothing was changed; no unique index is introduced in this revision** |
+| Duplicate e-mails (case-insensitive) | **3 groups of 2 rows** — preserved, untouched |
+| `COL-05C60E056C3D4B5B` | **present and unchanged** (pending, unverified, tagged to a Merchant, no login, no audit event; same e-mail as an active Partner). Still awaiting an owner decision; **nothing was changed; no unique index is introduced in this revision** |
+| New for revision 3 — Merchant profiles (the actor check reads `user_profiles.created_at`) | **156** Merchant profiles; **none** has a null / unreadable / future `created_at` (earliest 2026-09-13, latest 2026-11-08), **all** are bound to a Merchant (154 active, 2 pending): the actor check cannot refuse a legitimate creator for lack of data |
 
-## 6. Production database preflight (reviewer item P)
+## 6. Production database preflight
 
-**Prepared.** `migration/v2/preflight-members-catalog.sql` + `.mjs` run on an authorized host connection to `hsezyogfxgnkpweoqqny` and check, against the **hosted** catalog: columns and types, bounded-`varchar` lengths, NOT NULL columns without a default, constraints (CHECK / UNIQUE / FK), indexes, triggers, RLS and policies, privileges and role attributes, existing functions (name clash, advisory-lock namespace), event triggers, default privileges, extensions, the migration history, plus aggregates and before / after digests. Read-only session, no credentials in output or evidence, no row data. The precise procedure — preconditions, command, interpretation table of every gate, expected values, re-run discipline, tool hashes — is `docs/VNO_V2_MEMBERS_HOSTED_CATALOG_PREFLIGHT_PROCEDURE_20261111.md`. **I did not ask for, and do not hold, any database credential.**
+**Prepared and extended.** `migration/v2/preflight-members-catalog.sql` + `.mjs` check, against the **hosted** catalog: columns and types, bounded-`varchar` lengths, NOT NULL columns without a default, constraints (CHECK / UNIQUE / FK), indexes, triggers, RLS and policies, privileges and role attributes, existing functions (name clash, advisory-lock namespace), event triggers, default privileges, extensions, the migration history, plus aggregates and before / after digests. **Revision 3 adds three gates** for what the API now *reads* (`audit_events.id` bigint, `audit_events.occurred_at` timestamptz, `user_profiles.created_at` timestamptz) and one informational row (an index leading with `(entity_type, entity_id)` — the access path of the replay lookup). Read-only session, no credentials in output or evidence, no row data. Procedure, interpretation table, expected values and tool hashes: `docs/VNO_V2_MEMBERS_HOSTED_CATALOG_PREFLIGHT_PROCEDURE_20261111.md`. **I did not ask for, and do not hold, any database credential.**
 
-**Tested locally:** 54 gates PASS on a faithful pre-apply state; **11 negative controls each trip exactly the intended gate** (unique e-mail index, CHECK on `action`, BEFORE INSERT trigger, an unwritten NOT NULL column, a too-short `varchar`, a revoked privilege, a leftover reconcile function, an already-applied function, wrong migration history, a lock-prefix clash, a missing column); restored state 54 / 54 (`04-catalog-preflight-rehearsal.log`).
+**Tested locally:** **57 gates PASS** on a faithful pre-apply state (the three new gates raise the count from 54); **14 negative controls each trip exactly the intended gate(s)** — unique e-mail index, CHECK on `action`, BEFORE INSERT trigger, an unwritten NOT NULL column, a too-short `varchar`, a revoked privilege, a leftover reconcile function, an already-applied function (3 related gates), wrong migration history (3 related gates), a lock-prefix clash, a missing column, and — new — `user_profiles.created_at` renamed, `audit_events.occurred_at` renamed, `user_profiles.created_at` of the wrong type; with the entity index dropped the new INFO row says `NONE` and no gate fails; restored state 57 / 57 (`04-catalog-preflight-rehearsal.log`). *Incidental proof the gates bite:* a first run on a database polluted by the mutation testing (broken mutants had really inserted two rows with the same code) failed `no duplicate collaborators_code`; on a freshly rebuilt database the same run is 57 / 57.
 
 **Hosted result — partially resolved, with an explicit blocker.**
-* **Resolved without a password** (GET-only `migration/v2/rest-schema-probe.mjs`, one OpenAPI request, no table read; evidence `…-rev2/hosted-rest-schema-probe/`): **33 PASS, 0 FAIL, 1 UNRESOLVED.** The four tables are exposed; every column the function writes or reads exists with the right type family and enough room; `collaborators` has no NOT NULL column without a default that the function omits; `create_merchant_member_application` is **not** callable yet; no other `*merchant_member*` function is.
+* **Resolved without a password** (GET-only `migration/v2/rest-schema-probe.mjs`, one OpenAPI request, no table read; evidence `…-rev3/hosted-rest-schema-probe/`): **36 PASS, 0 FAIL, 1 UNRESOLVED.** The four tables are exposed; every column the function writes **or the API reads** exists with the right type family and enough room (including the new `user_profiles.created_at`, `audit_events.occurred_at`, `audit_events.id`); `collaborators` has no NOT NULL column without a default that the function omits; `create_merchant_member_application` is **not** callable yet; no other `*merchant_member*` function is.
 * **UNRESOLVED:** `audit_events.id` (bigint NOT NULL, no default visible over REST — what an identity column looks like).
-* **BLOCKER:** constraints, indexes, triggers, RLS / policies, privileges, role attributes, event triggers and the migration history are **not visible over REST**. They stay unresolved until the owner (or a delegate holding the VNO database credentials) runs the catalog preflight at a host terminal. Until then **the schema change must not be applied.**
+* **BLOCKER:** constraints, indexes, triggers, RLS / policies, privileges, role attributes, event triggers and the migration history are **not visible over REST**. They stay unresolved until the owner (or a delegate holding the VNO database credentials) runs the catalog preflight at a host terminal. **The schema change must not be applied before that, and approval of the migration should not be requested as final until it has run.**
 
 ## 7. Assessment for the following release (not part of this revision)
 
 ### 7.1 Database uniqueness constraint on the e-mail — acknowledged limitation preserved
-* **What exists now:** the function serialises concurrent *calls of itself* per e-mail across instances (FI-13). It does **not** stop a writer that takes no lock — the previous API during a rolling deploy, Partner registration, Admin create. Reproduced in the first revision: a session inserting the same e-mail without the lock while the function runs yields two rows. This revision no longer self-heals such a duplicate (it never did after the convergence delete was removed). Practical exposure today is nil (no Members creation has ever been recorded).
-* **A full `unique (lower(collaborators_email))` cannot be created today** — the 3 duplicate groups block it. A pending-only partial index could, but would not cover the dangerous case (a pending row duplicating an **active** Partner's e-mail — exactly `COL-05C60E056C3D4B5B`). **Not introduced in this revision, as instructed.**
-* **Recommendation: prepare for the following release** — owner decisions per duplicate group through the governed Admin flow, `create unique index concurrently` as its own controlled step, a `unique_violation` handler mapping to `EMAIL_HELD`, optionally a uniqueness constraint on `collaborators_code`.
+* **What exists now:** the function serialises concurrent *calls of itself* per e-mail across instances (FI-13). It does **not** stop a writer that takes no lock — the previous API during a rolling deploy, Partner registration, Admin create. Practical exposure today is nil (no Members creation has ever been recorded). The "exactly one creation event" rule (§2.3) fails closed if such a race ever produced two applications' worth of confusion; it does not repair it.
+* **A full `unique (lower(collaborators_email))` cannot be created today** — the 3 duplicate groups block it. A pending-only partial index would not cover the dangerous case (a pending row duplicating an **active** Partner's e-mail — exactly `COL-05C60E056C3D4B5B`). **Not introduced in this revision, as instructed.**
+* **Recommendation: prepare for the following release** — owner decisions per duplicate group through the governed Admin flow, `create unique index concurrently` as its own controlled step, a `unique_violation` handler mapping to `EMAIL_HELD`.
 
 ### 7.2 Durable throttling
-Per-Merchant limits are in process memory (10 / h, 40 / day; reset on restart, multiplied by replicas — 1 today) and the pending cap (50) is counted in the database but **not atomic with the insert**. No usage data exists to size anything. Best option: count `created` audit events per Merchant **inside the create function under a per-Merchant advisory lock** — durable, atomic with the insert, no new table. **Recommendation: design it with 7.1 for the following release; keep the current values until real usage exists.**
+Per-Merchant limits are in process memory and the pending cap (50) is counted in the database but **not atomic with the insert**. Best option: count `created` audit events per Merchant **inside the create function under a per-Merchant advisory lock**. **Recommendation: design it with 7.1; keep the current values until real usage exists.**
 
 ## 8. Observations outside this scope (not changed)
-1. **Audit call sites — 30 remain.** `audit.record(` has **31** call sites at the deployed baseline `a384f48`; the Members create was one of them and no longer is, leaving **30** at the candidate: merchants 8, collaborators 9, invitations 5, media 3, user-profiles 2, partner-registration 1, auth 1, activation 1. They keep the "write, then audit in a second call" pattern; the money-moving flows already audit inside database functions. They stay **outside this release**; a prioritised inventory is recommended.
+1. **Audit call sites — 30 remain** (`audit.record(` had 31 at the deployed baseline `a384f48`; the Members create no longer is one): merchants 8, collaborators 9, invitations 5, media 3, user-profiles 2, partner-registration 1, auth 1, activation 1. They keep the "write, then audit in a second call" pattern and stay **outside this release**; a prioritised inventory is recommended. (Re-counted for this revision with `git grep -c 'audit\.record(' -- backend/src`: 31 at `a384f48`, 30 at the candidate; the number is unchanged by revision 3.)
 2. The pending cap and the rate limits are not atomic with the insert (§7.2).
-3. Pre-existing, not caused by this change: Partner registration and Admin create de-duplicate e-mail with no lock and no unique index (Admin create also stores it un-normalised); the Partner code is 28 bits of randomness with no uniqueness check; a Merchant can pre-claim any e-mail with a pending row (mitigated by the generic 409 and the rate limits); `toLowerCase()` runs before the ASCII e-mail regex, so `Kelvin@x.vn` (Kelvin sign) is accepted and stored as `kelvin@x.vn`.
+3. Pre-existing, not caused by this change: Partner registration and Admin create de-duplicate e-mail with no lock and no unique index (Admin create also stores it un-normalised); the Partner code is 28 bits of randomness with no uniqueness check; a Merchant can pre-claim any e-mail with a pending row (mitigated by the generic 409 and the rate limits).
 4. The `23505` code-collision retry is unchanged and still not exercised by a test (the rehearsal schema has no unique index on the code).
 
 ## 9. Independent review
 
 ### 9.1 Hand-off brief for Codex
-Review the code commit `f58115481ef95bb6c7a73034db4729cd49ebc103` (and the tooling commit `b0f6149`) against `a384f48` and against the rejected `757af5e`:
-`git diff a384f48 f581154 -- backend/src supabase migration backend/scripts` · `git diff 757af5e f581154`. Do not rely on this document; this reproduces every claim from a clean export:
+Review `HEAD` (runtime code `e353f9e`) against `ecefe2c` (rejected), `757af5e` (rejected) and `a384f48` (deployed):
+`git diff ecefe2c HEAD -- backend supabase migration/v2` · `git diff a384f48 HEAD -- backend/src supabase`. Reproduce from a clean export (do not rely on this document):
 ```
 git archive <HEAD> | tar -x -C /tmp/cand && cd /tmp/cand
 (cd backend && npm ci && npm run build && npx tsc --noEmit && npx eslint src/modules/merchants)
 bash migration/v2/rehearsal/start-rehearsal-stack.sh                                   # disposable Postgres 17 + PostgREST v14.5, loopback only
-(cd backend && npm run test:merchant-members)                                          # unit: 34
-(cd backend && npm run test:rehearsal-merchant-members)                                # integration: 36
+(cd backend && npm run test:merchant-members)                                          # unit: 38
+(cd backend && npm run test:rehearsal-merchant-members)                                # integration: 42
 PATH=/opt/homebrew/opt/libpq/bin:$PATH node migration/v2/check-function-privileges.mjs --rehearsal --members     # 11 passed, 0 failed
+PATH=/opt/homebrew/opt/libpq/bin:$PATH node migration/v2/preflight-members-catalog.mjs --rehearsal                # 57 gates, 0 failed (pre-apply state)
 ```
 **Where I would push hardest**
-1. *Replay verification.* Is "action + entity type + application id + merchant actor + `details.merchant_id`" the right definition of a verifiable match? Anything that lets a row without a genuine creation event earn a 2xx, or refuses a genuine one?
-2. *Fail-closed choices.* `500 MEMBER_AUDIT_MISSING` (not a 409) so monitoring sees it; the rolling-deploy false positive (§2.3-1); the Admin-created-identical-row case (§2.3-2).
-3. *Hosted vs rehearsal.* Everything §6 lists as unresolved.
-4. *What the lock does not cover* (§7.1), and whether the tests could pass vacuously (the trigger-based fault injection, the three-instance race, FI-13, FI-11, the mutation matrix).
-5. *Interpretation of "an attempted late audit write"* (§4.2).
+1. *Is the actor check sufficient for "historical role / Merchant changes"?* §2.2 argues that no profile-based check can prove a past instant, that the event is the creation-time evidence, and that today's profile is used as a necessary condition only; that conservative refusals (moved / re-roled / deleted / re-created creator) are acceptable; and that a deactivated-but-bound creator is accepted. Challenge each of those three choices, and the `created_at ≤ occurred_at` condition.
+2. *"Exactly one" creation event.* Refusing several events means a forged extra event can turn a genuine replay into a 409 (fail closed). Is that the right side to err on?
+3. *409 for every unprovable replay.* The caller can no longer distinguish "cannot be proven" from any other conflict; the signal moved to a log line. Is a log line enough for monitoring, and is the rolling-deploy false positive (§2.5-1) acceptable?
+4. *Hosted vs rehearsal:* everything §6 lists as unresolved, and the three new reads.
+5. *Could the new tests pass vacuously?* Mutation matrix (§4.4), the old-matcher regression in the unit test, the client wrapper used for the profile-lookup failure (FI-19).
+6. *Interpretation of "an attempted late audit write"* (§4.2).
 
-### 9.2 Earlier supplemental review (fresh-context Claude agent — superseded where noted)
-The review of `4496840` found: (1) a Medium — reconciliation could write a false "audit missing" event for an Admin-created row — **gone with the function**; (3) `IN_FLIGHT` answered 2xx without an audit trail — **gone**; (2) the lock does not cover lock-free writers — **kept, documented (§7.1)**; (4) an insert yielding no row left an orphan audit event — **fixed, `STRICT`, FI-14**; (5) function-level validation weaker than its message — **fixed (blank checks include tab / CR / LF; the normalised e-mail is stored; FI-9)**; (6) cap / limiters outside the transaction — **documented (§7.2, §8)**; (7) weak tests — **fixed earlier; this revision adds the controls above**. It was a supplement, not a substitute for Codex.
+### 9.2 Earlier reviews (superseded where noted)
+Codex's NO-GO for `757af5e` (reconciliation complexity) is resolved in `ecefe2c`; Codex's NO-GO for `ecefe2c` is this revision. The earlier supplemental review by a fresh-context Claude agent on `4496840` found a false "audit missing" reconciliation event (gone with the function), an in-flight 2xx without an audit trail (gone), the lock-free-writer gap (kept, §7.1), an orphan audit event when an insert yields no row (fixed, `STRICT`, FI-14), weak function-level validation (fixed) and cap / limiter placement (documented). It was a supplement, not a substitute for Codex.
 
 ## 10. Proposed release (for the owner's decision — NOT authorised, NOT executed)
 1. Codex review with no open High / Medium finding.
 2. **The hosted catalog preflight is run (§6) and every gate is PASS.**
 3. Owner approves **(a)** the schema change and **(b)** push + deploy of the candidate HEAD.
 4. Owner applies the migration per §3; `--members` = 11 / 11; read-only smoke test; preflight digests.
-5. Claude pins **API only** (the Web is unchanged: `frontend/` is byte-identical to the deployed one), verifies SUCCESS, `/health` 200, exact `meta.commitHash`; runs the **write-safe** hosted checks only (spec `102`, `00-unauth`, the 52 approved safe cases).
-6. *Only if the owner confirms it for this release:* the controlled Production business test the owner has previously authorized — **one** Merchant-member creation, with an owner-designated Merchant and e-mail alias. Expected: `201`, exactly **one** `collaborators` row and **one** creation event; a repeat returns `201 idempotent_replay:true` with no second row or event. No deletion afterwards (an Admin rejects the application through the governed flow). It is the first hosted execution of the insert path and fails closed.
+5. Claude pins **API only** (the Web is unchanged), verifies SUCCESS, `/health` 200, exact `meta.commitHash`; runs the **write-safe** hosted checks only.
+6. *Only if the owner confirms it for this release:* the controlled Production business test the owner has previously authorized — **one** Merchant-member creation, with an owner-designated Merchant and e-mail alias. Expected: `201`, exactly **one** `collaborators` row and **one** creation event whose actor is that Merchant's user; a repeat returns `201 idempotent_replay:true` with no second row or event; a repeat by a *second* user of the same Merchant (if the owner supplies one) likewise. No deletion afterwards (an Admin rejects the application through the governed flow).
 7. Codex verifies Production. Rollback: re-stage the API to `a384f48` (`77d16db1…`); the function may stay.
 
 ## 11. Recommendation — three separate decisions (none is an approval)
 
 ### 11.1 This remediation (one function + API) — **GO, conditional**
-*Why:* the defect is reproduced on the deployed code and removed by a transaction; the design is now the smallest that is correct (one function, no repair logic, a read-only verification on replay); 36 integration controls — fault injection, three-instance races, a lock contract, replay verification, an unavailable function, a rollback drill — pass three times on a clean export; the planted-regression matrix is in §4.4; the change is additive and reversible without data loss; *production has never recorded a Members creation* (§5), so there is nothing to repair and no user is affected while it is scheduled.
-*Conditions (all must hold; any failure ⇒ NO-GO for that step):* (1) Codex's independent review has no open High / Medium finding; (2) the **hosted catalog preflight is run and every gate is PASS** — this is the one thing the rehearsal cannot prove and it is currently an open blocker; (3) the owner approves the schema change and the push + deploy; (4) after applying: `--members` = **11 / 11** and the read-only smoke test returns `NOT_ALLOWED` — before the API is deployed.
-*Residuals the owner accepts by approving:* (a) lock-free writers can still create a duplicate e-mail until the unique index of 11.2 exists (acknowledged limitation, practical exposure nil today); (b) the first real creation is the first hosted execution of the insert path; (c) the rolling-deploy false positive and the Admin-identical-row refusal of §2.3; (d) the guards listed in §8.
+*Why:* the defect is reproduced on the deployed code and removed by a transaction; replay now requires evidence that is both present and coherent with the user directory, and degrades to the ordinary conflict — not a wrong success — whenever it is not; 42 integration controls (fault injection, three-instance races, a lock contract, replay verification with forged / foreign / moved actors, an unavailable function, a rollback drill) pass three times on a clean export; the planted-regression matrix is in §4.4; the change is additive and reversible without data loss; *production has never recorded a Members creation* (§5), so nobody is affected while it is scheduled.
+*Conditions (all must hold):* (1) Codex's independent review has no open High / Medium finding; (2) the **hosted catalog preflight is run and every gate is PASS** — currently an open blocker; (3) the owner approves the schema change and the push + deploy; (4) after applying: `--members` = **11 / 11** and the read-only smoke test returns `NOT_ALLOWED` — before the API is deployed.
+*Residuals the owner accepts by approving:* (a) lock-free writers can still create a duplicate e-mail until the unique index of 11.2 exists; (b) the first real creation is the first hosted execution of the insert path; (c) the rolling-deploy false positive and the conservative refusal after a creator's profile changed (§2.5); (d) the forged-event residual of §2.2 (needs `service_role` write access); (e) the guards listed in §8.
 *Urgency:* low to moderate — a latent defect in a feature nobody has used; it is not an incident.
 
 ### 11.2 Database uniqueness constraint — **NO-GO to apply now; GO to prepare**
-Three duplicate-e-mail groups block a full unique index; owner decisions are needed first (§7.1). Not a prerequisite for 11.1.
-
 ### 11.3 Durable throttling — **GO to design and bundle with 11.2; not needed for 11.1**
 
 ### Decisions the owner will need to make
 1. Approve (or not) the schema change and release of §10 — after Codex's review **and** the hosted catalog preflight.
 2. Who runs the hosted catalog preflight (§6) and when.
-3. What to do with the pending row `COL-05C60E056C3D4B5B` and the three duplicate-e-mail groups (leave / reject through the governed Admin flow) — needed for 11.2, not for 11.1.
+3. What to do with `COL-05C60E056C3D4B5B` and the three duplicate-e-mail groups (needed for 11.2, not for 11.1).
 4. Whether to include the controlled single Merchant-member creation of §10-6 in this release.
 5. Whether to commission the inventory of the 30 remaining write-then-audit call sites.

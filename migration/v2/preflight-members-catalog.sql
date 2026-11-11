@@ -38,10 +38,13 @@ with
     ('audit_events',  'entity_id',                    'text',        36),
     ('audit_events',  'source',                       'text',        12),
     ('audit_events',  'details',                      'jsonb',       null),
+    ('audit_events',  'id',                           'bigint',      null),     -- read by the API's replay verification (ordering + the event id in the log)
+    ('audit_events',  'occurred_at',                  'timestamptz', null),     -- read by the replay verification (was the actor's profile already there?)
     ('user_profiles', 'user_id',                      'uuid',        null),
     ('user_profiles', 'role',                         'text',        null),
     ('user_profiles', 'merchant_id',                  'uuid',        null),
     ('user_profiles', 'user_profiles_status',         'text',        null),
+    ('user_profiles', 'created_at',                   'timestamptz', null),     -- read by the replay verification (the creator's profile must pre-date the creation event)
     ('merchant_details', 'merchant_system_id',        'uuid',        null),
     ('merchant_details', 'merchants_status',          'text',        null),
     ('merchant_details', 'merchant_verified',         'boolean',     null)
@@ -184,6 +187,9 @@ with
            'actor_role=merchant: ' || exists (select 1 from public.audit_events where actor_role = 'merchant') || ', entity_type=collaborator: ' || exists (select 1 from public.audit_events where entity_type = 'collaborator')
            || ', source=v2-admin-api: ' || exists (select 1 from public.audit_events where source = 'v2-admin-api')
     -- ===================================================== 5xxx functions ====================================================================================
+    union all
+    select 2955, 'INFO audit_events: an index whose leading columns are (entity_type, entity_id) exists (the access path of the API replay lookup)', 'INFO',
+           coalesce((select string_agg(x.idxname, ', ' order by x.idxname) from idx x where x.t = 'audit_events' and x.def ~* '\(entity_type, entity_id'), 'NONE (the lookup still works, but by scanning)')
     union all
     select 5000, 'GATE create_merchant_member_application does not exist yet (any overload, schema public): the migration has not been applied',
            case when count(*) = 0 then 'PASS' else 'FAIL' end, coalesce(string_agg(f.proname || '(' || f.args || ')', ', '), 'none')

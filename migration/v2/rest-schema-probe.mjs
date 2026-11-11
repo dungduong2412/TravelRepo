@@ -55,8 +55,8 @@ const need = [
   ['collaborators', 'collaborators_password', 'text'], ['collaborators', 'collaborators_registered_date', 'timestamptz'], ['collaborators', 'collaborators_verified', 'boolean'],
   ['collaborators', 'collaborators_status', 'text'], ['collaborators', 'id', 'uuid'],
   ['audit_events', 'actor_auth_user_id', 'uuid'], ['audit_events', 'actor_role', 'text', 8], ['audit_events', 'action', 'text', 38], ['audit_events', 'entity_type', 'text', 12],
-  ['audit_events', 'entity_id', 'text', 36], ['audit_events', 'source', 'text', 12], ['audit_events', 'details', 'jsonb'],
-  ['user_profiles', 'user_id', 'uuid'], ['user_profiles', 'role', 'text'], ['user_profiles', 'merchant_id', 'uuid'], ['user_profiles', 'user_profiles_status', 'text'],
+  ['audit_events', 'entity_id', 'text', 36], ['audit_events', 'source', 'text', 12], ['audit_events', 'details', 'jsonb'], ['audit_events', 'occurred_at', 'timestamptz'], ['audit_events', 'id', 'bigint'],
+  ['user_profiles', 'user_id', 'uuid'], ['user_profiles', 'role', 'text'], ['user_profiles', 'merchant_id', 'uuid'], ['user_profiles', 'user_profiles_status', 'text'], ['user_profiles', 'created_at', 'timestamptz'],
   ['merchant_details', 'merchant_system_id', 'uuid'], ['merchant_details', 'merchants_status', 'text'], ['merchant_details', 'merchant_verified', 'boolean'],
 ];
 const written = {
