@@ -56,7 +56,7 @@ if (!summary || summary.passed + summary.failed + summary.info !== rows.length) 
 
 for (const x of rows.filter((x) => x.verdict !== 'INFO')) console.log(`  ${x.verdict}  ${x.label}${x.detail ? `\n        ${x.detail}` : ''}`);
 console.log(`\n${rows.filter((x) => x.verdict === 'INFO').length} informational inventory rows are in the evidence file (columns, constraints, indexes, triggers, policies, functions, aggregates, digests).`);
-for (const x of rows.filter((x) => x.verdict === 'INFO' && /^(INFO digest|INFO registered migrations|INFO collaborators: rows|INFO collaborators: groups|INFO audit_events: rows)/.test(x.label))) console.log(`  ${x.label}\n        ${x.detail}`);
+for (const x of rows.filter((x) => x.verdict === 'INFO' && /^(INFO digest|INFO registered migrations|INFO collaborators: rows|INFO collaborators: groups|INFO collaborators with the Members code shape|INFO audit_events: rows|INFO the one pending row)/.test(x.label))) console.log(`  ${x.label}\n        ${x.detail}`);
 
 const dir = resolve(arg('--out') || join(REPO, `migration/v2/evidence/members-catalog-preflight-${ts}`));
 mkdirSync(dir, { recursive: true, mode: 0o700 });
