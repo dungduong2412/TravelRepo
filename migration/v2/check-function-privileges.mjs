@@ -5,7 +5,7 @@
 //     cd migration/v2 && PATH=/opt/homebrew/opt/libpq/bin:$PATH node check-function-privileges.mjs
 //   Disposable local rehearsal database only (docker container vno-rehearsal-pg on :54999):
 //     node check-function-privileges.mjs --rehearsal
-//   Add --members to check the two Merchant-member functions of 20261111000001 instead (check-member-function-privileges.sql), e.g. `--rehearsal --members`.
+//   Add --members to check the Merchant-member function of 20261111000001 instead (check-member-function-privileges.sql), e.g. `--rehearsal --members`.
 //
 // It cannot change anything: the session is opened with default_transaction_read_only=on, the SQL runs inside
 // `begin read only … rollback`, and only catalog functions (pg_proc, has_*_privilege, aclexplode) are queried.
@@ -18,7 +18,7 @@ import { join, resolve } from 'node:path';
 const REPO = new URL('../../', import.meta.url).pathname;
 const EXPECTED_PROJECT_REF = 'hsezyogfxgnkpweoqqny';
 const rehearsal = process.argv.includes('--rehearsal');
-const members = process.argv.includes('--members');   // check the two Merchant-member functions (20261111000001) instead of the transaction functions
+const members = process.argv.includes('--members');   // check the Merchant-member function (20261111000001) instead of the transaction functions
 const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
 const die = (msg) => { console.error(`\nFATAL: ${msg}`); process.exit(1); };
 

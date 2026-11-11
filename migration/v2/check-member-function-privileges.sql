@@ -1,15 +1,17 @@
--- READ-ONLY security check of the two Merchant-member functions added by 20261111000001_vno_merchant_member_atomic_create.sql.
+-- READ-ONLY security check of the ONE Merchant-member function added by 20261111000001_vno_merchant_member_atomic_create.sql (create_merchant_member_application).
 -- Run it through `node check-function-privileges.mjs --members` (which also forces a read-only session). It changes nothing.
 --
 -- Output, one row per line:  ord | label | PASS or FAIL | detail      and a last line  SUMMARY | passed | failed
 --
--- Expected end state for BOTH functions: exactly one overload, an explicit ACL, EXECUTE for service_role (and the owner) only — never PUBLIC, anon or
+-- Expected end state: exactly one overload, an explicit ACL, EXECUTE for service_role (and the owner) only — never PUBLIC, anon or
 -- authenticated — SECURITY INVOKER with a pinned search_path. A NULL ACL would mean the PostgreSQL default, which grants EXECUTE to PUBLIC.
--- Run it BEFORE the migration and every row is a FAIL ("function not found"); that is the expected "not applied yet" state.
+-- Expected result after the migration: 11 rows = 10 security assertions (all PASS) + 1 informational owner row (always PASS), i.e. SUMMARY|11|0.
+-- Run it BEFORE the migration and the function checks are FAIL ("function not found"); that is the expected "not applied yet" state (the 'no other merchant_member
+-- function' check still passes).
 begin read only;
 
 with
-  t(fname, nargs) as (values ('create_merchant_member_application', 8), ('reconcile_merchant_member_audit', 3)),
+  t(fname, nargs) as (values ('create_merchant_member_application', 8)),
   allfn as (
     select p.oid, p.proname from pg_proc p join t on t.fname = p.proname where p.pronamespace = 'public'::regnamespace
   ),
@@ -66,6 +68,10 @@ with
            coalesce((select coalesce(f.proconfig, '{}'::text[]) @> array['search_path=pg_catalog, public'] from f where f.proname = t.fname), false),
            coalesce((select coalesce(array_to_string(f.proconfig, ' '), 'none') from f where f.proname = t.fname), 'function not found')
     from t
+    union all
+    select 60, 'no other function named like *merchant_member* exists in public (the reconciliation function is not part of this design)',
+           (select count(*) from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname like '%merchant\_member%' and p.proname <> 'create_merchant_member_application') = 0,
+           coalesce((select string_agg(p.proname, ', ' order by p.proname) from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname like '%merchant\_member%' and p.proname <> 'create_merchant_member_application'), 'none')
     union all
     select 90, t.fname || ': owner (information)', true,
            coalesce((select 'owner=' || f.owner from f where f.proname = t.fname), 'function not found')

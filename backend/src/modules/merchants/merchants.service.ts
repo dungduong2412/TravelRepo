@@ -1,11 +1,11 @@
-import { BadRequestException, ConflictException, ForbiddenException, HttpException, HttpStatus, Injectable, Inject, NotFoundException, UnprocessableEntityException, forwardRef } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, HttpException, HttpStatus, Injectable, Inject, Logger, NotFoundException, UnprocessableEntityException, forwardRef } from '@nestjs/common';
 import { PostgresUuidSchema } from '../../common/validation/postgres-uuid';
 import { randomBytes } from 'crypto';
 import { SupabaseService } from '../../infrastructure/supabase/supabase.service';
 import { describeIssue } from '../../common/validation/field-errors';
 import { KeyedLock } from '../../common/concurrency/keyed-lock';
 import { SlidingWindowLimiter } from '../../common/http/rate-limiter';
-import { MemberRow, escapeLike, memberLimits, parseCreateMemberRpc, parseReconcileRpc, sameMemberData, toCreatedMemberView, toMemberListItem } from './merchant-members';
+import { MEMBER_CREATED_ACTION, MemberRow, escapeLike, hasMatchingCreationAudit, memberLimits, parseCreateMemberRpc, sameMemberData, toCreatedMemberView, toMemberListItem } from './merchant-members';
 import {
   AdminCreateMerchantDto,
   AdminUpdateMerchantDto,
@@ -24,6 +24,8 @@ import { ApplicationEmailService } from '../auth-email-hook/application-email.se
 
 @Injectable()
 export class MerchantsService {
+  private readonly logger = new Logger(MerchantsService.name);
+
   constructor(
     private readonly supabase: SupabaseService,
     @Inject(forwardRef(() => UserProfilesService))
@@ -525,12 +527,12 @@ export class MerchantsService {
       return mine && rows.length === 1 ? mine : null;
     };
 
-    // The e-mail is already held. The very same submission is an idempotent replay (and a replay never leaves its application without a creation audit event);
-    // anything else holding the e-mail is the generic conflict.
+    // The e-mail is already held. The very same submission is an idempotent replay, answered with success ONLY if the application's creation audit event can be
+    // read (nothing is ever written to make it exist); anything else holding the e-mail is the generic conflict.
     const answerExisting = async (rows: MemberRow[]) => {
       const replay = verdictFor(rows);
       if (!replay) throw this.emailUnavailable();
-      await this.ensureCreationAudit(userId, merchantId, replay.id);
+      await this.requireVerifiedCreationAudit(userId, merchantId, replay.id);
       return toCreatedMemberView(replay, true);
     };
 
@@ -581,18 +583,19 @@ export class MerchantsService {
   }
 
   /**
-   * A replay answers 2xx ONLY when the application has an audit trail. The database function writes ONE distinct 'collaborator.member_application_audit_reconciled'
-   * event if, and only if, the application was created by this API, has no creation / reconciliation event and is older than 30 seconds. A younger one may still
-   * be being audited by its creator (the previous API during a rolling deploy): nothing is written and the caller gets a retryable 409. Anything else fails.
+   * A replay answers 2xx ONLY when the application's matching creation audit event can be READ. This is a read-only check: it never writes, back-fills or
+   * infers an audit event, and nothing about the application (its code shape, its age, its state) is accepted in place of one. If the event is not there - an
+   * application left behind by the previous API's non-atomic write, or any row created by a path that audits differently - the request fails closed with a
+   * controlled error, and one log line (ids only, no personal data) flags the application for manual investigation.
    */
-  private async ensureCreationAudit(userId: string, merchantId: string, memberId: string) {
-    const { data, error } = await this.supabase.getClient().rpc('reconcile_merchant_member_audit', { p_actor_user_id: userId, p_merchant_id: merchantId, p_member_id: memberId });
-    const outcome = error ? 'INVALID' : parseReconcileRpc(data);
-    if (outcome === 'ALREADY_AUDITED' || outcome === 'RECONCILED') return;
-    if (outcome === 'IN_FLIGHT') throw this.memberFail(HttpStatus.CONFLICT, 'MEMBER_AUDIT_PENDING', 'Hồ sơ này vừa được tạo và đang được ghi nhận. Vui lòng thử lại sau ít giây.', { retry_after_seconds: 30 });
-    if (outcome === 'NOT_ALLOWED') throw this.memberFail(HttpStatus.FORBIDDEN, 'MERCHANT_NOT_ACTIVE', 'Cửa hàng cần được Admin VNO phê duyệt và đang hoạt động mới có thể thêm thành viên.');
-    if (outcome === 'NOT_ELIGIBLE') throw this.emailUnavailable();      // not this Merchant's own API-created pending application (or it changed state in the meantime)
-    throw this.memberFail(HttpStatus.INTERNAL_SERVER_ERROR, 'MEMBER_AUDIT_FAILED', 'Chưa thể ghi nhận hồ sơ này lúc này. Vui lòng thử lại sau.');
+  private async requireVerifiedCreationAudit(userId: string, merchantId: string, memberId: string) {
+    const { data, error } = await this.supabase.getClient().from('audit_events')
+      .select('action,entity_type,entity_id,actor_role,details')
+      .eq('action', MEMBER_CREATED_ACTION).eq('entity_type', 'collaborator').eq('entity_id', memberId).limit(20);
+    if (error) throw this.memberFail(HttpStatus.INTERNAL_SERVER_ERROR, 'MEMBER_LOOKUP_FAILED', 'Chưa thể kiểm tra hồ sơ lúc này. Vui lòng thử lại sau.');
+    if (hasMatchingCreationAudit(data, memberId, merchantId)) return;
+    this.logger.error(`MEMBER_AUDIT_MISSING: application ${memberId} (merchant ${merchantId}, requested by ${userId}) exists without a matching creation audit event; replay refused, manual investigation required`);
+    throw this.memberFail(HttpStatus.INTERNAL_SERVER_ERROR, 'MEMBER_AUDIT_MISSING', 'Hồ sơ này đã tồn tại nhưng chưa thể xác nhận nhật ký tạo hồ sơ. Vui lòng liên hệ Admin VNO để được kiểm tra.');
   }
 
   async deactivate(actor: AuditActor, id: string) {

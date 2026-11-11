@@ -8,7 +8,7 @@ import { ZodValidationPipe } from '../src/common/pipes/zod-validation.pipe';
 import { describeZodError } from '../src/common/validation/field-errors';
 import { JwtGuard } from '../src/common/auth/jwt.guard';
 import {
-  CreateMerchantMemberSchema, escapeLike, maskEmail, maskPhone, memberLimits, normalizeEmail, normalizePhone, parseCreateMemberRpc, parseReconcileRpc, sameMemberData, toCreatedMemberView, toMemberListItem,
+  CreateMerchantMemberSchema, escapeLike, maskEmail, maskPhone, memberLimits, normalizeEmail, normalizePhone, parseCreateMemberRpc, hasMatchingCreationAudit, MEMBER_CREATED_ACTION, sameMemberData, toCreatedMemberView, toMemberListItem,
 } from '../src/modules/merchants/merchant-members';
 import { CollaboratorsController } from '../src/modules/collaborators/collaborators.controller';
 import { MerchantsController } from '../src/modules/merchants/merchants.controller';
@@ -97,9 +97,21 @@ ok('parseCreateMemberRpc: CREATED needs a member with an id; EMAIL_HELD / NOT_AL
     assert.deepEqual(parseCreateMemberRpc(bad), { kind: 'INVALID' }, JSON.stringify(bad));
   }
 });
-ok('parseReconcileRpc: the five documented outcomes are recognised; anything else fails closed (INVALID)', () => {
-  for (const o of ['ALREADY_AUDITED', 'RECONCILED', 'IN_FLIGHT', 'NOT_ELIGIBLE', 'NOT_ALLOWED'] as const) { assert.equal(parseReconcileRpc(o), o); assert.equal(parseReconcileRpc([o]), o); }
-  for (const bad of [null, undefined, '', 'reconciled', 'OK', true, 1, {}, { outcome: 'RECONCILED' }, []]) assert.equal(parseReconcileRpc(bad), 'INVALID', JSON.stringify(bad));
+ok('hasMatchingCreationAudit: only a creation event for THIS application, by a merchant actor, naming THIS Merchant, counts; nothing else (action, entity, id, role, Merchant, malformed rows) does', () => {
+  const M = '11111111-1111-4111-8111-111111111111'; const X = 'abcdefab-cdef-4bcd-8cde-abcdefabcdef'; const OTHER = '33333333-3333-4333-8333-333333333333';
+  const good = { action: MEMBER_CREATED_ACTION, entity_type: 'collaborator', entity_id: M, actor_role: 'merchant', details: { merchant_id: X, auth_invitation_required: true } };
+  assert.equal(MEMBER_CREATED_ACTION, 'collaborator.member_application_created');
+  assert.equal(hasMatchingCreationAudit([good], M, X), true);
+  assert.equal(hasMatchingCreationAudit([{ ...good, entity_id: OTHER }, good], M, X), true, 'one matching event among others is enough');
+  const rejected: Array<[string, any]> = [          // [label, the event list handed to the check]
+    ['no events', []], ['null list', null], ['undefined list', undefined],
+    ['another application', [{ ...good, entity_id: OTHER }]], ['another Merchant', [{ ...good, details: { merchant_id: OTHER } }]], ['no details', [{ ...good, details: null }]], ['details not an object', [{ ...good, details: 'x' }]],
+    ['a different action (e.g. an Admin creation)', [{ ...good, action: 'collaborator.created' }]], ['the removed reconciliation action', [{ ...good, action: 'collaborator.member_application_audit_reconciled' }]],
+    ['a different entity type', [{ ...good, entity_type: 'merchant' }]], ['an admin actor', [{ ...good, actor_role: 'admin' }]], ['an unknown actor', [{ ...good, actor_role: 'unknown' }]],
+    ['a string instead of an event', ['collaborator.member_application_created']], ['a null event', [null]],
+  ];
+  for (const [label, events] of rejected) assert.equal(hasMatchingCreationAudit(events, M, X), false, label);
+  assert.equal(hasMatchingCreationAudit([{ ...good, details: { merchant_id: X.toUpperCase() } }], M, X), false, 'ids are compared exactly, not case-folded');
 });
 ok('escapeLike: LIKE wildcards in an e-mail are matched literally', () => { assert.equal(escapeLike('a_b%c\\d@x.vn'), 'a\\_b\\%c\\\\d@x.vn'); });
 

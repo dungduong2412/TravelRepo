@@ -82,7 +82,7 @@ export function sameMemberData(row: MemberRow, dto: CreateMerchantMemberDto): bo
     && normalizeAccountNumber(String(row.collaborators_bank_acc_number ?? '')) === String(dto.collaborators_bank_acc_number ?? '');
 }
 
-// ---- the two database functions (supabase/migrations/20261111000001): their answers are parsed STRICTLY and anything unexpected fails closed ------------------
+// ---- the database function (supabase/migrations/20261111000001): its answer is parsed STRICTLY and anything unexpected fails closed ------------------------
 /** create_merchant_member_application: the application row and its creation audit event are written by one database transaction. */
 export type CreateMemberRpcResult = { kind: 'CREATED'; row: MemberRow } | { kind: 'EMAIL_HELD' } | { kind: 'NOT_ALLOWED' } | { kind: 'INVALID' };
 export function parseCreateMemberRpc(data: unknown): CreateMemberRpcResult {
@@ -94,11 +94,23 @@ export function parseCreateMemberRpc(data: unknown): CreateMemberRpcResult {
   return { kind: 'INVALID' };
 }
 
-/** reconcile_merchant_member_audit: ensures an idempotent replay of an application never leaves its creation unaudited. */
-export type ReconcileRpcOutcome = 'ALREADY_AUDITED' | 'RECONCILED' | 'IN_FLIGHT' | 'NOT_ELIGIBLE' | 'NOT_ALLOWED' | 'INVALID';
-export function parseReconcileRpc(data: unknown): ReconcileRpcOutcome {
-  const d = Array.isArray(data) ? data[0] : data;
-  return d === 'ALREADY_AUDITED' || d === 'RECONCILED' || d === 'IN_FLIGHT' || d === 'NOT_ELIGIBLE' || d === 'NOT_ALLOWED' ? d : 'INVALID';
+// ---- replay verification ---------------------------------------------------------------------------------------------------------------------------------
+/** The audit action written, in the same transaction as the application row, by create_merchant_member_application. */
+export const MEMBER_CREATED_ACTION = 'collaborator.member_application_created';
+export type AuditEventRow = { action?: unknown; entity_type?: unknown; entity_id?: unknown; actor_role?: unknown; details?: unknown };
+/**
+ * Does the audit trail contain a creation event that MATCHES this application? An idempotent replay may be answered with success only when it does.
+ * Matching means all of: the creation action, entity type 'collaborator', THIS application's id, actor role 'merchant', and details.merchant_id equal to the
+ * Merchant making the request. The shape of the application's code, its age or its state prove nothing here: only an audit event that really exists counts, and
+ * nothing is ever written to make one exist.
+ */
+export function hasMatchingCreationAudit(events: readonly AuditEventRow[] | null | undefined, memberId: string, merchantId: string): boolean {
+  return (events ?? []).some((e) => {
+    if (!e || typeof e !== 'object') return false;
+    const details = e.details as { merchant_id?: unknown } | null | undefined;
+    return e.action === MEMBER_CREATED_ACTION && e.entity_type === 'collaborator' && e.entity_id === memberId && e.actor_role === 'merchant'
+      && !!details && typeof details === 'object' && details.merchant_id === merchantId;
+  });
 }
 
 /** Escapes LIKE wildcards so an e-mail such as a_b@x.vn is matched literally by ILIKE. */
